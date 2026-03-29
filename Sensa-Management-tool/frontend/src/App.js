@@ -1,0 +1,5336 @@
+import { useState, useEffect, createContext, useContext, useCallback, useMemo, useRef } from "react";
+import "@/App.css";
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import axios from "axios";
+import { Toaster, toast } from "sonner";
+import { 
+  Plus, 
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  Trash2,
+  Edit,
+  ExternalLink,
+  Check,
+  Archive,
+  X,
+  Circle,
+  Target,
+  Zap,
+  Star,
+  Clock,
+  Bell,
+  Send,
+  Sparkles,
+  Award,
+  Settings,
+  BarChart3,
+  Megaphone,
+  Calendar as CalendarIcon,
+  MessageCircle,
+  Users,
+  Camera,
+  Share2,
+  FileText,
+  CheckCircle,
+  Palette,
+  Video,
+  Instagram,
+  Gift,
+  PlusCircle,
+  Coffee,
+  Music,
+  Heart,
+  Bookmark,
+  Flag,
+  Lightbulb,
+  Phone,
+  Mail,
+  MapPin,
+  ArrowLeft,
+  Briefcase,
+  Headphones,
+  RotateCcw,
+  RefreshCw,
+  Smile,
+  Info
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Calendar } from "@/components/ui/calendar";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { uk } from "date-fns/locale";
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API = `${BACKEND_URL}/api`;
+
+const AppContext = createContext();
+export const useApp = () => useContext(AppContext);
+
+const api = {
+  getEvents: () => axios.get(`${API}/events`),
+  createEvent: (data) => axios.post(`${API}/events`, data),
+  updateEvent: (id, data) => axios.put(`${API}/events/${id}`, data),
+  deleteEvent: (id) => axios.delete(`${API}/events/${id}`),
+  getSettings: () => axios.get(`${API}/settings`),
+  updateSettings: (data) => axios.put(`${API}/settings`, data),
+  addReminder: (data) => axios.post(`${API}/settings/reminders`, data),
+  updateReminder: (id, data) => axios.put(`${API}/settings/reminders/${id}`, data),
+  deleteReminder: (id) => axios.delete(`${API}/settings/reminders/${id}`),
+  completeTask: (data) => axios.post(`${API}/tasks/complete`, data),
+  completeSMMTask: (data) => axios.post(`${API}/tasks/smm/complete`, data),
+  completeMarketingTask: (data) => axios.post(`${API}/tasks/marketing/complete`, data),
+  getSMMTasksDefinition: () => axios.get(`${API}/smm/tasks-definition`),
+  getTaskArchive: () => axios.get(`${API}/tasks/archive`),
+  getStatistics: () => axios.get(`${API}/statistics`),
+  createStandaloneTask: (data) => axios.post(`${API}/tasks/standalone`, data),
+  getStandaloneTasks: () => axios.get(`${API}/tasks/standalone`),
+  updateStandaloneTask: (id, completed) => axios.put(`${API}/tasks/standalone/${id}?completed=${completed}`),
+  updateStandaloneTaskFull: (id, data) => axios.patch(`${API}/tasks/standalone/${id}`, data),
+  deleteStandaloneTask: (id) => axios.delete(`${API}/tasks/standalone/${id}`),
+  parseEvents: (text) => axios.post(`${API}/events/parse`, { text }),
+  // Altegio API
+  getAltegioStatus: () => axios.get(`${API}/altegio/status`),
+  getAltegioEvents: () => axios.get(`${API}/altegio/events`),
+  syncFromAltegio: () => axios.post(`${API}/altegio/sync/pull`),
+  getEventBookings: (eventId) => axios.get(`${API}/altegio/event/${eventId}/bookings`),
+  syncEventFromAltegio: (eventId) => axios.post(`${API}/altegio/event/${eventId}/sync`),
+  exportEventToCalendar: (eventId) => axios.post(`${API}/calendar/events/${eventId}/export`),
+};
+
+// Helper function to get booking status color
+const getBookingStatusColor = (event) => {
+  if (!event.altegio_booked_count && event.altegio_booked_count !== 0) return 'default';
+  
+  const eventDate = new Date(event.date);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const daysUntil = Math.ceil((eventDate - today) / (1000 * 60 * 60 * 24));
+  
+  const bookedPercent = (event.altegio_booked_count / (event.spots || 10)) * 100;
+  
+  // < 4 days logic (higher priority)
+  if (daysUntil < 4 && daysUntil >= 0) {
+    if (bookedPercent >= 70) return 'green';
+    if (bookedPercent >= 50) return 'orange';
+    return 'red';
+  }
+  
+  // < 7 days logic
+  if (daysUntil < 7 && daysUntil >= 0) {
+    if (bookedPercent >= 50) return 'green';
+    if (bookedPercent >= 20) return 'orange';
+    return 'red';
+  }
+  
+  return 'default';
+};
+
+const getBookingColorClass = (color) => {
+  switch (color) {
+    case 'green': return 'text-emerald-600';
+    case 'orange': return 'text-orange-500';
+    case 'red': return 'text-red-500';
+    default: return 'text-secondary';
+  }
+};
+
+// Extended icon mapping
+const ICONS = {
+  bell: Bell, target: Target, zap: Zap, star: Star, clock: Clock, send: Send,
+  sparkles: Sparkles, circle: Circle, megaphone: Megaphone, calendar: CalendarIcon,
+  message: MessageCircle, users: Users, camera: Camera, share: Share2,
+  file: FileText, check: CheckCircle, palette: Palette, video: Video,
+  instagram: Instagram, gift: Gift, coffee: Coffee, music: Music, heart: Heart,
+  bookmark: Bookmark, flag: Flag, lightbulb: Lightbulb, phone: Phone, mail: Mail,
+  mappin: MapPin, briefcase: Briefcase, headphones: Headphones,
+};
+
+// Unique icons for custom tasks (not used in standard reminders)
+// Unified 14 task icons for all dialogs
+const TASK_ICONS = [
+  { value: "instagram", Icon: Instagram },
+  { value: "send", Icon: Send },
+  { value: "video", Icon: Video },
+  { value: "camera", Icon: Camera },
+  { value: "share", Icon: Share2 },
+  { value: "users", Icon: Users },
+  { value: "message", Icon: MessageCircle },
+  { value: "coffee", Icon: Coffee },
+  { value: "heart", Icon: Heart },
+  { value: "star", Icon: Star },
+  { value: "mappin", Icon: MapPin },
+  { value: "briefcase", Icon: Briefcase },
+  { value: "bell", Icon: Bell },
+  { value: "target", Icon: Target },
+];
+
+// Keep aliases for backward compat
+const CUSTOM_TASK_ICONS = TASK_ICONS;
+const SMM_TASK_ICONS = TASK_ICONS;
+
+// SMM task icons mapping
+const SMM_ICONS = {
+  smm_text_announcement: "file", smm_text_video: "file", smm_approve_texts: "file",
+  smm_design_announcement: "video", smm_approve_announcement: "check",
+  smm_post_insta: "instagram", smm_post_tg: "send", smm_ambassadors: "users",
+  smm_influencers: "star", smm_story_reminder: "message", smm_storytelling: "message",
+  smm_video_master: "video", smm_past_events: "share", smm_targeting: "target",
+  smm_direct: "send", smm_tg_reminder: "bell", smm_lucky_ticket: "gift",
+  smm_shoot_content: "camera", smm_post_stories: "instagram", smm_upload_google: "share",
+  smm_video_master_subtitles: "video", smm_video_feedbacks: "video",
+};
+
+// Get task color - from SMM definition or standalone task
+const getTaskColor = (taskId, smmTasksDefinition, standaloneTask) => {
+  if (standaloneTask?.color) return standaloneTask.color;
+  const smmTask = smmTasksDefinition?.find(t => t.id === taskId);
+  return smmTask?.color || "karolina";
+};
+
+// Check if emerald (for backwards compatibility and sound)
+const isEmeraldColor = (color) => color === "kasya" || color === "emerald";
+
+// Color class mapping
+const getColorClass = (color) => {
+  if (color === "kasya" || color === "emerald") return "emerald";
+  if (color === "vo" || color === "orange") return "orange";
+  if (color === "red") return "red";
+  if (color === "purple") return "purple";
+  if (color === "blue") return "blue";
+  if (color === "pink") return "pink";
+  if (color === "teal") return "teal";
+  return "karolina";
+};
+
+// Text-related SMM tasks (use file icon)
+const TEXT_WORK_SMM_TASKS = new Set([
+  "smm_text_announcement",
+  "smm_text_video", 
+  "smm_approve_texts",
+]);
+
+// Celebration audio for emerald tasks
+const celebrationAudio = typeof Audio !== 'undefined' ? new Audio('/celebration.mp3') : null;
+if (celebrationAudio) {
+  celebrationAudio.preload = 'auto';
+}
+
+const playEmeraldCelebration = () => {
+  if (celebrationAudio) {
+    celebrationAudio.currentTime = 0;
+    celebrationAudio.play().catch(() => {});
+    setTimeout(() => {
+      celebrationAudio.pause();
+      celebrationAudio.currentTime = 0;
+    }, 6000);
+  }
+};
+
+const getIconComponent = (iconName) => ICONS[iconName] || Circle;
+
+// Navigation Icons
+const TasksIcon = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <circle cx="6" cy="6" r="4" /><line x1="12" y1="6" x2="22" y2="6" />
+    <circle cx="6" cy="18" r="4" /><line x1="12" y1="18" x2="22" y2="18" />
+  </svg>
+);
+
+const EventsIcon = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <rect x="3" y="4" width="18" height="18" rx="2" />
+    <line x1="3" y1="10" x2="21" y2="10" /><circle cx="8" cy="16" r="2" />
+  </svg>
+);
+
+const SettingsIcon = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+const StatsIcon = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <line x1="4" y1="20" x2="4" y2="10" /><line x1="10" y1="20" x2="10" y2="6" />
+    <line x1="16" y1="20" x2="16" y2="12" />
+  </svg>
+);
+
+const SMMIcon = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+  </svg>
+);
+
+// Ukrainian formatting
+const UK_MONTHS = ["січня", "лютого", "березня", "квітня", "травня", "червня", "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"];
+const UK_MONTHS_SHORT = ["січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"];
+const UK_MONTHS_NOMINATIVE = ["січень", "лютий", "березень", "квітень", "травень", "червень", "липень", "серпень", "вересень", "жовтень", "листопад", "грудень"];
+const UK_WEEKDAYS = ["неділя", "понеділок", "вівторок", "середа", "четвер", "п'ятниця", "субота"];
+
+const formatDateUkrainian = (dateStr) => {
+  const date = new Date(dateStr);
+  return `${date.getDate()} ${UK_MONTHS[date.getMonth()]}`;
+};
+
+const formatDateWithWeekday = (date) => {
+  const d = date instanceof Date ? date : new Date(date);
+  return { day: d.getDate(), month: UK_MONTHS[d.getMonth()], weekday: UK_WEEKDAYS[d.getDay()] };
+};
+
+// Helper function to format date as YYYY-MM-DD using LOCAL timezone (avoids UTC shift issues)
+const formatDateLocal = (date) => {
+  const d = date instanceof Date ? date : new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const formatMonthShort = (monthStr) => {
+  const [year, month] = monthStr.split("-");
+  return `${UK_MONTHS_SHORT[parseInt(month) - 1]}. ${year.slice(2)} р.`;
+};
+
+// Bottom Navigation - with labels
+const BottomNav = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const navItems = [
+    { path: "/", icon: TasksIcon, label: "завдання" },
+    { path: "/smm", icon: SMMIcon, label: "smm" },
+    { path: "/events", icon: EventsIcon, label: "події" },
+    { path: "/stats", icon: StatsIcon, label: "аналітика" },
+    { path: "/settings", icon: SettingsIcon, label: "налаштування" },
+  ];
+
+  const handleNavClick = (path) => {
+    navigate(path);
+    window.scrollTo(0, 0);
+  };
+
+  return (
+    <nav className="bottom-nav">
+      {navItems.map((item) => (
+        <button key={item.path} className={`nav-item ${location.pathname === item.path ? "active" : ""}`} onClick={() => handleNavClick(item.path)}>
+          <item.icon className="w-5 h-5" />
+          <span className="text-xs">{item.label}</span>
+        </button>
+      ))}
+    </nav>
+  );
+};
+
+// Fullscreen Modal Component for Desktop
+const FullscreenModal = ({ isOpen, onClose, title, children }) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose, isOpen]);
+  
+  if (!isOpen) return null;
+  
+  return (
+    <div className="fixed inset-0 z-50 bg-white">
+      <div className="desktop-dashboard">
+        <header className="desktop-header" style={{position: 'relative'}}>
+          <div className="desktop-header-left">
+            <span className="text-xl font-semibold">{title}</span>
+          </div>
+          <div className="desktop-header-right cursor-pointer" onClick={onClose} style={{marginRight: '-24px', paddingRight: '24px'}} data-testid="fullscreen-close-area">
+            <div className="desktop-header-btn relative">
+              <X className="w-5 h-5" />
+              <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 text-xs text-secondary flex items-center gap-1 whitespace-nowrap pointer-events-none font-normal">або <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px] font-mono border border-gray-200">ESC</kbd> щоб закрити</span>
+            </div>
+            <div className="desktop-header-btn opacity-0 pointer-events-none"><FileText className="w-5 h-5" /></div>
+            <div className="btn-dark opacity-0 pointer-events-none"><Plus className="w-4 h-4" /><span>подія</span></div>
+            <div className="desktop-header-btn opacity-0 pointer-events-none"><Settings className="w-5 h-5" /></div>
+          </div>
+        </header>
+        <div className="flex-1 overflow-hidden">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Task Item Component
+const TaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, showDate = false, isOverdue = false }) => {
+  const IconComponent = task.icon ? getIconComponent(task.icon) : Circle;
+  const [localCompleted, setLocalCompleted] = useState(task.completed);
+  const [isExiting, setIsExiting] = useState(false);
+  
+  useEffect(() => { setLocalCompleted(task.completed); setIsExiting(false); }, [task.completed, task.event_id, task.reminder_id]);
+  
+  const handleToggle = (checked) => {
+    setLocalCompleted(checked);
+    if (isOverdue && checked) {
+      setTimeout(() => setIsExiting(true), 500);
+      setTimeout(() => onToggle(task.event_id, task.reminder_id, checked, task.is_standalone), 1000);
+    } else {
+      onToggle(task.event_id, task.reminder_id, checked, task.is_standalone);
+    }
+  };
+  
+  const handleClick = () => {
+    if (task.is_standalone && onStandaloneClick) onStandaloneClick(task);
+    else if (!task.is_standalone && onEventClick) onEventClick(task.event_id);
+  };
+  
+  return (
+    <div className={`task-item transition-all duration-500 ${localCompleted ? "opacity-40" : ""} ${isExiting ? "opacity-0 -translate-x-4 h-0 py-0 overflow-hidden" : ""}`}>
+      <div className={`task-icon ${task.color || ""}`}><IconComponent /></div>
+      <div className="flex-1 min-w-0 cursor-pointer" onClick={handleClick}>
+        <p className="text-base font-medium">{task.reminder_name}</p>
+        <p className="text-sm text-secondary lowercase">{task.event_title}</p>
+        {task.target_month && <p className="text-xs text-gray-400">{UK_MONTHS[parseInt(task.target_month.split('-')[1]) - 1]}</p>}
+      </div>
+      {showDate && <span className="text-secondary text-sm whitespace-nowrap ml-2">{formatDateUkrainian(task.reminder_date)}</span>}
+      <button className={`task-checkbox ${localCompleted ? "checked" : ""}`} onClick={(e) => { e.stopPropagation(); handleToggle(!localCompleted); }}>
+        <Check className="w-4 h-4" />
+      </button>
+    </div>
+  );
+};
+
+// SMM Task Item
+// SMM Task Item with color support
+const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, onTaskEdit, showDate = false, smmTasksDefinition = [] }) => {
+  // Determine icon - text work tasks get file icon
+  const isTextWork = TEXT_WORK_SMM_TASKS.has(task.task_id);
+  const iconName = task.icon || (task.is_standalone 
+    ? "instagram" 
+    : (isTextWork ? "file" : (SMM_ICONS[task.task_id] || "circle")));
+  const IconComponent = getIconComponent(iconName);
+  
+  // Get task color - directly from task object (set by getSMMTasks)
+  const taskColor = task.color || "karolina";
+  const isEmerald = isEmeraldColor(taskColor);
+  const colorClass = getColorClass(taskColor);
+  
+  const [localCompleted, setLocalCompleted] = useState(task.completed);
+  
+  useEffect(() => { setLocalCompleted(task.completed); }, [task.completed]);
+  
+  const handleToggle = () => {
+    const newCompleted = !localCompleted;
+    setLocalCompleted(newCompleted);
+    
+    // Play sound when completing emerald task
+    if (isEmerald && newCompleted) {
+      playEmeraldCelebration();
+    }
+    
+    onToggle(task.event_id, task.task_id, newCompleted, task.is_standalone);
+  };
+  
+  const handleClick = () => {
+    if (onTaskEdit) onTaskEdit(task);
+    else if (task.is_standalone && onStandaloneClick) onStandaloneClick(task);
+    else if (!task.is_standalone && onEventClick) onEventClick(task.event_id);
+  };
+  
+  return (
+    <div className={`task-item cursor-pointer ${localCompleted ? "opacity-40" : ""} ${task.isOverlapping ? "ring-1 ring-red-400 bg-red-50/50" : ""}`} onClick={handleClick} data-testid={`task-item-${task.task_id || task.event_id}`}>
+      <div className={`task-icon ${colorClass}`}><IconComponent /></div>
+      <div className="flex-1 min-w-0 pr-2">
+        <p className={`text-sm font-medium truncate ${task.isOverlapping ? "text-red-600" : ""}`}>{task.task_name}</p>
+        {!task.is_standalone && task.event_title && <p className="text-xs text-secondary lowercase truncate">{task.event_title}</p>}
+        {task.isOverlapping && <p className="text-[10px] text-red-500 font-medium">перетин анонсів!</p>}
+        {task.target_month && <p className="text-xs text-gray-400">{UK_MONTHS[parseInt(task.target_month.split('-')[1]) - 1]}</p>}
+      </div>
+      {showDate && <span className="text-secondary text-xs whitespace-nowrap ml-1">{formatDateUkrainian(task.task_date)}</span>}
+      <button className={`task-checkbox ${localCompleted ? "checked" : ""}`} onClick={(e) => { e.stopPropagation(); handleToggle(); }}>
+        <Check className="w-4 h-4" />
+      </button>
+    </div>
+  );
+};
+
+// Dashboard Page (Mobile)
+const Dashboard = () => {
+  const { events, settings, standaloneTasks, smmTasksDefinition, refreshEvents, refreshStandaloneTasks } = useApp();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('events');
+  const [overdueExpanded, setOverdueExpanded] = useState(false);
+  const [soonExpanded, setSoonExpanded] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
+  const [archive, setArchive] = useState([]);
+  const [editingTask, setEditingTask] = useState(null);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showEditCalendar, setShowEditCalendar] = useState(false);
+  const [showNewTask, setShowNewTask] = useState(false);
+  const [newTaskData, setNewTaskData] = useState(null);
+  const [showNewTaskCalendar, setShowNewTaskCalendar] = useState(false);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  
+  const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
+  const todayFormatted = formatDateWithWeekday(today);
+  const todayStr = formatDateLocal(today);
+  const twoWeeksFromNow = new Date(today); twoWeeksFromNow.setDate(twoWeeksFromNow.getDate() + 14);
+  const twoWeeksStr = formatDateLocal(twoWeeksFromNow);
+  
+  const smmTasksMap = useMemo(() => { const map = {}; smmTasksDefinition.forEach(t => { map[t.id] = t; }); return map; }, [smmTasksDefinition]);
+
+  // Regular tasks (reminders + non-SMM standalone)
+  const getTasks = useCallback(() => {
+    if (!settings?.reminder_types) return { overdue: [], today: [], soon: [] };
+    const overdueTasks = [], todayTasks = [], soonTasks = [];
+    const reminderMap = {}; settings.reminder_types.forEach(rt => { reminderMap[rt.id] = rt; });
+    events.forEach(event => {
+      if (event.cancelled) return;
+      const eventDate = new Date(event.date); eventDate.setHours(0, 0, 0, 0);
+      if (eventDate < today) return;
+      Object.entries(event.reminders || {}).forEach(([reminderId, reminderDateStr]) => {
+        const reminderInfo = reminderMap[reminderId]; if (!reminderInfo) return;
+        const reminderDate = new Date(reminderDateStr); reminderDate.setHours(0, 0, 0, 0);
+        const ov = (event.task_overrides || {})[reminderId] || {};
+        const task = { event_id: event.id, event_title: event.title, reminder_id: reminderId, reminder_name: ov.title || reminderInfo.name, reminder_date: reminderDateStr, icon: ov.icon || reminderInfo.icon, completed: !!(event.completed_tasks || {})[reminderId], is_standalone: false, color: ov.color, assignee: ov.assignee };
+        if (reminderDateStr === todayStr) todayTasks.push(task);
+        else if (reminderDate < today && !task.completed) overdueTasks.push(task);
+        else if (reminderDate > today && reminderDateStr <= twoWeeksStr) soonTasks.push(task);
+      });
+    });
+    standaloneTasks.filter(t => t.type !== "smm").forEach(task => {
+      const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
+      const monthLabel = task.target_month ? UK_MONTHS[parseInt(task.target_month.split('-')[1]) - 1] : '';
+      const t = { event_id: task.id, event_title: task.type === 'monthly' ? '' : task.title, reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "karolina", assignee: task.assignee || "karolina", target_month: task.target_month };
+      if (task.date === todayStr) todayTasks.push(t);
+      else if (taskDate < today && !task.completed) overdueTasks.push(t);
+      else if (taskDate > today && task.date <= twoWeeksStr) soonTasks.push(t);
+    });
+    soonTasks.sort((a, b) => new Date(a.reminder_date) - new Date(b.reminder_date));
+    overdueTasks.sort((a, b) => new Date(a.reminder_date) - new Date(b.reminder_date));
+    return { overdue: overdueTasks, today: todayTasks, soon: soonTasks };
+  }, [events, settings, standaloneTasks, today, todayStr, twoWeeksStr]);
+
+  // SMM tasks
+  const getSMMTasks = useCallback(() => {
+    const overdueTasks = [], todayTasks = [], soonTasks = [];
+    events.forEach(event => {
+      if (event.cancelled) return;
+      const eventDate = new Date(event.date); eventDate.setHours(0, 0, 0, 0);
+      if (eventDate < today) return;
+      Object.entries(event.smm_tasks || {}).forEach(([taskId, taskDateStr]) => {
+        const taskInfo = smmTasksMap[taskId]; if (!taskInfo) return;
+        const taskDate = new Date(taskDateStr); taskDate.setHours(0, 0, 0, 0);
+        const ov = (event.task_overrides || {})[taskId] || {};
+        const task = { event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov.title || taskInfo.name, task_date: taskDateStr, completed: !!(event.completed_smm_tasks || {})[taskId], color: ov.color || taskInfo.color || "standard", icon: ov.icon || taskInfo.icon, assignee: ov.assignee };
+        if (taskDateStr === todayStr) todayTasks.push(task);
+        else if (taskDate < today && !task.completed) overdueTasks.push(task);
+        else if (taskDate > today && taskDateStr <= twoWeeksStr) soonTasks.push(task);
+      });
+    });
+    standaloneTasks.filter(t => t.type === "smm").forEach(task => {
+      const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
+      const t = { event_id: task.id, event_title: task.title, task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "karolina", assignee: task.assignee || "kasya", target_month: task.target_month };
+      if (task.date === todayStr) todayTasks.push(t);
+      else if (taskDate < today && !task.completed) overdueTasks.push(t);
+      else if (taskDate > today && task.date <= twoWeeksStr) soonTasks.push(t);
+    });
+    soonTasks.sort((a, b) => new Date(a.task_date) - new Date(b.task_date));
+    overdueTasks.sort((a, b) => new Date(a.task_date) - new Date(b.task_date));
+    return { overdue: overdueTasks, today: todayTasks, soon: soonTasks };
+  }, [events, smmTasksMap, standaloneTasks, today, todayStr, twoWeeksStr]);
+
+  const regularTasks = getTasks();
+  const allSmmTasks = getSMMTasks();
+
+  // Team-based distribution (same as desktop)
+  const tasksByTeam = useMemo(() => {
+    const isKarolina = (t) => t.assignee === "karolina";
+    const isKasya = (t) => { if (t.assignee) return t.assignee === "kasya"; if (t.is_standalone) return false; return t.color === "emerald" || t.color === "kasya"; };
+    const isVo = (t) => { if (t.assignee) return t.assignee === "vo"; if (t.is_standalone) return false; return !isKasya(t) && !isKarolina(t); };
+    const kasyaR = { overdue: [], today: [], soon: [] }, karolinaR = { overdue: [], today: [], soon: [] }, voR = { overdue: [], today: [], soon: [] };
+    ['overdue', 'today', 'soon'].forEach(k => {
+      regularTasks[k].forEach(t => { if (t.assignee === 'kasya') kasyaR[k].push(t); else if (t.assignee === 'vo') voR[k].push(t); else karolinaR[k].push(t); });
+    });
+    return {
+      kasya: { overdue: [...allSmmTasks.overdue.filter(isKasya), ...kasyaR.overdue], today: [...allSmmTasks.today.filter(isKasya), ...kasyaR.today], soon: [...allSmmTasks.soon.filter(isKasya), ...kasyaR.soon] },
+      karolina: { overdue: [...allSmmTasks.overdue.filter(isKarolina), ...karolinaR.overdue], today: [...allSmmTasks.today.filter(isKarolina), ...karolinaR.today], soon: [...allSmmTasks.soon.filter(isKarolina), ...karolinaR.soon] },
+      vo: { overdue: [...allSmmTasks.overdue.filter(isVo), ...voR.overdue], today: [...allSmmTasks.today.filter(isVo), ...voR.today], soon: [...allSmmTasks.soon.filter(isVo), ...voR.soon] },
+    };
+  }, [allSmmTasks, regularTasks]);
+
+  const upcomingEvents = events.filter(e => !e.cancelled && !e.archived && new Date(e.date) >= today).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  const handleToggleTask = async (eventId, reminderId, completed, isStandalone) => {
+    try {
+      if (isStandalone) { await api.updateStandaloneTask(eventId, completed); refreshStandaloneTasks(); }
+      else { await api.completeTask({ event_id: eventId, reminder_id: reminderId, completed }); refreshEvents(); }
+    } catch { toast.error("помилка"); }
+  };
+  const handleToggleSMMTask = async (eventId, taskId, completed, isStandalone) => {
+    try {
+      if (isStandalone) { await api.updateStandaloneTask(eventId, completed); refreshStandaloneTasks(); }
+      else { await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed }); refreshEvents(); }
+    } catch { toast.error("помилка"); }
+  };
+  const handleEventClick = (eventId) => { navigate(`/event/${eventId}/view`); };
+  
+  const handleTaskEdit = (task) => {
+    if (task.is_standalone) {
+      const fullTask = standaloneTasks.find(t => t.id === task.event_id);
+      if (fullTask) {
+        setEditingTask({...fullTask, _isStandalone: true, assignee: fullTask.assignee || task.assignee || 'karolina'});
+        setShowEditDialog(true);
+      }
+    } else {
+      const currentAssignee = task.assignee || activeTab;
+      setEditingTask({ _isStandalone: false, _eventId: task.event_id, _taskId: task.task_id || task.reminder_id, assignee: currentAssignee, id: task.event_id, title: task.task_name || task.reminder_name, date: task.task_date || task.reminder_date, icon: task.icon || "circle", color: task.color || "karolina", type: "smm", completed: task.completed, eventTitle: task.event_title });
+      setShowEditDialog(true);
+    }
+  };
+
+  const handleSaveTask = async () => {
+    if (!editingTask?.title?.trim()) return;
+    try {
+      if (editingTask._isStandalone === false) {
+        await axios.patch(`${API}/events/${editingTask._eventId}/tasks/${editingTask._taskId}`, { color: editingTask.color, icon: editingTask.icon, title: editingTask.title, assignee: editingTask.assignee, date: editingTask.date });
+        toast.success("збережено!"); refreshEvents();
+      } else {
+        await api.updateStandaloneTaskFull(editingTask.id, { title: editingTask.title, date: editingTask.date, icon: editingTask.icon, type: editingTask.type, color: editingTask.color, assignee: editingTask.assignee || 'karolina' });
+        toast.success("збережено!"); refreshStandaloneTasks();
+      }
+      setShowEditDialog(false); setEditingTask(null);
+    } catch { toast.error("помилка"); }
+  };
+
+  const handleNewTaskOpen = () => {
+    const isSMM = activeTab === 'kasya' || activeTab === 'vo';
+    setNewTaskData({ title: '', date: todayStr, icon: isSMM ? 'instagram' : 'coffee', color: 'karolina', assignee: activeTab, type: isSMM ? 'smm' : 'regular' });
+    setShowNewTaskCalendar(false);
+    setShowNewTask(true);
+  };
+  const handleCreateTask = async () => {
+    if (!newTaskData?.title?.trim()) return;
+    try {
+      await axios.post(`${API}/tasks/standalone`, { title: newTaskData.title, date: newTaskData.date, icon: newTaskData.icon, type: newTaskData.type === 'smm' ? 'smm' : undefined, color: newTaskData.color, assignee: newTaskData.assignee });
+      toast.success('створено!'); refreshStandaloneTasks(); setShowNewTask(false); setNewTaskData(null);
+    } catch { toast.error('помилка'); }
+  };
+
+  const loadArchive = async () => { try { const r = await api.getTaskArchive(); setArchive(r.data); setShowArchive(true); } catch { toast.error("помилка"); } };
+
+  // Render a task section (overdue/today/soon)
+  const MobileTaskSection = ({ tasks: sectionTasks, title, isOverdue, isCollapsible, expanded, setExpanded }) => {
+    if (isCollapsible && sectionTasks.length === 0) return null;
+    const normalizeTask = (t) => ({ ...t, task_id: t.task_id || t.reminder_id, task_name: t.task_name || t.reminder_name, task_date: t.task_date || t.reminder_date, assignee: t.assignee || activeTab });
+    return (
+      <section className="mobile-section">
+        {isCollapsible ? (
+          <button className={`mobile-section-header ${isOverdue ? 'overdue' : ''} w-full text-left`} onClick={() => setExpanded(!expanded)}>
+            <span>{title}</span>
+            <span className="mobile-section-count">({sectionTasks.length})</span>
+            <ChevronDown className={`w-5 h-5 ml-auto transition-transform ${isOverdue ? '' : 'text-secondary'} ${expanded ? "rotate-180" : ""}`} style={isOverdue ? { color: "#DC2626" } : {}} />
+          </button>
+        ) : (
+          <div className="mobile-section-header"><span>{title}</span><span className="mobile-section-count">({sectionTasks.length})</span></div>
+        )}
+        {(!isCollapsible || expanded) && (
+          sectionTasks.length > 0 ? (
+            <div className="pt-3 space-y-1">
+              {[...sectionTasks].sort((a, b) => (a.completed ? 1 : 0) - (b.completed ? 1 : 0)).map((t, i) => {
+                const nt = normalizeTask(t);
+                return <SMMTaskItem key={`${nt.event_id}-${nt.task_id}-${i}`} task={nt} onToggle={activeTab === 'karolina' ? handleToggleTask : handleToggleSMMTask} onEventClick={handleEventClick} onTaskEdit={handleTaskEdit} smmTasksDefinition={smmTasksDefinition} showDate={isOverdue || title === 'незабаром'} />;
+              })}
+            </div>
+          ) : <p className="text-secondary py-4 text-center text-sm">все зроблено!</p>
+        )}
+      </section>
+    );
+  };
+
+  const currentTasks = activeTab === 'events' ? null : tasksByTeam[activeTab] || { overdue: [], today: [], soon: [] };
+  const tabs = [
+    { id: 'events', label: 'Події' },
+    { id: 'karolina', label: 'Менеджмент' },
+    { id: 'kasya', label: 'SMM' },
+    { id: 'vo', label: 'Маркетинг' },
+  ];
+
+  return (
+    <div className="animate-fade-in" style={{ height: '100dvh', display: 'flex', flexDirection: 'column' }}>
+      <header className="px-5 pt-6 pb-3">
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="logo text-xl">sensa</h1>
+          <p className="text-sm text-secondary">{todayFormatted.day} {todayFormatted.month} — {todayFormatted.weekday}</p>
+        </div>
+        <div className="flex gap-1.5 justify-end pb-1" data-testid="mobile-tabs">
+          {tabs.map(tab => (
+            <button key={tab.id} onClick={() => { setActiveTab(tab.id); setOverdueExpanded(false); setSoonExpanded(false); }} className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeTab === tab.id ? 'bg-[#1A1717] text-white' : 'bg-[rgba(0,0,0,0.05)] text-[#1A1717]'}`} data-testid={`tab-${tab.id}`}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-5 pb-24 space-y-3">
+        {activeTab === 'events' ? (
+          <>
+            <div className="calendar-container-desktop mb-2">
+              <Calendar mode="single" locale={uk} weekStartsOn={1} month={currentMonth} onMonthChange={setCurrentMonth} className="w-full calendar-minimal !p-1"
+                classNames={{ month: "space-y-0 w-full", caption: "flex justify-center items-center py-1", caption_label: "text-sm font-medium", row: "flex w-full", head_row: "flex w-full", table: "w-full border-collapse", nav_button: "w-7 h-7 bg-transparent hover:bg-gray-100 rounded-full flex items-center justify-center" }}
+                modifiersClassNames={{ today: "calendar-today-visible" }}
+                components={{ DayContent: ({ date }) => {
+                  const checkDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                  const hasEvent = events.some(e => !e.cancelled && e.date.startsWith(checkDate));
+                  return <div className="calendar-day-content"><span>{date.getDate()}</span>{hasEvent && <span className="event-dot" />}</div>;
+                }}}
+              />
+            </div>
+            {upcomingEvents.length > 0 ? upcomingEvents.map(event => (
+              <div key={event.id} className="event-card-desktop cursor-pointer" onClick={() => handleEventClick(event.id)} data-testid={`mobile-event-${event.id}`}>
+                <div className="flex items-center gap-3">
+                  <div className="date-badge-desktop"><span className="text-[9px] uppercase">{UK_MONTHS_SHORT[new Date(event.date).getMonth()]}</span><span className="text-base font-bold">{new Date(event.date).getDate()}</span></div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-semibold truncate">{event.title}</h3>
+                    <p className="text-xs text-secondary">{event.start_time && `${event.start_time} • `}{event.price} ₴</p>
+                  </div>
+                  {event.altegio_booked_count != null && (
+                    <div className="text-right">
+                      <span className={`text-base font-bold ${getBookingColorClass(getBookingStatusColor(event))}`}>{event.altegio_booked_count}</span>
+                      <span className="text-xs text-secondary">/{event.spots}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )) : <p className="text-secondary text-center py-8 text-sm">поки подій немає</p>}
+          </>
+        ) : (
+          <>
+            <MobileTaskSection tasks={currentTasks.overdue} title="протерміновано" isOverdue isCollapsible expanded={overdueExpanded} setExpanded={setOverdueExpanded} />
+            <MobileTaskSection tasks={currentTasks.today} title="сьогодні" />
+            <MobileTaskSection tasks={currentTasks.soon} title="незабаром" isCollapsible expanded={soonExpanded} setExpanded={setSoonExpanded} />
+          </>
+        )}
+      </div>
+
+      {activeTab !== 'events' && (
+        <button className="fab" onClick={handleNewTaskOpen} data-testid="mobile-fab">
+          <Plus className="w-6 h-6" />
+        </button>
+      )}
+
+      {/* Edit task dialog */}
+      {showEditDialog && editingTask && (() => {
+        const COLOR_MAP = {'karolina':'#1A1717','red':'#DC2626','purple':'#9333EA','blue':'#3B82F6','orange':'#C4703D','emerald':'#059669','teal':'#14B8A6','kasya':'#059669','pink':'#EC4899'};
+        const selectedHex = COLOR_MAP[editingTask.color] || '#1A1717';
+        return (
+        <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+          <DialogContent className="dialog-content max-w-sm" onOpenAutoFocus={(e) => e.preventDefault()}>
+            <DialogHeader><DialogTitle className="text-sm">
+              <span>завдання для </span>
+              <span className="relative inline-block">
+                <select value={editingTask.assignee || 'karolina'} onChange={(e) => setEditingTask({...editingTask, assignee: e.target.value})} className="appearance-none bg-transparent font-semibold outline-none cursor-pointer pr-4">
+                  <option value="kasya">SMM</option><option value="karolina">Менеджмент</option><option value="vo">Маркетинг</option>
+                </select>
+                <ChevronDown className="w-2.5 h-2.5 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-secondary" />
+              </span>
+            </DialogTitle></DialogHeader>
+            <div className="space-y-3 pt-2">
+              <Input placeholder="що треба зробити?" value={editingTask.title} onChange={(e) => setEditingTask({...editingTask, title: e.target.value})} className="form-input text-sm h-9" data-testid="mobile-edit-input" />
+              <div className="flex items-center gap-2">
+                <button className="text-xs px-3 py-1.5 rounded-full bg-[rgba(0,0,0,0.05)]" onClick={() => setShowEditCalendar(!showEditCalendar)}>{formatDateUkrainian(editingTask.date)}</button>
+                <div className="flex gap-1.5 ml-auto">
+                  {["karolina", "red", "purple", "blue", "orange", "emerald", "teal"].map(c => (
+                    <button key={c} onClick={() => setEditingTask({...editingTask, color: c})} className={`color-circle-perfect ${editingTask.color === c ? 'ring-2 ring-offset-1 ring-current' : ''}`} style={{ background: COLOR_MAP[c] || '#1A1717' }} />
+                  ))}
+                </div>
+              </div>
+              {showEditCalendar && <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(editingTask.date)} onSelect={(d) => { if (d) { setEditingTask({...editingTask, date: formatDateLocal(d)}); } setShowEditCalendar(false); }} className="w-full" />}
+              <div className="grid grid-cols-7 gap-1.5">
+                {TASK_ICONS.map(opt => { const IC = getIconComponent(opt.value); return (
+                  <button key={opt.value} className={`icon-selector-btn ${editingTask.icon === opt.value ? 'selected' : ''}`} style={{color: selectedHex}} onClick={() => setEditingTask({...editingTask, icon: opt.value})}><IC /></button>
+                ); })}
+              </div>
+              <div className="flex gap-2">
+                {editingTask._isStandalone && (
+                  <button className="flex-1 h-9 text-xs rounded-full border border-red-200 text-red-600" onClick={async () => { try { await api.deleteStandaloneTask(editingTask.id); toast.success("видалено!"); refreshStandaloneTasks(); setShowEditDialog(false); } catch { toast.error("помилка"); } }} data-testid="mobile-edit-delete"><Trash2 className="w-3 h-3 inline mr-1" />видалити</button>
+                )}
+                <button className="btn-dark flex-1 h-9 text-xs" onClick={handleSaveTask} data-testid="mobile-edit-save">зберегти</button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+        );
+      })()}
+
+      {/* New task dialog */}
+      {showNewTask && newTaskData && (() => {
+        const COLOR_MAP = {'karolina':'#1A1717','red':'#DC2626','purple':'#9333EA','blue':'#3B82F6','orange':'#C4703D','emerald':'#059669','teal':'#14B8A6','kasya':'#059669','pink':'#EC4899'};
+        const selectedHex = COLOR_MAP[newTaskData.color] || '#1A1717';
+        return (
+        <Dialog open={showNewTask} onOpenChange={setShowNewTask}>
+          <DialogContent className="dialog-content max-w-sm" onOpenAutoFocus={(e) => e.preventDefault()}>
+            <DialogHeader><DialogTitle className="text-sm">
+              <span>нове завдання для </span>
+              <span className="relative inline-block">
+                <select value={newTaskData.assignee} onChange={(e) => setNewTaskData({...newTaskData, assignee: e.target.value})} className="appearance-none bg-transparent font-semibold outline-none cursor-pointer pr-4">
+                  <option value="kasya">SMM</option><option value="karolina">Менеджмент</option><option value="vo">Маркетинг</option>
+                </select>
+                <ChevronDown className="w-2.5 h-2.5 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-secondary" />
+              </span>
+            </DialogTitle></DialogHeader>
+            <div className="space-y-3 pt-2">
+              <Input autoFocus placeholder="що треба зробити?" value={newTaskData.title} onChange={(e) => setNewTaskData({...newTaskData, title: e.target.value})} onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleCreateTask(); }} className="form-input text-sm h-9" data-testid="mobile-new-input" />
+              <div className="flex items-center gap-2">
+                <button className="text-xs px-3 py-1.5 rounded-full bg-[rgba(0,0,0,0.05)]" onClick={() => setShowNewTaskCalendar(!showNewTaskCalendar)}>{formatDateUkrainian(newTaskData.date)}</button>
+                <div className="flex gap-1.5 ml-auto">
+                  {["karolina", "red", "purple", "blue", "orange", "emerald", "teal"].map(c => (
+                    <button key={c} onClick={() => setNewTaskData({...newTaskData, color: c})} className={`color-circle-perfect ${newTaskData.color === c ? 'ring-2 ring-offset-1 ring-current' : ''}`} style={{ background: COLOR_MAP[c] || '#1A1717' }} />
+                  ))}
+                </div>
+              </div>
+              {showNewTaskCalendar && <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(newTaskData.date)} onSelect={(d) => { if (d) { setNewTaskData({...newTaskData, date: formatDateLocal(d)}); } setShowNewTaskCalendar(false); }} className="w-full" />}
+              <div className="grid grid-cols-7 gap-1.5">
+                {TASK_ICONS.map(opt => { const IC = getIconComponent(opt.value); return (
+                  <button key={opt.value} className={`icon-selector-btn ${newTaskData.icon === opt.value ? 'selected' : ''}`} style={{color: selectedHex}} onClick={() => setNewTaskData({...newTaskData, icon: opt.value})}><IC /></button>
+                ); })}
+              </div>
+              <button className="btn-dark w-full h-9 text-xs" onClick={handleCreateTask} data-testid="mobile-new-save">створити</button>
+            </div>
+          </DialogContent>
+        </Dialog>
+        );
+      })()}
+    </div>
+  );
+};
+
+// New Task Page (Mobile fullscreen)
+const NewTaskPage = () => {
+  const navigate = useNavigate();
+  const { refreshStandaloneTasks } = useApp();
+  const [newTask, setNewTask] = useState({ title: "", date: formatDateLocal(new Date()), icon: "coffee" });
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [showIconPicker, setShowIconPicker] = useState(false);
+  const [loading, setLoading] = useState(false);
+  
+  const handleCreateTask = async () => {
+    if (!newTask.title.trim()) return;
+    setLoading(true);
+    try {
+      await api.createStandaloneTask(newTask);
+      toast.success("додано!");
+      refreshStandaloneTasks();
+      navigate(-1);
+    } catch {
+      toast.error("помилка");
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const SelectedIcon = getIconComponent(newTask.icon);
+  
+  return (
+    <div className="animate-fade-in min-h-screen bg-[#F5F5F0]">
+      <header className="page-header-back">
+        <button className="back-btn" onClick={() => navigate(-1)}>
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <h1 className="page-title text-center flex-1">нове завдання</h1>
+        <div className="w-10" />
+      </header>
+      
+      <div className="page-content pt-8 space-y-6">
+        <div className="space-y-4">
+          <div className="form-field">
+            <Label className="text-sm text-secondary">що треба зробити?</Label>
+            <Input 
+              placeholder="назва завдання" 
+              value={newTask.title} 
+              onChange={(e) => setNewTask({ ...newTask, title: e.target.value })} 
+              className="form-input text-lg"
+              autoFocus
+            />
+          </div>
+          
+          <div className="form-field">
+            <Label className="text-sm text-secondary">іконка</Label>
+            <button 
+              type="button"
+              className="form-input w-full text-left flex items-center gap-3"
+              onClick={() => setShowIconPicker(true)}
+            >
+              <div className="w-8 h-8 rounded-full bg-[#1A1717] flex items-center justify-center">
+                <SelectedIcon className="w-4 h-4 text-[#F5F5F0]" />
+              </div>
+              <span className="text-secondary">змінити іконку</span>
+            </button>
+          </div>
+          
+          <div className="form-field">
+            <Label className="text-sm text-secondary">дата</Label>
+            <button 
+              type="button"
+              className="form-input w-full text-left flex items-center justify-between"
+              onClick={() => setShowCalendar(true)}
+            >
+              <span>{formatDateUkrainian(newTask.date)}</span>
+              <CalendarIcon className="w-5 h-5 text-secondary" />
+            </button>
+          </div>
+        </div>
+        
+        <button 
+          className="btn-dark w-full h-14 text-lg"
+          onClick={handleCreateTask}
+          disabled={loading || !newTask.title.trim()}
+        >
+          {loading ? "додаю..." : "додати завдання"}
+        </button>
+      </div>
+      
+      <Dialog open={showCalendar} onOpenChange={setShowCalendar}>
+        <DialogContent className="dialog-content">
+          <Calendar 
+            mode="single" 
+            locale={uk} 
+            weekStartsOn={1} 
+            selected={new Date(newTask.date)} 
+            onSelect={(d) => { 
+              if (d) setNewTask({ ...newTask, date: formatDateLocal(d) }); 
+              setShowCalendar(false); 
+            }} 
+            className="w-full" 
+          />
+        </DialogContent>
+      </Dialog>
+      
+      <Dialog open={showIconPicker} onOpenChange={setShowIconPicker}>
+        <DialogContent className="dialog-content">
+          <DialogHeader><DialogTitle>обери іконку</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-6 gap-2 pt-4">
+            {CUSTOM_TASK_ICONS.map(({ value, Icon }) => (
+              <button
+                key={value}
+                className={`icon-selector-btn ${newTask.icon === value ? 'selected' : ''}`}
+                onClick={() => { setNewTask({ ...newTask, icon: value }); setShowIconPicker(false); }}
+              >
+                <Icon className="w-5 h-5" />
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+// New SMM Task Page (Mobile fullscreen)
+const NewSMMTaskPage = () => {
+  const navigate = useNavigate();
+  const { refreshStandaloneTasks } = useApp();
+  const [newTask, setNewTask] = useState({ title: "", date: formatDateLocal(new Date()), icon: "instagram", type: "smm", is_emerald: false });
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [showIconPicker, setShowIconPicker] = useState(false);
+  const [loading, setLoading] = useState(false);
+  
+  const handleCreateTask = async () => {
+    if (!newTask.title.trim()) return;
+    setLoading(true);
+    try {
+      await api.createStandaloneTask(newTask);
+      toast.success("додано!");
+      refreshStandaloneTasks();
+      navigate(-1);
+    } catch {
+      toast.error("помилка");
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const SelectedIcon = getIconComponent(newTask.icon);
+  
+  return (
+    <div className="animate-fade-in min-h-screen bg-[#F5F5F0]">
+      <header className="page-header-back">
+        <button className="back-btn" onClick={() => navigate(-1)}>
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <h1 className="page-title text-center flex-1">нове smm завдання</h1>
+        <div className="w-10" />
+      </header>
+      
+      <div className="page-content pt-8 space-y-6">
+        <div className="space-y-4">
+          <div className="form-field">
+            <Label className="text-sm text-secondary">що треба зробити?</Label>
+            <Input 
+              placeholder="назва завдання" 
+              value={newTask.title} 
+              onChange={(e) => setNewTask({ ...newTask, title: e.target.value })} 
+              className="form-input text-lg"
+              autoFocus
+            />
+          </div>
+          
+          <div className="form-field">
+            <Label className="text-sm text-secondary">іконка</Label>
+            <button 
+              type="button"
+              className="form-input w-full text-left flex items-center gap-3"
+              onClick={() => setShowIconPicker(true)}
+            >
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${newTask.is_emerald ? 'bg-emerald-600' : 'bg-[#1A1717]'}`}>
+                <SelectedIcon className="w-4 h-4 text-[#F5F5F0]" />
+              </div>
+              <span className="text-secondary">змінити іконку</span>
+            </button>
+          </div>
+          
+          <div className="form-field">
+            <Label className="text-sm text-secondary">колір</Label>
+            <div className="flex gap-3">
+              <button 
+                type="button"
+                className={`flex-1 h-12 rounded-lg border-2 flex items-center justify-center gap-2 transition-all ${!newTask.is_emerald ? 'border-[#1A1717] bg-[#1A1717]/5' : 'border-gray-200'}`}
+                onClick={() => setNewTask({ ...newTask, is_emerald: false })}
+              >
+                <div className="w-5 h-5 rounded-full bg-[#1A1717]"></div>
+                <span className={!newTask.is_emerald ? 'font-medium' : 'text-secondary'}>стандарт</span>
+              </button>
+              <button 
+                type="button"
+                className={`flex-1 h-12 rounded-lg border-2 flex items-center justify-center gap-2 transition-all ${newTask.is_emerald ? 'border-emerald-600 bg-emerald-50' : 'border-gray-200'}`}
+                onClick={() => setNewTask({ ...newTask, is_emerald: true })}
+              >
+                <div className="w-5 h-5 rounded-full bg-emerald-600"></div>
+                <span className={newTask.is_emerald ? 'font-medium text-emerald-700' : 'text-secondary'}>кася</span>
+              </button>
+            </div>
+          </div>
+          
+          <div className="form-field">
+            <Label className="text-sm text-secondary">дата</Label>
+            <button 
+              type="button"
+              className="form-input w-full text-left flex items-center justify-between"
+              onClick={() => setShowCalendar(true)}
+            >
+              <span>{formatDateUkrainian(newTask.date)}</span>
+              <CalendarIcon className="w-5 h-5 text-secondary" />
+            </button>
+          </div>
+        </div>
+        
+        <button 
+          className={`w-full h-14 text-lg rounded-full font-medium transition-all flex items-center justify-center gap-2 ${newTask.is_emerald ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-[#1A1717] hover:bg-[#333333] text-[#F5F5F0]'}`}
+          onClick={handleCreateTask}
+          disabled={loading || !newTask.title.trim()}
+        >
+          {loading ? "додаю..." : "додати завдання"}
+        </button>
+      </div>
+      
+      <Dialog open={showCalendar} onOpenChange={setShowCalendar}>
+        <DialogContent className="dialog-content">
+          <Calendar 
+            mode="single" 
+            locale={uk} 
+            weekStartsOn={1} 
+            selected={new Date(newTask.date)} 
+            onSelect={(d) => { 
+              if (d) setNewTask({ ...newTask, date: formatDateLocal(d) }); 
+              setShowCalendar(false); 
+            }} 
+            className="w-full" 
+          />
+        </DialogContent>
+      </Dialog>
+      
+      <Dialog open={showIconPicker} onOpenChange={setShowIconPicker}>
+        <DialogContent className="dialog-content">
+          <DialogHeader><DialogTitle>обери іконку</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-5 gap-2 pt-4">
+            {SMM_TASK_ICONS.map(({ value, Icon }) => (
+              <button
+                key={value}
+                className={`icon-selector-btn ${newTask.icon === value ? 'selected' : ''}`}
+                onClick={() => { setNewTask({ ...newTask, icon: value }); setShowIconPicker(false); }}
+              >
+                <Icon className="w-5 h-5" />
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+// Events Page
+const EventsPage = () => {
+  const { events, settings, refreshEvents } = useApp();
+  const navigate = useNavigate();
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [showArchive, setShowArchive] = useState(false);
+  
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const eventDates = new Set(events.filter(e => !e.cancelled && !e.archived).map(e => e.date.split('T')[0]));
+  const allEvents = [...events].filter(e => !e.cancelled && !e.archived && new Date(e.date) >= today).sort((a, b) => new Date(a.date) - new Date(b.date));
+  
+  // Archive: cancelled events + past events + archived events
+  const archivedEvents = events.filter(e => {
+    const eventDate = new Date(e.date);
+    eventDate.setHours(0, 0, 0, 0);
+    return e.cancelled || e.archived || eventDate < today;
+  }).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const handleDateSelect = (date) => {
+    if (date) {
+      const dateStr = formatDateLocal(date);
+      const element = document.querySelector(`[data-event-date="${dateStr}"]`);
+      if (element) { element.scrollIntoView({ behavior: 'smooth', block: 'center' }); element.classList.add('event-highlight'); setTimeout(() => element.classList.remove('event-highlight'), 2000); }
+    }
+  };
+
+  const handleEventClick = (event) => { setSelectedEvent(event); setShowEventDialog(true); };
+  const handleDeleteEvent = async () => { try { await api.deleteEvent(selectedEvent.id); toast.success("видалено!"); refreshEvents(); setShowEventDialog(false); setDeleteDialogOpen(false); } catch { toast.error("помилка"); } };
+  const handleToggleTaskInDialog = async (reminderId, completed) => {
+    try { await api.completeTask({ event_id: selectedEvent.id, reminder_id: reminderId, completed }); refreshEvents(); const r = await axios.get(`${API}/events/${selectedEvent.id}`); setSelectedEvent(r.data); }
+    catch { toast.error("помилка"); }
+  };
+  
+  const handleRestoreEvent = async (eventId) => {
+    try { 
+      await axios.patch(`${API}/events/${eventId}`, { cancelled: false }); 
+      toast.success("подію відновлено"); 
+      refreshEvents();
+    } catch { toast.error("помилка"); }
+  };
+
+  return (
+    <div className="animate-fade-in">
+      <header className="page-header">
+        <h1 className="logo">події</h1>
+      </header>
+      
+      <div className="page-content pt-4">
+        <div className="calendar-container mb-6">
+          <Calendar mode="single" locale={uk} weekStartsOn={1} onSelect={handleDateSelect} month={currentMonth} onMonthChange={setCurrentMonth} className="w-full calendar-minimal"
+            modifiersClassNames={{ today: "calendar-today-hidden" }}
+            components={{ DayContent: ({ date }) => {
+              const dateStr = formatDateLocal(date);
+              return <div className="calendar-day-content"><span>{date.getDate()}</span>{eventDates.has(dateStr) && <span className="event-dot" />}</div>;
+            }}}
+          />
+        </div>
+        
+        <section>
+          <div className="section-header mb-3"><span className="section-title">всі події</span></div>
+          {allEvents.length > 0 ? (
+            <div className="space-y-3">{allEvents.map(event => (
+              <div key={event.id} className="event-card flex items-center gap-4" onClick={() => navigate(`/event/${event.id}/view`)} data-event-date={event.date.split('T')[0]}>
+                <div className="date-badge"><span className="text-xs">{UK_MONTHS_SHORT[new Date(event.date).getMonth()]}</span><span className="text-lg font-bold">{new Date(event.date).getDate()}</span></div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold truncate">{event.title}</h3>
+                  <p className="text-sm text-secondary">{event.spots} місць • {event.price} ₴</p>
+                </div>
+                {event.altegio_booked_count !== undefined && event.altegio_booked_count !== null && (
+                  <div className="text-right">
+                    <span className={`text-lg font-bold ${getBookingColorClass(getBookingStatusColor(event))}`}>
+                      {event.altegio_booked_count}
+                    </span>
+                    <span className="text-sm text-secondary">/{event.spots}</span>
+                  </div>
+                )}
+              </div>
+            ))}</div>
+          ) : <div className="text-center py-12"><p className="text-secondary text-sm">поки подій немає</p><button className="btn-dark mt-4" onClick={() => navigate("/event/new")}><Plus className="w-4 h-4 mr-2" />створити</button></div>}
+        </section>
+        
+        <button className="archive-btn" onClick={() => setShowArchive(true)}><Archive className="w-4 h-4 inline mr-2" />архів подій</button>
+      </div>
+      
+      <button className="fab" onClick={() => navigate("/event/new")}><Plus className="w-6 h-6" /></button>
+      
+      <Dialog open={showArchive} onOpenChange={setShowArchive}>
+        <DialogContent className="dialog-content"><DialogHeader><DialogTitle>архів подій</DialogTitle></DialogHeader>
+          {archivedEvents.length > 0 ? <div className="space-y-3">{archivedEvents.map(event => (
+            <div key={event.id} className="event-card flex items-center gap-4">
+              <div className="date-badge"><span className="text-xs">{UK_MONTHS_SHORT[new Date(event.date).getMonth()]}</span><span className="text-lg font-bold">{new Date(event.date).getDate()}</span></div>
+              <div className="flex-1 min-w-0"><h3 className="font-semibold truncate">{event.title}</h3><p className="text-sm text-secondary">{event.price} ₴</p></div>
+              {event.cancelled ? (
+                <button className="restore-btn cancelled" onClick={() => handleRestoreEvent(event.id)} title="відновити">
+                  <X className="w-4 h-4" />
+                </button>
+              ) : (
+                <span className="text-xs text-secondary">минула</span>
+              )}
+            </div>
+          ))}</div> : <p className="text-center text-secondary py-8 text-sm">порожньо</p>}
+        </DialogContent>
+      </Dialog>
+      
+      <BottomNav />
+    </div>
+  );
+};
+
+// SMM Page
+const SMMPage = () => {
+  const { events, smmTasksDefinition, refreshEvents, standaloneTasks, refreshStandaloneTasks } = useApp();
+  const navigate = useNavigate();
+  const [overdueExpanded, setOverdueExpanded] = useState(false);
+  const [soonExpanded, setSoonExpanded] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
+  
+  const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
+  const todayStr = formatDateLocal(today);
+  const weekFromNow = new Date(today); weekFromNow.setDate(weekFromNow.getDate() + 7);
+  const weekFromNowStr = formatDateLocal(weekFromNow);
+  
+  const smmTasksMap = useMemo(() => { const map = {}; smmTasksDefinition.forEach(t => { map[t.id] = t; }); return map; }, [smmTasksDefinition]);
+  
+  // Collect completed SMM tasks from events
+  const completedSMMTasks = useMemo(() => {
+    const completed = [];
+    events.forEach(event => {
+      Object.entries(event.completed_smm_tasks || {}).forEach(([taskId, isCompleted]) => {
+        if (isCompleted) {
+          const taskInfo = smmTasksMap[taskId];
+          if (taskInfo) {
+            completed.push({
+              event_id: event.id,
+              event_title: event.title,
+              task_id: taskId,
+              task_name: taskInfo.name,
+              icon: SMM_ICONS[taskId] || "instagram"
+            });
+          }
+        }
+      });
+    });
+    return completed;
+  }, [events, smmTasksMap]);
+  
+  const getAllSMMTasks = useCallback(() => {
+    const overdueTasks = [], todayTasks = [], soonTasks = [];
+    events.forEach(event => {
+      if (event.cancelled) return;
+      const eventDate = new Date(event.date); eventDate.setHours(0, 0, 0, 0);
+      if (eventDate < today) return;
+      
+      Object.entries(event.smm_tasks || {}).forEach(([taskId, taskDateStr]) => {
+        const taskInfo = smmTasksMap[taskId]; if (!taskInfo) return;
+        const taskDate = new Date(taskDateStr); taskDate.setHours(0, 0, 0, 0);
+        const ov1 = (event.task_overrides || {})[taskId] || {};
+        const taskColor = ov1.color || taskInfo.color || "standard";
+        const task = { event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov1.title || taskInfo.name, task_date: taskDateStr, completed: !!(event.completed_smm_tasks || {})[taskId], color: taskColor, icon: ov1.icon || taskInfo.icon, assignee: ov1.assignee };
+        
+        if (taskDateStr === todayStr) todayTasks.push(task);
+        else if (taskDate < today && !task.completed) overdueTasks.push(task);
+        else if (taskDate > today && taskDateStr <= weekFromNowStr) soonTasks.push(task);
+      });
+    });
+    soonTasks.sort((a, b) => new Date(a.task_date) - new Date(b.task_date));
+    overdueTasks.sort((a, b) => new Date(a.task_date) - new Date(b.task_date));
+    return { overdue: overdueTasks, today: todayTasks, soon: soonTasks };
+  }, [events, smmTasksMap, todayStr, weekFromNowStr, today]);
+  
+  const allTasks = getAllSMMTasks();
+  
+  // Split into Kasya (emerald) and regular (standard) blocks
+  const tasksKasya = useMemo(() => ({
+    overdue: allTasks.overdue.filter(t => t.color === "emerald"),
+    today: allTasks.today.filter(t => t.color === "emerald"),
+    soon: allTasks.soon.filter(t => t.color === "emerald"),
+  }), [allTasks]);
+  
+  const tasks = useMemo(() => ({
+    overdue: allTasks.overdue.filter(t => t.color !== "emerald"),
+    today: allTasks.today.filter(t => t.color !== "emerald"),
+    soon: allTasks.soon.filter(t => t.color !== "emerald"),
+  }), [allTasks]);
+  const handleToggleSMMTask = async (eventId, taskId, completed) => { try { await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed }); refreshEvents(); } catch { toast.error("помилка"); } };
+  const handleEventClick = (eventId) => { navigate(`/event/${eventId}`); };
+  
+  const handleRestoreSMMTask = async (item) => {
+    try {
+      await api.completeSMMTask({ event_id: item.event_id, task_id: item.task_id, completed: false });
+      refreshEvents();
+      toast.success("відновлено");
+    } catch { toast.error("помилка"); }
+  };
+
+  return (
+    <div className="animate-fade-in">
+      <header className="page-header">
+        <h1 className="logo">smm</h1>
+      </header>
+      
+      <div className="page-content space-y-4 pt-4">
+        {/* SMM Kasya Block (Emerald tasks) */}
+        <div className="pb-4">
+          <h2 className="text-sm font-semibold tracking-wide text-emerald-600 mb-3 px-1">SMM</h2>
+          
+          {tasksKasya.overdue.length > 0 && (
+            <section className="mobile-section mb-3">
+              <button className="mobile-section-header overdue w-full text-left" onClick={() => setOverdueExpanded(!overdueExpanded)}>
+                <span>протерміновано</span>
+                <span className="mobile-section-count">({tasksKasya.overdue.length})</span>
+                <ChevronDown className={`w-5 h-5 ml-auto transition-transform ${overdueExpanded ? "rotate-180" : ""}`} style={{ color: "#DC2626" }} />
+              </button>
+              {overdueExpanded && <div className="animate-fade-in pt-4 space-y-3">{tasksKasya.overdue.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} showDate />)}</div>}
+            </section>
+          )}
+          
+          <section className="mobile-section mb-3">
+            <div className="mobile-section-header">
+              <span>сьогодні</span>
+              <span className="mobile-section-count">({tasksKasya.today.length})</span>
+            </div>
+            {tasksKasya.today.length > 0 ? <div className="pt-4 space-y-3">{tasksKasya.today.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} />)}</div>
+              : <p className="text-secondary py-4 text-center text-sm">все зроблено! 🎉</p>}
+          </section>
+          
+          {tasksKasya.soon.length > 0 && (
+            <section className="mobile-section">
+              <button className="mobile-section-header w-full text-left" onClick={() => setSoonExpanded(!soonExpanded)}>
+                <span>незабаром</span>
+                <span className="mobile-section-count">({tasksKasya.soon.length})</span>
+                <ChevronDown className={`w-5 h-5 ml-auto transition-transform text-secondary ${soonExpanded ? "rotate-180" : ""}`} />
+              </button>
+              {soonExpanded && <div className="animate-fade-in pt-4 space-y-3">{tasksKasya.soon.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} showDate />)}</div>}
+            </section>
+          )}
+        </div>
+        
+        {/* Divider */}
+        <div className="border-t-2 border-gray-300 my-5"></div>
+        
+        {/* SMM Block (Standard tasks) */}
+        <div className="pt-1">
+          <h2 className="text-sm font-semibold tracking-wide text-secondary mb-3 px-1">SMM</h2>
+          
+          {tasks.overdue.length > 0 && (
+            <section className="mobile-section mb-3">
+              <button className="mobile-section-header overdue w-full text-left" onClick={() => setOverdueExpanded(!overdueExpanded)}>
+                <span>протерміновано</span>
+                <span className="mobile-section-count">({tasks.overdue.length})</span>
+                <ChevronDown className={`w-5 h-5 ml-auto transition-transform ${overdueExpanded ? "rotate-180" : ""}`} style={{ color: "#DC2626" }} />
+              </button>
+              {overdueExpanded && <div className="animate-fade-in pt-4 space-y-3">{tasks.overdue.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} showDate />)}</div>}
+            </section>
+          )}
+          
+          <section className="mobile-section mb-3">
+            <div className="mobile-section-header">
+              <span>сьогодні</span>
+              <span className="mobile-section-count">({tasks.today.length})</span>
+            </div>
+            {tasks.today.length > 0 ? <div className="pt-4 space-y-3">{tasks.today.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} />)}</div>
+              : <p className="text-secondary py-4 text-center text-sm">все зроблено! 🎉</p>}
+          </section>
+          
+          {tasks.soon.length > 0 && (
+            <section className="mobile-section">
+              <button className="mobile-section-header w-full text-left" onClick={() => setSoonExpanded(!soonExpanded)}>
+                <span>незабаром</span>
+                <span className="mobile-section-count">({tasks.soon.length})</span>
+                <ChevronDown className={`w-5 h-5 ml-auto transition-transform text-secondary ${soonExpanded ? "rotate-180" : ""}`} />
+              </button>
+              {soonExpanded && <div className="animate-fade-in pt-4 space-y-3">{tasks.soon.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} showDate />)}</div>}
+            </section>
+          )}
+        </div>
+        
+        {allTasks.overdue.length === 0 && allTasks.today.length === 0 && allTasks.soon.length === 0 && <div className="text-center py-12"><p className="text-secondary text-sm">поки SMM завдань немає</p></div>}
+        
+        <button className="archive-btn" onClick={() => setShowArchive(true)}><Archive className="w-4 h-4 inline mr-2" />архів smm</button>
+      </div>
+      
+      <button className="fab" onClick={() => navigate('/smm/task/new')}><Plus className="w-6 h-6" /></button>
+      
+      <Dialog open={showArchive} onOpenChange={setShowArchive}>
+        <DialogContent className="dialog-content max-h-[80vh] overflow-y-auto"><DialogHeader><DialogTitle>архів smm</DialogTitle></DialogHeader>
+          {completedSMMTasks.length > 0 ? <div className="space-y-1">{completedSMMTasks.map((item, idx) => {
+            const IconComponent = getIconComponent(item.icon || "instagram");
+            return (
+              <div key={idx} className="task-item">
+                <div className="task-icon"><IconComponent /></div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-base font-medium">{item.task_name}</p>
+                  <p className="text-sm text-secondary">{item.event_title}</p>
+                </div>
+                <button className="restore-btn" onClick={() => handleRestoreSMMTask(item)} title="відновити">
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+              </div>
+            );
+          })}</div> : <p className="text-center text-secondary py-8 text-sm">порожньо</p>}
+        </DialogContent>
+      </Dialog>
+      
+      <BottomNav />
+    </div>
+  );
+};
+
+// Event Detail Page (Mobile) - Full screen view of event details
+const EventDetailPage = () => {
+  const navigate = useNavigate();
+  const { events, settings, refreshEvents, smmTasksDefinition, allTaskDefs } = useApp();
+  const location = useLocation();
+  const pathParts = location.pathname.split("/");
+  const eventId = pathParts[pathParts.length - 2]; // /event/{id}/view
+  const [event, setEvent] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  
+  useEffect(() => { loadEvent(); }, [eventId]);
+  
+  const loadEvent = async () => {
+    try {
+      const r = await axios.get(`${API}/events/${eventId}`);
+      setEvent(r.data);
+    } catch {
+      toast.error("помилка");
+      navigate(-1);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleToggleTask = async (reminderId, completed) => {
+    try {
+      await api.completeTask({ event_id: eventId, reminder_id: reminderId, completed });
+      refreshEvents();
+      loadEvent();
+    } catch { toast.error("помилка"); }
+  };
+
+  const handleToggleSMMTask = async (taskId, completed) => {
+    try {
+      await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed });
+      refreshEvents();
+      loadEvent();
+    } catch { toast.error("помилка"); }
+  };
+  
+  const handleCancel = async () => {
+    try {
+      await axios.patch(`${API}/events/${eventId}`, { cancelled: true });
+      toast.success("скасовано"); refreshEvents(); navigate(-1);
+    } catch { toast.error("помилка"); }
+  };
+  
+  const handleRestore = async () => {
+    try {
+      await axios.patch(`${API}/events/${eventId}`, { cancelled: false });
+      toast.success("відновлено"); refreshEvents(); loadEvent();
+    } catch { toast.error("помилка"); }
+  };
+  
+  const handleDelete = async () => {
+    try {
+      await api.deleteEvent(eventId);
+      toast.success("видалено!"); refreshEvents(); navigate(-1);
+    } catch { toast.error("помилка"); }
+  };
+  
+  const handleSyncAltegio = async () => {
+    setSyncing(true);
+    try { await api.syncEventFromAltegio(eventId); toast.success("синхронізовано"); loadEvent(); refreshEvents(); }
+    catch { toast.error("помилка синхронізації"); }
+    finally { setSyncing(false); }
+  };
+  
+  const handleExportCalendar = async () => {
+    setExporting(true);
+    try { await api.exportEventToCalendar(eventId); toast.success("додано до календаря"); loadEvent(); }
+    catch { toast.error("помилка експорту"); }
+    finally { setExporting(false); }
+  };
+  
+  // ESC to go back
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') navigate(-1); };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [navigate]);
+  
+  if (loading) return <div className="animate-fade-in p-4"><p className="text-secondary text-center py-12">завантажую...</p></div>;
+  if (!event) return null;
+  
+  const bookingColor = getBookingStatusColor(event);
+  const colorClass = getBookingColorClass(bookingColor);
+
+  // Build task lists for 3 columns from this event
+  const smmMap = {};
+  smmTasksDefinition.forEach(t => { smmMap[t.id] = t; });
+  
+  const mgmtDefs = allTaskDefs.management || [];
+  const smmDefs = allTaskDefs.smm || [];
+  const mktgDefs = allTaskDefs.marketing || [];
+
+  const managementTasks = (settings?.reminder_types || []).map(rt => {
+    const date = event.reminders?.[rt.id];
+    if (!date) return null;
+    return { id: rt.id, name: rt.name, date, icon: rt.icon, completed: !!event.completed_tasks?.[rt.id], type: 'management' };
+  }).filter(Boolean).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  const smmTasks = smmDefs.map(td => {
+    const date = event.smm_tasks?.[td.id];
+    if (!date) return null;
+    return { id: td.id, name: td.name, date, icon: SMM_ICONS[td.id] || 'circle', completed: !!event.completed_smm_tasks?.[td.id], type: 'smm', is_announcement: td.is_announcement, is_teamwork: td.is_teamwork };
+  }).filter(Boolean).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  const marketingTasks = mktgDefs.map(td => {
+    const date = event.marketing_tasks?.[td.id];
+    if (!date) return null;
+    return { id: td.id, name: td.name, date, icon: td.icon || 'circle', completed: !!event.completed_marketing_tasks?.[td.id], type: 'marketing' };
+  }).filter(Boolean).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  const TaskColumn = ({ title, tasks, colorCls, onToggle }) => (
+    <div className="desktop-column">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+        <span className="text-sm font-semibold tracking-wide">{title}</span>
+        <span className="text-xs text-secondary">{tasks.filter(t => t.completed).length}/{tasks.length}</span>
+      </div>
+      <div className="column-content">
+        {tasks.length > 0 ? tasks.map(task => {
+          const IconComponent = getIconComponent(task.icon);
+          return (
+            <div key={task.id} className={`task-item cursor-pointer ${task.completed ? 'opacity-40' : ''}`} onClick={() => onToggle(task.id, !task.completed)} data-testid={`detail-task-${task.id}`}>
+              <div className={`task-icon ${colorCls}`}><IconComponent /></div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{task.name}</p>
+                <p className="text-xs text-secondary">{formatDateUkrainian(task.date)}</p>
+              </div>
+              <button className={`task-checkbox ${task.completed ? "checked" : ""}`} onClick={(e) => { e.stopPropagation(); onToggle(task.id, !task.completed); }}>
+                <Check className="w-4 h-4" />
+              </button>
+            </div>
+          );
+        }) : <p className="text-secondary text-center py-6 text-sm">немає завдань</p>}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="desktop-dashboard" data-testid="event-detail-page">
+      <header className="desktop-header">
+        <div className="desktop-header-left">
+          <span className="text-xl font-semibold">{event.title}</span>
+          {event.cancelled && <span className="text-red-500 text-xs font-medium ml-2">скасовано</span>}
+        </div>
+        <div className="desktop-header-right">
+          <button className="desktop-header-btn" onClick={() => navigate(`/event/${eventId}`)} title="редагувати"><Edit className="w-4 h-4" /></button>
+          {!event.cancelled ? (
+            <button className="desktop-header-btn text-orange-500" onClick={handleCancel} title="скасувати"><X className="w-5 h-5" /></button>
+          ) : (
+            <button className="desktop-header-btn text-green-500" onClick={handleRestore} title="відновити"><RotateCcw className="w-4 h-4" /></button>
+          )}
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate(-1)} style={{marginRight: '-24px', paddingRight: '24px'}} data-testid="event-detail-close-area">
+            <div className="desktop-header-btn"><ChevronLeft className="w-5 h-5" /></div>
+          </div>
+        </div>
+      </header>
+
+      <div className="desktop-columns-4">
+        {/* Column 1: Event info */}
+        <div className="desktop-column">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <span className="text-sm font-semibold tracking-wide">ПОДІЯ</span>
+          </div>
+          <div className="column-content space-y-4 p-4">
+            <div>
+              <p className="text-sm text-secondary">{formatDateUkrainian(event.date)}</p>
+              {event.start_time && <p className="text-sm text-secondary mt-1">{event.start_time}{event.end_time ? ` — ${event.end_time}` : ''}</p>}
+            </div>
+            {event.description && <p className="text-sm">{event.description}</p>}
+            <div className="space-y-2">
+              <div className="flex justify-between"><span className="text-sm text-secondary">ціна</span><span className="font-semibold">{event.price} ₴</span></div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-secondary">місць</span>
+                {(event.altegio_booked_count !== null && event.altegio_booked_count !== undefined) ? (
+                  <span className={`font-bold text-lg ${colorClass}`}>{event.altegio_booked_count}/{event.spots || 10}</span>
+                ) : (
+                  <span className="font-semibold">{event.spots || 10}</span>
+                )}
+              </div>
+            </div>
+            <div className="space-y-2 pt-2 border-t border-gray-100">
+              <p className="text-xs text-secondary">синхронізація</p>
+              <div className="flex gap-2">
+                <button className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-xs hover:bg-gray-50" onClick={handleExportCalendar} disabled={exporting}>
+                  <ExternalLink className="w-3.5 h-3.5" />{exporting ? "..." : "Calendar"}
+                </button>
+                <button className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-xs hover:bg-gray-50" onClick={handleSyncAltegio} disabled={syncing}>
+                  <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />{syncing ? "..." : "Altegio"}
+                </button>
+              </div>
+              {event.altegio_last_sync && <p className="text-[10px] text-secondary text-center">оновлено: {new Date(event.altegio_last_sync).toLocaleString('uk-UA')}</p>}
+            </div>
+          </div>
+        </div>
+
+        {/* Column 2: МЕНЕДЖМЕНТ */}
+        <TaskColumn title="МЕНЕДЖМЕНТ" tasks={managementTasks} colorCls="" onToggle={handleToggleTask} />
+
+        {/* Column 3: SMM */}
+        <TaskColumn title="SMM" tasks={smmTasks} colorCls="emerald" onToggle={handleToggleSMMTask} />
+
+        {/* Column 4: МАРКЕТИНГ */}
+        <TaskColumn title="МАРКЕТИНГ" tasks={marketingTasks} colorCls="orange" onToggle={(id, completed) => {
+          // Marketing tasks use smm completion endpoint with marketing prefix
+          handleToggleSMMTask(id, completed);
+        }} />
+      </div>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent className="dialog-content"><AlertDialogHeader><AlertDialogTitle>видалити?</AlertDialogTitle></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>скасувати</AlertDialogCancel><AlertDialogAction onClick={handleDelete} className="bg-destructive">видалити</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+};
+
+// Event Form with AI Parsing
+const EventForm = () => {
+  const navigate = useNavigate();
+  const { refreshEvents, settings, events: allEvents } = useApp();
+  const location = useLocation();
+  const isNew = location.pathname === "/event/new";
+  const eventId = !isNew ? location.pathname.split("/").pop() : null;
+  
+  // AI parsing state
+  const [aiInput, setAiInput] = useState("");
+  const [aiParsing, setAiParsing] = useState(false);
+  const [parsedEvents, setParsedEvents] = useState([{ title: "", date: formatDateLocal(new Date()), price: 0, spots: 10, description: "", start_time: "12:00", end_time: "14:30", event_type: "new", repeat_days: [0] }]);
+  const [clarificationMessage, setClarificationMessage] = useState("");
+  const [showParsedResults, setShowParsedResults] = useState(false);
+  const [showAiInput, setShowAiInput] = useState(false);
+  
+  // Manual form state (for editing)
+  const [formData, setFormData] = useState({ title: "", date: "", price: "", description: "", spots: "10", start_time: "", end_time: "", event_type: "new", repeat_days: [0] });
+  const [loading, setLoading] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [showPastEvents, setShowPastEvents] = useState(false);
+  const [pastEvents, setPastEvents] = useState([]);
+  
+  // Get recent prices from existing events (ordered by creation date, newest first)
+  const recentPrices = useMemo(() => {
+    if (!allEvents || allEvents.length === 0) return [];
+    const sorted = [...allEvents].sort((a, b) => new Date(b.created_at || b.date) - new Date(a.created_at || a.date));
+    const seen = new Set();
+    return sorted.map(e => e.price).filter(p => p && p > 0 && !seen.has(p) && seen.add(p));
+  }, [allEvents]);
+
+  // Close all dropdowns for a given event index
+  const closeAllDropdowns = (index, except) => {
+    const fields = ['_showPriceDropdown', '_showSpotsDropdown', '_showStartDropdown', '_showEndDropdown', '_showCalendar', '_showTitleDropdown'];
+    fields.forEach(f => { if (f !== except) updateParsedEvent(index, f, false); });
+  };
+  
+  // Auto-calculate end_time when start_time changes
+  const handleStartTimeChange = (time, updateFn) => {
+    if (time) {
+      const [hours, minutes] = time.split(":").map(Number);
+      const endHours = (hours + 3) % 24;
+      const end_time = `${String(endHours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+      updateFn({ start_time: time, end_time });
+    } else {
+      updateFn({ start_time: time });
+    }
+  };
+  
+  // ESC to close
+  useEffect(() => {
+    const handleKey = (e) => { if (e.key === 'Escape' && isNew) navigate("/"); };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isNew, navigate]);
+  
+  // Price focus handler — clear default "0"
+  const handlePriceFocus = (e) => { if (e.target.value === "0" || e.target.value === 0) e.target.value = ""; };
+  
+  useEffect(() => { if (eventId) loadEvent(); }, [eventId]);
+  
+  const loadEvent = async () => {
+    try { const r = await axios.get(`${API}/events/${eventId}`); const e = r.data;
+      setFormData({ 
+        title: e.title, 
+        date: e.date.split("T")[0], 
+        price: e.price.toString(), 
+        description: e.description, 
+        spots: (e.spots || 10).toString(),
+        start_time: e.start_time || "",
+        end_time: e.end_time || ""
+      });
+      setSelectedDate(new Date(e.date));
+    } catch { toast.error("помилка"); navigate("/"); }
+  };
+  
+  // AI parsing function
+  const handleAiParse = async () => {
+    if (!aiInput.trim()) return;
+    setAiParsing(true);
+    setClarificationMessage("");
+    try {
+      const response = await api.parseEvents(aiInput);
+      const data = response.data;
+      
+      if (data.clarification_needed) {
+        setClarificationMessage(data.clarification_message);
+      }
+      
+      setParsedEvents(data.events || []);
+      setShowParsedResults(true);
+    } catch (e) {
+      toast.error("не вдалося розпізнати. спробуй ще раз");
+      console.error(e);
+    } finally {
+      setAiParsing(false);
+    }
+  };
+  
+  // Confirm and create parsed event
+  const handleConfirmEvent = async (event, index) => {
+    try {
+      const data = {
+        title: event.title,
+        date: event.date,
+        price: parseFloat(event.price) || 0,
+        spots: parseInt(event.spots) || 10,
+        description: event.description || "",
+        start_time: event.start_time || "",
+        end_time: event.end_time || ""
+      };
+      await api.createEvent(data);
+      toast.success(`"${event.title}" створено!`);
+      
+      // Remove from list
+      setParsedEvents(prev => prev.filter((_, i) => i !== index));
+      await refreshEvents();
+      
+      // If no more events, go back
+      if (parsedEvents.length <= 1) {
+        navigate("/");
+      }
+    } catch {
+      toast.error("помилка створення");
+    }
+  };
+  
+  // Update parsed event field
+  const updateParsedEvent = (index, field, value) => {
+    setParsedEvents(prev => prev.map((ev, i) => {
+      if (i !== index) return ev;
+      // Auto-calculate end_time when start_time changes
+      if (field === "start_time" && value) {
+        const [hours, minutes] = value.split(":").map(Number);
+        const endHours = (hours + 3) % 24;
+        const end_time = `${String(endHours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+        return { ...ev, start_time: value, end_time };
+      }
+      return { ...ev, [field]: value };
+    }));
+  };
+  
+  // Manual submit (for editing)
+  const handleSubmit = async (e) => {
+    e.preventDefault(); setLoading(true);
+    try {
+      const data = { ...formData, price: parseFloat(formData.price), spots: parseInt(formData.spots) || 10, event_type: formData.event_type || "new", repeat_days: formData.repeat_days || [] };
+      if (isNew) { await api.createEvent(data); toast.success("створено! 🎉"); }
+      else { await api.updateEvent(eventId, data); toast.success("збережено!"); }
+      await refreshEvents(); navigate("/");
+    } catch { toast.error("помилка"); } finally { setLoading(false); }
+  };
+
+  // For editing existing event - show manual form
+  if (!isNew) {
+    return (
+      <div className="animate-fade-in">
+        <header className="page-header flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="rounded-full"><ChevronLeft className="w-5 h-5" /></Button>
+          <h1 className="text-xl font-bold">редагувати</h1>
+        </header>
+        
+        <form onSubmit={handleSubmit} className="page-content pt-4 space-y-6">
+          <div className="form-field"><Label>назва</Label><Input placeholder="як назвемо?" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} required className="form-input" /></div>
+          <div className="form-field"><Label>дата</Label><Button type="button" variant="outline" className="form-input justify-start" onClick={() => setShowCalendar(true)}>{formData.date ? `${new Date(formData.date).getDate()} ${UK_MONTHS_NOMINATIVE[new Date(formData.date).getMonth()]}` : "обери дату"}</Button></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-field">
+              <Label>початок</Label>
+              <Input 
+                type="time" 
+                value={formData.start_time} 
+                onChange={(e) => handleStartTimeChange(e.target.value, (updates) => setFormData({ ...formData, ...updates }))} 
+                className="form-input" 
+              />
+            </div>
+            <div className="form-field">
+              <Label>кінець</Label>
+              <Input 
+                type="time" 
+                value={formData.end_time} 
+                onChange={(e) => setFormData({ ...formData, end_time: e.target.value })} 
+                className="form-input" 
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-field"><Label>ціна (₴)</Label><Input type="number" placeholder="0" value={formData.price} onFocus={(e) => { if (e.target.value === "0") setFormData({ ...formData, price: "" }); }} onChange={(e) => setFormData({ ...formData, price: e.target.value })} required className="form-input" /></div>
+            <div className="form-field"><Label>місць</Label><Input type="number" placeholder="10" value={formData.spots} onChange={(e) => setFormData({ ...formData, spots: e.target.value })} className="form-input" /></div>
+          </div>
+          <div className="form-field"><Label>опис</Label><Textarea placeholder="що буде цікавого?" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="form-input min-h-24 resize-none py-3" /></div>
+          <button type="submit" className="btn-dark w-full" disabled={loading}>{loading ? "зберігаю..." : "зберегти"}</button>
+          <div className="h-12" />
+        </form>
+        
+        <Dialog open={showCalendar} onOpenChange={setShowCalendar}>
+          <DialogContent className="dialog-content">
+            <Calendar mode="single" locale={uk} weekStartsOn={1} selected={selectedDate} onSelect={(d) => { if (d) { setSelectedDate(d); setFormData({ ...formData, date: formatDateLocal(d) }); } setShowCalendar(false); }} className="w-full" />
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
+  // New event with AI parsing
+  return (
+    <div className="fixed inset-0 z-50 bg-[#F5F5F0]">
+      <div className="desktop-dashboard">
+        <header className="desktop-header" style={{position: 'relative'}}>
+          <div className="desktop-header-left">
+            <span className="text-xl font-semibold">нова подія</span>
+          </div>
+          <div className="desktop-header-right cursor-pointer" onClick={() => navigate("/")} data-testid="event-form-close" style={{marginRight: '-24px', paddingRight: '24px'}}>
+            <div className="desktop-header-btn relative">
+              <X className="w-5 h-5" />
+              <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 text-xs text-secondary flex items-center gap-1 whitespace-nowrap pointer-events-none font-normal">або <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px] font-mono border border-gray-200">ESC</kbd> щоб закрити</span>
+            </div>
+            <div className="desktop-header-btn opacity-0 pointer-events-none"><FileText className="w-5 h-5" /></div>
+            <div className="btn-dark opacity-0 pointer-events-none"><Plus className="w-4 h-4" /><span>подія</span></div>
+            <div className="desktop-header-btn opacity-0 pointer-events-none"><Settings className="w-5 h-5" /></div>
+          </div>
+        </header>
+        <div className="flex-1 overflow-auto p-8">
+        {showParsedResults || !showAiInput ? (
+          <div className="max-w-3xl mx-auto space-y-6">
+            {clarificationMessage && (
+              <div className="p-4 rounded-xl bg-yellow-100 text-yellow-800 mb-4">
+                <p className="font-medium">{clarificationMessage}</p>
+              </div>
+            )}
+            
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">
+                {parsedEvents.length > 1 ? `розпізнано ${parsedEvents.length} подій` : "нова подія"}
+              </h2>
+              <button className="flex items-center gap-1.5 text-sm text-secondary hover:text-primary transition-colors" onClick={() => setShowAiInput(true)} data-testid="switch-to-ai">
+                <Sparkles className="w-4 h-4" /> заповнити з ШІ
+              </button>
+            </div>
+            
+            {parsedEvents.map((event, index) => {
+              const TIME_OPTIONS = [];
+              for (let h = 8; h <= 23; h++) {
+                TIME_OPTIONS.push(`${String(h).padStart(2,'0')}:00`);
+                TIME_OPTIONS.push(`${String(h).padStart(2,'0')}:30`);
+              }
+              
+              return (
+              <div key={index} className="p-6 rounded-2xl bg-black/5 space-y-4" data-testid={`parsed-event-${index}`}>
+                <div className="flex-1 space-y-4">
+                  {/* Title + Type on same row */}
+                  <div className="flex gap-3 items-start">
+                    <div className="form-field flex-1">
+                      <div className="relative">
+                        <Input 
+                          value={event.title} 
+                          onChange={(e) => {
+                            updateParsedEvent(index, "title", e.target.value);
+                            updateParsedEvent(index, "_showTitleDropdown", true);
+                          }}
+                          onFocus={() => {
+                            closeAllDropdowns(index, '_showTitleDropdown');
+                            updateParsedEvent(index, "_showTitleDropdown", true);
+                          }}
+                          onBlur={() => setTimeout(() => updateParsedEvent(index, "_showTitleDropdown", false), 200)}
+                          className="form-input text-lg font-semibold"
+                          placeholder="назва події"
+                          autoComplete="off"
+                        />
+                        {event._showTitleDropdown && (() => {
+                          const q = (event.title || '').toLowerCase().trim();
+                          const recentTitles = allEvents
+                            .sort((a, b) => new Date(b.created_at || b.date) - new Date(a.created_at || a.date))
+                            .map(e => e.title)
+                            .filter((t, i, arr) => t && arr.indexOf(t) === i)
+                            .filter(t => !q || t.toLowerCase().includes(q));
+                          if (recentTitles.length === 0) return null;
+                          return (
+                            <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                              {recentTitles.map((t, i) => (
+                                <button key={i} className="w-full text-left px-3 py-2 text-sm hover:bg-black/5 transition-colors" onMouseDown={() => {
+                                  updateParsedEvent(index, "title", t);
+                                  updateParsedEvent(index, "_showTitleDropdown", false);
+                                }}>{t}</button>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                    <div className="form-field" style={{width: '170px', flexShrink: 0}}>
+                      <select 
+                        value={event.event_type || "new"} 
+                        onChange={(e) => updateParsedEvent(index, "event_type", e.target.value)}
+                        className="form-input w-full bg-[#E8E5DF] font-medium cursor-pointer text-sm"
+                        style={{paddingRight: '36px', backgroundPosition: 'right 14px center'}}
+                        data-testid={`event-type-select-${index}`}
+                      >
+                        <option value="new">подія</option>
+                        <option value="regular">регулярна</option>
+                      </select>
+                    </div>
+                  </div>
+                  
+                  {/* Regular → weekday selector horizontal */}
+                  {event.event_type === "regular" ? (
+                    <div className="form-field">
+                      <Label className="text-sm text-secondary">дні тижня</Label>
+                      <div className="flex gap-1.5 mt-1">
+                        {[{v:0,l:'пн'},{v:1,l:'вт'},{v:2,l:'ср'},{v:3,l:'чт'},{v:4,l:'пт'},{v:5,l:'сб'},{v:6,l:'нд'}].map(day => {
+                          const selected = (event.repeat_days || [0]).includes(day.v);
+                          return (
+                            <button key={day.v} 
+                              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${selected ? 'bg-[#1A1717] text-white' : 'bg-white hover:bg-black/5'}`}
+                              data-testid={`weekday-${day.v}`}
+                              onClick={() => {
+                                const days = event.repeat_days || [0];
+                                const newDays = selected ? days.filter(d => d !== day.v) : [...days, day.v];
+                                updateParsedEvent(index, "repeat_days", newDays.length ? newDays : [day.v]);
+                              }}>
+                              {day.l}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    /* Date + Price + Spots row */
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="form-field">
+                        <Label className="text-sm text-secondary">дата</Label>
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            closeAllDropdowns(index, '_showCalendar');
+                            updateParsedEvent(index, "_showCalendar", !event._showCalendar);
+                          }}
+                          className={`form-input w-full text-left cursor-pointer ${event._isRepeat && event.date < formatDateLocal(new Date()) ? 'text-red-500 border-red-300' : ''}`}
+                          data-testid={`date-picker-${index}`}
+                        >
+                          {event.date ? `${new Date(event.date).getDate()} ${UK_MONTHS_NOMINATIVE[new Date(event.date).getMonth()]}` : 'обери дату'}
+                        </button>
+                      </div>
+                      <div className="form-field relative">
+                        <Label className="text-sm text-secondary">ціна (₴)</Label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={event.price || ""} 
+                            onFocus={(e) => { 
+                              if (e.target.value === "0") updateParsedEvent(index, "price", "");
+                              closeAllDropdowns(index, '_showPriceDropdown');
+                              updateParsedEvent(index, "_showPriceDropdown", true);
+                            }}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/[^0-9]/g, '');
+                              updateParsedEvent(index, "price", val);
+                            }}
+                            onBlur={() => setTimeout(() => updateParsedEvent(index, "_showPriceDropdown", false), 200)}
+                            className="form-input w-full"
+                            placeholder="0"
+                            data-testid={`price-input-${index}`}
+                          />
+                          {event._showPriceDropdown && recentPrices.length > 0 && (
+                            <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-36 overflow-y-auto">
+                              {recentPrices.map(p => (
+                                <button key={p} className="w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 transition-colors" onMouseDown={() => {
+                                  updateParsedEvent(index, "price", String(p));
+                                  updateParsedEvent(index, "_showPriceDropdown", false);
+                                }}>{p} ₴</button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="form-field relative">
+                        <Label className="text-sm text-secondary">місць</Label>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => { closeAllDropdowns(index, '_showSpotsDropdown'); updateParsedEvent(index, "_showSpotsDropdown", !event._showSpotsDropdown); }}
+                            className="form-input w-full text-left cursor-pointer"
+                            data-testid={`spots-picker-${index}`}
+                          >
+                            {event.spots || 10}
+                          </button>
+                          {event._showSpotsDropdown && (
+                            <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                              {[8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 25, 30].map(s => (
+                                <button key={s} className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 transition-colors ${String(event.spots) === String(s) ? 'bg-black/5 font-medium' : ''}`} onClick={() => {
+                                  updateParsedEvent(index, "spots", String(s));
+                                  updateParsedEvent(index, "_showSpotsDropdown", false);
+                                }}>{s}</button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Calendar popup for date */}
+                  {event._showCalendar && (
+                    <div className="rounded-xl border bg-white p-2 shadow-lg">
+                      <Calendar 
+                        mode="single" locale={uk} weekStartsOn={1} 
+                        selected={event.date ? new Date(event.date) : undefined}
+                        onSelect={(d) => { 
+                          if (d) updateParsedEvent(index, "date", formatDateLocal(d));
+                          updateParsedEvent(index, "_showCalendar", false);
+                        }} 
+                        className="w-full calendar-minimal" 
+                        classNames={{ month: "space-y-0 w-full", row: "flex w-full", head_row: "flex w-full", table: "w-full border-collapse" }}
+                        modifiersClassNames={{ today: "calendar-today-visible" }}
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Time inputs with dropdown */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="form-field relative">
+                      <Label className="text-sm text-secondary">початок</Label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={event.start_time || "12:00"}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            updateParsedEvent(index, "start_time", val);
+                            if (/^\d{2}:\d{2}$/.test(val)) {
+                              const [h, m] = val.split(":").map(Number);
+                              const endH = (h + 3) % 24;
+                              updateParsedEvent(index, "end_time", `${String(endH).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
+                            }
+                          }}
+                          onClick={() => { closeAllDropdowns(index, '_showStartDropdown'); updateParsedEvent(index, "_showStartDropdown", !event._showStartDropdown); }}
+                          className="form-input w-full cursor-pointer"
+                          placeholder="12:00"
+                          data-testid={`start-time-${index}`}
+                        />
+                        {event._showStartDropdown && (
+                          <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                            {TIME_OPTIONS.map(t => (
+                              <button key={t} className="w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 transition-colors" onClick={() => {
+                                updateParsedEvent(index, "start_time", t);
+                                const [h, m] = t.split(":").map(Number);
+                                const endH = (h + 3) % 24;
+                                updateParsedEvent(index, "end_time", `${String(endH).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
+                                updateParsedEvent(index, "_showStartDropdown", false);
+                              }}>{t}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="form-field relative">
+                      <Label className="text-sm text-secondary">кінець</Label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={event.end_time || "14:30"}
+                          onChange={(e) => updateParsedEvent(index, "end_time", e.target.value)}
+                          onClick={() => { closeAllDropdowns(index, '_showEndDropdown'); updateParsedEvent(index, "_showEndDropdown", !event._showEndDropdown); }}
+                          className="form-input w-full cursor-pointer"
+                          placeholder="14:30"
+                          data-testid={`end-time-${index}`}
+                        />
+                        {event._showEndDropdown && (
+                          <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                            {TIME_OPTIONS.map(t => (
+                              <button key={t} className="w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 transition-colors" onClick={() => {
+                                updateParsedEvent(index, "end_time", t);
+                                updateParsedEvent(index, "_showEndDropdown", false);
+                              }}>{t}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                    
+                  <div className="form-field">
+                    <Label className="text-sm text-secondary">опис</Label>
+                    <Input 
+                      value={event.description || ""} 
+                      onChange={(e) => updateParsedEvent(index, "description", e.target.value)}
+                      className="form-input"
+                      placeholder="опис (необов'язково)"
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    className="btn-dark flex-1"
+                    onClick={() => handleConfirmEvent(event, index)}
+                    disabled={!event.title || !event.date}
+                    data-testid={`confirm-event-${index}`}
+                  >
+                    <Check className="w-4 h-4 mr-2" />
+                    створити подію
+                  </button>
+                </div>
+              </div>
+              );
+            })}
+            
+            {parsedEvents.length === 0 && (
+              <div className="text-center py-12">
+                <p className="text-secondary mb-4">всі події створено!</p>
+                <Button onClick={() => navigate("/")}>повернутися</Button>
+              </div>
+            )}
+            
+            <div className="h-24" />
+            
+          </div>
+        ) : (
+          /* AI input view */
+          <div className="max-w-2xl mx-auto space-y-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">заповнити з ШІ</h2>
+              <button className="text-sm text-secondary hover:text-primary transition-colors underline" onClick={() => { setShowAiInput(false); if (parsedEvents.length === 0) { setParsedEvents([{ title: "", date: formatDateLocal(new Date()), price: 0, spots: 10, description: "", start_time: "12:00", end_time: "14:30", event_type: "new", repeat_days: [0] }]); } }}>← вручну</button>
+            </div>
+            <p className="text-secondary text-sm">напиши інформацію про подію своїми словами — AI розпізнає назву, дату, ціну та кількість місць</p>
+            <Textarea 
+              placeholder="наприклад: Bodyart Light 15 лютого, 700 грн, 10 місць. або встав список кількох подій..."
+              value={aiInput}
+              onChange={(e) => setAiInput(e.target.value)}
+              className="form-input min-h-40 resize-none text-lg"
+              autoFocus
+            />
+            <button 
+              className="btn-dark w-full text-lg h-14"
+              onClick={handleAiParse}
+              disabled={aiParsing || !aiInput.trim()}
+            >
+              {aiParsing ? (
+                <span className="flex items-center gap-2"><span className="animate-spin">⏳</span> розпізнаю...</span>
+              ) : (
+                <span className="flex items-center gap-2"><Sparkles className="w-5 h-5" /> розпізнати</span>
+              )}
+            </button>
+          </div>
+        )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Statistics Page - Mobile with monthly analytics cards
+const StatsPage = () => {
+  const { events } = useApp();
+  const [stats, setStats] = useState([]);
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => { 
+    api.getStatistics().then(r => {
+      // Add demo data for previous months with proper analytics
+      const currentMonth = new Date();
+      const prev1 = new Date(currentMonth); prev1.setMonth(prev1.getMonth() - 1);
+      const prev2 = new Date(currentMonth); prev2.setMonth(prev2.getMonth() - 2);
+      
+      const demoData = [
+        { month: `${prev2.getFullYear()}-${String(prev2.getMonth() + 1).padStart(2, '0')}`, events_count: 5, cancelled_count: 0, planned_revenue: 70000, actual_revenue: 70000, deadlines_percent: 100, cancelled_percent: 0, badges: ["perfect"] },
+        { month: `${prev1.getFullYear()}-${String(prev1.getMonth() + 1).padStart(2, '0')}`, events_count: 7, cancelled_count: 1, planned_revenue: 98000, actual_revenue: 84000, deadlines_percent: 92, cancelled_percent: 14, badges: ["excellent"] },
+        ...r.data.map(s => ({ ...s, deadlines_percent: 100 - s.missed_deadlines_percent, actual_revenue: s.planned_revenue }))
+      ];
+      setStats(demoData);
+      setLoading(false); 
+    }).catch(() => setLoading(false)); 
+  }, []);
+
+  return (
+    <div className="animate-fade-in">
+      <header className="page-header">
+        <h1 className="logo">аналітика</h1>
+      </header>
+      
+      <div className="page-content pt-4 space-y-4">
+        {loading ? <p className="text-center py-12 text-secondary text-sm">завантажую...</p> : (
+          <>
+            {stats.map((month) => (
+              <div key={month.month} className="analytics-card">
+                <div className="analytics-card-header">
+                  <span className="analytics-card-month">{formatMonthShort(month.month)}</span>
+                  {month.badges?.includes("perfect") && <span className="badge badge-perfect"><Award className="w-4 h-4 mr-1" />100%</span>}
+                  {month.badges?.includes("excellent") && <span className="badge badge-excellent"><Star className="w-4 h-4 mr-1" />90%+</span>}
+                </div>
+                <div className="analytics-card-grid">
+                  <div className="analytics-metric">
+                    <p className="analytics-metric-value">{month.events_count}</p>
+                    <p className="analytics-metric-label">подій</p>
+                  </div>
+                  <div className="analytics-metric">
+                    <p className="analytics-metric-value">{month.planned_revenue?.toLocaleString()} ₴</p>
+                    <p className="analytics-metric-label">плановий дохід</p>
+                  </div>
+                  <div className="analytics-metric">
+                    <p className="analytics-metric-value">{month.deadlines_percent || 100}%</p>
+                    <p className="analytics-metric-label">дедлайни</p>
+                  </div>
+                  <div className="analytics-metric">
+                    <p className="analytics-metric-value">{month.cancelled_percent || 0}%</p>
+                    <p className="analytics-metric-label">скасовано</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+      
+      <BottomNav />
+    </div>
+  );
+};
+
+// Altegio Sync Section Component
+const AltegioSyncSection = () => {
+  const { refreshEvents } = useApp();
+  const [altegioStatus, setAltegioStatus] = useState({ connected: false });
+  const [altegioEvents, setAltegioEvents] = useState([]);
+  const [syncing, setSyncing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const [statusRes, eventsRes] = await Promise.all([
+          api.getAltegioStatus(),
+          api.getAltegioEvents()
+        ]);
+        setAltegioStatus(statusRes.data);
+        setAltegioEvents(eventsRes.data.events || []);
+      } catch (e) {
+        console.error("Altegio fetch error:", e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchStatus();
+  }, []);
+  
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const res = await api.syncFromAltegio();
+      toast.success(res.data.message || "Синхронізовано!");
+      refreshEvents();
+      // Refresh Altegio events
+      const eventsRes = await api.getAltegioEvents();
+      setAltegioEvents(eventsRes.data.events || []);
+    } catch (e) {
+      toast.error("Помилка синхронізації");
+    } finally {
+      setSyncing(false);
+    }
+  };
+  
+  if (loading) {
+    return (
+      <div className="section-card">
+        <p className="text-xs text-secondary">завантажую Altegio...</p>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="section-card mt-4">
+      <p className="text-xs text-secondary mb-4">синхронізація з Altegio</p>
+      <div className="reminder-item">
+        <div className="flex items-center gap-3">
+          <div className="task-icon" style={{ background: altegioStatus.connected ? '#059669' : '#9CA3AF' }}>
+            <RefreshCw className="w-4 h-4" />
+          </div>
+          <div>
+            <p className="text-sm font-medium">Altegio</p>
+            <p className="text-xs text-secondary">
+              {altegioStatus.connected ? `підключено • ${altegioEvents.length} подій` : "не підключено"}
+            </p>
+          </div>
+        </div>
+        {altegioStatus.connected && (
+          <button 
+            className="btn-dark text-sm px-3 py-1" 
+            onClick={handleSync}
+            disabled={syncing}
+          >
+            {syncing ? "..." : "оновити"}
+          </button>
+        )}
+      </div>
+      
+      {altegioStatus.connected && altegioEvents.length > 0 && (
+        <div className="mt-4 space-y-2">
+          <p className="text-xs text-secondary">події в Altegio:</p>
+          {altegioEvents.slice(0, 5).map(event => (
+            <div key={event.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{event.service?.title || event.title}</p>
+                <p className="text-xs text-secondary">
+                  {new Date(event.date).toLocaleDateString('uk-UA')} • {event.capacity} місць
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-sm font-semibold ${event.records_count > 0 ? 'text-emerald-600' : 'text-secondary'}`}>
+                  {event.records_count}/{event.capacity}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Settings Page with edit capability
+
+// ==================== CALENDAR PAGE (/cal) ====================
+const CalendarFullPage = () => {
+  const { events } = useApp();
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  
+  return (
+    <div style={{ background: '#0A0A0A', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px' }}>
+      <div style={{ maxWidth: 420, width: '100%' }}>
+        <Calendar mode="single" locale={uk} weekStartsOn={1} month={currentMonth} onMonthChange={setCurrentMonth} className="w-full calendar-dark"
+          classNames={{ month: "space-y-1 w-full", caption: "flex justify-center items-center py-2", caption_label: "text-base font-medium text-white", row: "flex w-full", head_row: "flex w-full", head_cell: "text-gray-500 text-xs font-normal w-full text-center", table: "w-full border-collapse", cell: "text-center p-0", day: "w-full h-10 text-sm text-white hover:bg-white/10 rounded-lg transition-colors", nav_button: "w-8 h-8 bg-transparent hover:bg-white/10 rounded-full flex items-center justify-center text-white", day_selected: "bg-white/20" }}
+          modifiersClassNames={{ today: "calendar-today-hidden" }}
+          components={{ DayContent: ({ date }) => {
+            const checkDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            const hasEvent = events.some(e => !e.cancelled && e.date.startsWith(checkDate));
+            return <div className="flex flex-col items-center"><span>{date.getDate()}</span>{hasEvent && <span className="w-1 h-1 rounded-full bg-white mt-0.5" />}</div>;
+          }}}
+        />
+      </div>
+    </div>
+  );
+};
+
+// ==================== CONTENT PAGE ====================
+const ContentPage = () => {
+  const { events, smmTasksDefinition, refreshEvents } = useApp();
+  const navigate = useNavigate();
+  const [posts, setPosts] = useState([]);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [editingPost, setEditingPost] = useState(null);
+  const [showPostDialog, setShowPostDialog] = useState(false);
+  const [newPost, setNewPost] = useState({ title: '', date: formatDateLocal(new Date()), notes: '', post_type: 'info' });
+  const [showNewPostDialog, setShowNewPostDialog] = useState(false);
+  const [showNewPostCalendar, setShowNewPostCalendar] = useState(false);
+  const [showEditPostCalendar, setShowEditPostCalendar] = useState(false);
+  // Story creation
+  const [newStory, setNewStory] = useState({ title: '', date: formatDateLocal(new Date()), notes: '' });
+  const [showNewStoryDialog, setShowNewStoryDialog] = useState(false);
+  const [showNewStoryCalendar, setShowNewStoryCalendar] = useState(false);
+  // Task date editing
+  const [editingTask, setEditingTask] = useState(null);
+  const [showTaskEditDialog, setShowTaskEditDialog] = useState(false);
+  const [showTaskEditCalendar, setShowTaskEditCalendar] = useState(false);
+  // Month selector
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  // Completed accordion
+  const [completedAnnouncementsOpen, setCompletedAnnouncementsOpen] = useState(false);
+  const [completedStoriesOpen, setCompletedStoriesOpen] = useState(false);
+  const [completedPostsOpen, setCompletedPostsOpen] = useState(false);
+  // Calendar legend filters
+  const [showCalAnnouncements, setShowCalAnnouncements] = useState(true);
+  const [showCalStories, setShowCalStories] = useState(false);
+  const [showCalInfoPosts, setShowCalInfoPosts] = useState(true);
+  const [showCalMemes, setShowCalMemes] = useState(true);
+
+  const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
+  const todayStr = formatDateLocal(today);
+
+  // Story-related SMM task IDs
+  const STORY_TASK_IDS = new Set([
+    'smm_storytelling_prep', 'smm_storytelling', 'smm_master_story',
+    'smm_storytelling_60', 'smm_remind_story', 'smm_post_stories', 'smm_past_events_50', 'smm_past_events_80'
+  ]);
+
+  // ESC to close
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') navigate('/'); };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [navigate]);
+
+  useEffect(() => {
+    axios.get(`${API}/posts`).then(r => setPosts(r.data)).catch(() => {});
+  }, []);
+
+  const refreshPosts = () => axios.get(`${API}/posts`).then(r => setPosts(r.data));
+
+  // Announcement tasks from events (is_announcement flag) — grouped by event
+  const announcements = useMemo(() => {
+    const smmMap = {};
+    smmTasksDefinition.forEach(t => { smmMap[t.id] = t; });
+    const eventGroups = {};
+    events.forEach(event => {
+      if (event.cancelled || event.archived) return;
+      const tasks = [];
+      let earliestDate = null;
+      Object.entries(event.smm_tasks || {}).forEach(([taskId, taskDate]) => {
+        const taskInfo = smmMap[taskId];
+        if (!taskInfo || !taskInfo.is_announcement) return;
+        tasks.push({ task_id: taskId, task_name: taskInfo.name, date: taskDate, completed: !!(event.completed_smm_tasks || {})[taskId] });
+        if (!earliestDate || taskDate < earliestDate) earliestDate = taskDate;
+      });
+      if (tasks.length > 0) {
+        const allCompleted = tasks.every(t => t.completed);
+        eventGroups[event.id] = { id: event.id, event_id: event.id, event_title: event.title, date: earliestDate, type: 'announcement', tasks, completed: allCompleted };
+      }
+    });
+    return Object.values(eventGroups).sort((a, b) => new Date(a.date) - new Date(b.date));
+  }, [events, smmTasksDefinition]);
+
+  // Story tasks from events — individual tasks
+  const stories = useMemo(() => {
+    const items = [];
+    const smmMap = {};
+    smmTasksDefinition.forEach(t => { smmMap[t.id] = t; });
+    events.forEach(event => {
+      if (event.cancelled || event.archived) return;
+      Object.entries(event.smm_tasks || {}).forEach(([taskId, taskDate]) => {
+        const taskInfo = smmMap[taskId];
+        if (!taskInfo || !STORY_TASK_IDS.has(taskId) || taskInfo.is_announcement) return;
+        items.push({ id: `${event.id}-${taskId}`, event_id: event.id, task_id: taskId, task_name: taskInfo.name, event_title: event.title, date: taskDate, type: 'story', completed: !!(event.completed_smm_tasks || {})[taskId] });
+      });
+    });
+    items.sort((a, b) => new Date(a.date) - new Date(b.date));
+    return items;
+  }, [events, smmTasksDefinition]);
+
+  // Info-posts (user-created)
+  const infoPosts = useMemo(() => [...posts].sort((a, b) => new Date(a.date) - new Date(b.date)), [posts]);
+
+  // Calendar dots: only announcements & info-posts (NO stories)
+  const announcementDates = useMemo(() => new Set(announcements.map(a => a.date)), [announcements]);
+  const storyDates = useMemo(() => new Set(stories.map(s => s.date)), [stories]);
+  const postDates = useMemo(() => {
+    const map = { info: new Set(), meme: new Set() };
+    posts.forEach(p => { const t = p.post_type || 'info'; if (map[t]) map[t].add(p.date); });
+    return map;
+  }, [posts]);
+
+  const handleCreatePost = async () => {
+    if (!newPost.title.trim()) return;
+    try {
+      await axios.post(`${API}/posts`, newPost);
+      toast.success('створено!'); refreshPosts(); setShowNewPostDialog(false); setNewPost({ title: '', date: formatDateLocal(new Date()), notes: '', post_type: 'info' });
+    } catch { toast.error('помилка'); }
+  };
+
+  const handleSavePost = async () => {
+    if (!editingPost) return;
+    try {
+      await axios.patch(`${API}/posts/${editingPost.id}`, { title: editingPost.title, date: editingPost.date, notes: editingPost.notes, post_type: editingPost.post_type });
+      toast.success('збережено!'); refreshPosts(); setShowPostDialog(false);
+    } catch { toast.error('помилка'); }
+  };
+
+  const handleDeletePost = async () => {
+    if (!editingPost) return;
+    try {
+      await axios.delete(`${API}/posts/${editingPost.id}`);
+      toast.success('видалено!'); refreshPosts(); setShowPostDialog(false);
+    } catch { toast.error('помилка'); }
+  };
+
+  const handleEventClick = (eventId) => navigate(`/event/${eventId}/view`);
+
+  // Toggle completion for announcement/story (all SMM tasks for that event group)
+  const handleToggleSmmCompletion = async (eventId, taskIds, currentlyCompleted) => {
+    try {
+      for (const taskId of (Array.isArray(taskIds) ? taskIds : [taskIds])) {
+        await axios.post(`${API}/tasks/smm/complete`, { event_id: eventId, task_id: taskId, completed: !currentlyCompleted });
+      }
+      refreshEvents();
+    } catch { toast.error('помилка'); }
+  };
+
+  // Toggle completion for user-created post
+  const handleTogglePostCompletion = async (postId, currentlyCompleted) => {
+    try {
+      await axios.patch(`${API}/posts/${postId}`, { completed: !currentlyCompleted });
+      refreshPosts();
+    } catch { toast.error('помилка'); }
+  };
+
+  // Delete a post inline
+  const handleDeletePostInline = async (postId, e) => {
+    e.stopPropagation();
+    try {
+      await axios.delete(`${API}/posts/${postId}`);
+      toast.success('видалено!');
+      refreshPosts();
+    } catch { toast.error('помилка'); }
+  };
+
+  // Create a standalone story post
+  const handleCreateStory = async () => {
+    if (!newStory.title.trim()) return;
+    try {
+      await axios.post(`${API}/posts`, { ...newStory, post_type: 'story' });
+      toast.success('створено!'); refreshPosts(); setShowNewStoryDialog(false); setNewStory({ title: '', date: formatDateLocal(new Date()), notes: '' });
+    } catch { toast.error('помилка'); }
+  };
+
+  // Update task date (for announcement/story SMM tasks)
+  const handleUpdateTaskDate = async () => {
+    if (!editingTask) return;
+    try {
+      if (editingTask.type === 'post') {
+        // It's a user-created post — update via posts endpoint
+        await axios.patch(`${API}/posts/${editingTask.post_id}`, { date: editingTask.date });
+      } else {
+        // It's an event SMM task — update via smm_tasks override
+        const event = events.find(e => e.id === editingTask.event_id);
+        if (event) {
+          const updatedSmmTasks = { ...event.smm_tasks, [editingTask.task_id]: editingTask.date };
+          await axios.put(`${API}/events/${editingTask.event_id}`, { ...event, smm_tasks: updatedSmmTasks });
+          refreshEvents();
+        }
+      }
+      toast.success('дату оновлено!');
+      refreshPosts();
+      setShowTaskEditDialog(false);
+    } catch { toast.error('помилка'); }
+  };
+
+  const PostTypeSelector = ({ value, onChange }) => (
+    <div className="flex gap-2">
+      <button onClick={() => onChange('info')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${value === 'info' ? 'bg-emerald-100 text-emerald-700 ring-2 ring-emerald-400' : 'bg-[rgba(0,0,0,0.05)]'}`}>
+        <Info className="w-3.5 h-3.5" style={{color: '#059669'}} />інфо
+      </button>
+      <button onClick={() => onChange('meme')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${value === 'meme' ? 'bg-pink-100 text-pink-700 ring-2 ring-pink-400' : 'bg-[rgba(0,0,0,0.05)]'}`}>
+        <Smile className="w-3.5 h-3.5" style={{color: '#EC4899'}} />мем
+      </button>
+    </div>
+  );
+
+  // Filter by current month + split completed
+  const monthStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
+  const monthAnnouncements = announcements.filter(a => a.date.startsWith(monthStr));
+  const activeAnnouncements = monthAnnouncements.filter(a => !a.completed);
+  const completedAnnouncements = monthAnnouncements.filter(a => a.completed);
+  const monthStories = stories.filter(s => s.date.startsWith(monthStr));
+  const activeStories = monthStories.filter(s => !s.completed);
+  const completedStories = monthStories.filter(s => s.completed);
+  const monthPosts = infoPosts.filter(p => p.date.startsWith(monthStr));
+  const activePosts = monthPosts.filter(p => !p.completed);
+  const completedPosts = monthPosts.filter(p => p.completed);
+
+  const todayFormatted = useMemo(() => formatDateWithWeekday(new Date()), []);
+
+  return (
+    <div className="desktop-dashboard" data-testid="content-page">
+      <header className="desktop-header">
+        <div className="desktop-header-left">
+          <span className="text-xl font-semibold">контент-план</span>
+        </div>
+        <div className="desktop-date-center">
+          <span className="desktop-date-simple">{todayFormatted.day} {todayFormatted.month} — {todayFormatted.weekday}</span>
+        </div>
+        <div className="desktop-header-right cursor-pointer" onClick={() => navigate('/')} style={{marginRight: '-24px', paddingRight: '24px'}} data-testid="content-close-area">
+          <div className="desktop-header-btn relative">
+            <X className="w-5 h-5" />
+            <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 text-xs text-secondary flex items-center gap-1 whitespace-nowrap pointer-events-none font-normal">або <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px] font-mono border border-gray-200">ESC</kbd> щоб закрити</span>
+          </div>
+          <div className="desktop-header-btn opacity-0 pointer-events-none"><FileText className="w-5 h-5" /></div>
+          <div className="btn-dark opacity-0 pointer-events-none"><Plus className="w-4 h-4" /><span>подія</span></div>
+          <div className="desktop-header-btn opacity-0 pointer-events-none"><Settings className="w-5 h-5" /></div>
+        </div>
+      </header>
+
+      <div className="desktop-columns-4">
+        {/* КАЛЕНДАР */}
+        <div className="desktop-column">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>КАЛЕНДАР</span>
+              <div className="flex items-center gap-1 relative">
+                <button className="p-0.5 hover:bg-gray-100 rounded-full transition-colors" onClick={() => { setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1)); setShowMonthPicker(false); }}><ChevronLeft className="w-3.5 h-3.5 text-secondary" /></button>
+                <button className="text-xs font-medium text-secondary min-w-[60px] text-center hover:bg-gray-100 rounded px-1 py-0.5" onClick={() => setShowMonthPicker(!showMonthPicker)}>{UK_MONTHS_NOMINATIVE[currentMonth.getMonth()]}</button>
+                <button className="p-0.5 hover:bg-gray-100 rounded-full transition-colors" onClick={() => { setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1)); setShowMonthPicker(false); }}><ChevronRight className="w-3.5 h-3.5 text-secondary" /></button>
+                {showMonthPicker && (
+                  <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-lg border p-3 z-50" style={{minWidth: '200px'}}>
+                    <div className="flex items-center justify-between mb-2">
+                      <button className="p-1 hover:bg-gray-100 rounded-full" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear() - 1, currentMonth.getMonth()))}><ChevronLeft className="w-3.5 h-3.5" /></button>
+                      <span className="text-xs font-semibold">{currentMonth.getFullYear()}</span>
+                      <button className="p-1 hover:bg-gray-100 rounded-full" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear() + 1, currentMonth.getMonth()))}><ChevronRight className="w-3.5 h-3.5" /></button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1">
+                      {UK_MONTHS_NOMINATIVE.map((m, i) => (
+                        <button key={i} className={`text-xs py-1.5 px-1 rounded-lg transition-colors ${i === currentMonth.getMonth() ? 'bg-black text-white' : 'hover:bg-gray-100'}`}
+                          onClick={() => { setCurrentMonth(new Date(currentMonth.getFullYear(), i)); setShowMonthPicker(false); }}>{m.slice(0, 3)}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="column-content">
+            <div className="calendar-container-desktop">
+              <Calendar mode="single" locale={uk} weekStartsOn={1} month={currentMonth} onMonthChange={setCurrentMonth} className="w-full calendar-minimal calendar-wide !p-1"
+                classNames={{ month: "space-y-0 w-full", caption: "hidden", row: "flex w-full", head_row: "flex w-full", table: "w-full border-collapse" }}
+                modifiersClassNames={{ today: "calendar-today-visible" }}
+                components={{ DayContent: ({ date }) => {
+                  const checkDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                  const hasAnnouncement = showCalAnnouncements && announcementDates.has(checkDate);
+                  const hasStory = showCalStories && storyDates.has(checkDate);
+                  const hasInfo = showCalInfoPosts && postDates.info.has(checkDate);
+                  const hasMeme = showCalMemes && postDates.meme.has(checkDate);
+                  return (
+                    <div className="calendar-day-content">
+                      <span>{date.getDate()}</span>
+                      <div style={{display:'flex', gap:'2px', justifyContent:'center', marginTop:'1px'}}>
+                        {hasAnnouncement && <span style={{width:'5px', height:'5px', borderRadius:'50%', background:'#E8913A', display:'block'}} />}
+                        {hasStory && <span style={{width:'5px', height:'5px', borderRadius:'50%', background:'#A78BFA', display:'block'}} />}
+                        {hasInfo && <span style={{width:'5px', height:'5px', borderRadius:'50%', background:'#059669', display:'block'}} />}
+                        {hasMeme && <span style={{width:'5px', height:'5px', borderRadius:'50%', background:'#EC4899', display:'block'}} />}
+                      </div>
+                    </div>
+                  );
+                }}}
+              />
+            </div>
+            <div className="px-3 pt-2 space-y-2">
+              <label className="flex items-center gap-2 text-xs text-secondary cursor-pointer">
+                <span onClick={() => setShowCalAnnouncements(!showCalAnnouncements)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalAnnouncements ? '#E8913A' : 'transparent', border: '2px solid #E8913A'}}>{showCalAnnouncements && <Check className="w-2.5 h-2.5 text-white" />}</span>
+                анонси
+              </label>
+              <label className="flex items-center gap-2 text-xs text-secondary cursor-pointer">
+                <span onClick={() => setShowCalStories(!showCalStories)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalStories ? '#A78BFA' : 'transparent', border: '2px solid #A78BFA'}}>{showCalStories && <Check className="w-2.5 h-2.5 text-white" />}</span>
+                історії
+              </label>
+              <label className="flex items-center gap-2 text-xs text-secondary cursor-pointer">
+                <span onClick={() => setShowCalInfoPosts(!showCalInfoPosts)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalInfoPosts ? '#059669' : 'transparent', border: '2px solid #059669'}}>{showCalInfoPosts && <Check className="w-2.5 h-2.5 text-white" />}</span>
+                інфо-пости
+              </label>
+              <label className="flex items-center gap-2 text-xs text-secondary cursor-pointer">
+                <span onClick={() => setShowCalMemes(!showCalMemes)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalMemes ? '#EC4899' : 'transparent', border: '2px solid #EC4899'}}>{showCalMemes && <Check className="w-2.5 h-2.5 text-white" />}</span>
+                меми
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* АНОНСИ */}
+        <div className="desktop-column">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>АНОНСИ</span>
+          </div>
+          <div className="column-content">
+            {completedAnnouncements.length > 0 && (
+              <div className="mb-3">
+                <button className="section-header-mini w-full text-left" style={{color: '#9CA3AF'}} onClick={() => setCompletedAnnouncementsOpen(!completedAnnouncementsOpen)}>
+                  <span>виконані ({completedAnnouncements.length})</span>
+                  <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${completedAnnouncementsOpen ? "rotate-180" : ""}`} />
+                </button>
+                {completedAnnouncementsOpen && completedAnnouncements.map(item => (
+                  <div key={item.id} className="event-card-desktop opacity-40" data-testid={`completed-announcement-${item.id}`}>
+                    <div className="date-badge-desktop" style={{background: '#E8913A', color: 'white'}}>
+                      <span className="date-badge-month" style={{color: 'rgba(255,255,255,0.8)'}}>{UK_MONTHS_SHORT[new Date(item.date).getMonth()]}</span>
+                      <span className="date-badge-day">{new Date(item.date).getDate()}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate line-through">{item.event_title}</p>
+                    </div>
+                    <button className="task-checkbox checked" onClick={(e) => { e.stopPropagation(); handleToggleSmmCompletion(item.event_id, item.tasks.map(t => t.task_id), true); }}>
+                      <Check className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {activeAnnouncements.length > 0 ? (
+              <div className="space-y-1">
+                {Object.entries(activeAnnouncements.reduce((g, a) => { if (!g[a.date]) g[a.date] = []; g[a.date].push(a); return g; }, {})).map(([date, items]) => (
+                  <div key={date} className="mb-2">
+                    <p className="text-xs text-secondary font-medium mb-1 px-1">{formatDateUkrainian(date)}</p>
+                    {items.map(item => (
+                      <div key={item.id} className="event-card-desktop cursor-pointer" onClick={() => { setEditingTask({ ...item, type: 'announcement', task_name: item.event_title }); setShowTaskEditCalendar(false); setShowTaskEditDialog(true); }} data-testid={`announcement-${item.id}`}>
+                        <div className="date-badge-desktop" style={{background: '#E8913A', color: 'white'}}>
+                          <span className="date-badge-month" style={{color: 'rgba(255,255,255,0.8)'}}>{UK_MONTHS_SHORT[new Date(item.date).getMonth()]}</span>
+                          <span className="date-badge-day">{new Date(item.date).getDate()}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate">{item.event_title}</p>
+                        </div>
+                        <button className="task-checkbox" onClick={(e) => { e.stopPropagation(); handleToggleSmmCompletion(item.event_id, item.tasks.map(t => t.task_id), false); }} data-testid={`complete-announcement-${item.id}`}>
+                          <Check className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : <p className="text-secondary text-center py-8 text-sm">немає анонсів</p>}
+          </div>
+        </div>
+
+        {/* ІСТОРІЇ */}
+        <div className="desktop-column">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>ІСТОРІЇ</span>
+            <button className="add-btn" onClick={() => { setNewStory({ title: '', date: todayStr, notes: '' }); setShowNewStoryCalendar(false); setShowNewStoryDialog(true); }} data-testid="add-story-btn"><Plus className="w-4 h-4" /></button>
+          </div>
+          <div className="column-content">
+            {/* Completed stories accordion */}
+            {(() => {
+              const completedUserStories = posts.filter(p => p.post_type === 'story' && p.completed && p.date.startsWith(monthStr));
+              const completedEventStories = monthStories.filter(s => s.completed);
+              const allCompleted = [...completedEventStories, ...completedUserStories.map(p => ({ id: p.id, task_name: p.title, event_title: 'вручну', date: p.date, type: 'user-story', post_id: p.id, completed: true }))];
+              if (allCompleted.length === 0) return null;
+              return (
+                <div className="mb-3">
+                  <button className="section-header-mini w-full text-left" style={{color: '#9CA3AF'}} onClick={() => setCompletedStoriesOpen(!completedStoriesOpen)}>
+                    <span>виконані ({allCompleted.length})</span>
+                    <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${completedStoriesOpen ? "rotate-180" : ""}`} />
+                  </button>
+                  {completedStoriesOpen && allCompleted.map(item => (
+                    <div key={item.id} className="task-item opacity-40" data-testid={`completed-story-${item.id}`}>
+                      <div className="task-icon" style={{background: 'rgba(167,139,250,0.15)', color: '#A78BFA'}}><Camera className="w-4 h-4" /></div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate line-through">{item.task_name}</p>
+                        <p className="text-xs text-secondary truncate">{item.event_title}</p>
+                      </div>
+                      <button className="task-checkbox checked" onClick={(e) => { e.stopPropagation(); item.type === 'user-story' ? handleTogglePostCompletion(item.post_id, true) : handleToggleSmmCompletion(item.event_id, item.task_id, true); }}>
+                        <Check className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+            {/* Active user-created stories */}
+            {posts.filter(p => p.post_type === 'story' && !p.completed && p.date.startsWith(monthStr)).map(post => (
+              <div key={post.id} className="task-item cursor-pointer" onClick={() => { setEditingPost({...post}); setShowEditPostCalendar(false); setShowPostDialog(true); }} data-testid={`story-post-${post.id}`}>
+                <div className="task-icon" style={{background: 'rgba(167,139,250,0.15)', color: '#A78BFA'}}><Camera className="w-4 h-4" /></div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{post.title}</p>
+                  <p className="text-xs text-secondary">вручну</p>
+                </div>
+                <button className="task-checkbox" onClick={(e) => { e.stopPropagation(); handleTogglePostCompletion(post.id, false); }} data-testid={`complete-story-${post.id}`}>
+                  <Check className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+            {/* Active event-based stories */}
+            {activeStories.length > 0 ? (
+              <div className="space-y-1">
+                {Object.entries(activeStories.reduce((g, s) => { if (!g[s.date]) g[s.date] = []; g[s.date].push(s); return g; }, {})).map(([date, items]) => (
+                  <div key={date} className="mb-2">
+                    <p className="text-xs text-secondary font-medium mb-1 px-1">{formatDateUkrainian(date)}</p>
+                    {items.map(item => (
+                      <div key={item.id} className="task-item cursor-pointer" onClick={() => { setEditingTask({ ...item, type: 'story' }); setShowTaskEditCalendar(false); setShowTaskEditDialog(true); }} data-testid={`story-${item.id}`}>
+                        <div className="task-icon" style={{background: 'rgba(167,139,250,0.15)', color: '#A78BFA'}}><Camera className="w-4 h-4" /></div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{item.task_name}</p>
+                          <p className="text-xs text-secondary truncate">{item.event_title}</p>
+                        </div>
+                        <button className="task-checkbox" onClick={(e) => { e.stopPropagation(); handleToggleSmmCompletion(item.event_id, item.task_id, false); }} data-testid={`complete-story-${item.id}`}>
+                          <Check className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : (posts.filter(p => p.post_type === 'story' && !p.completed && p.date.startsWith(monthStr)).length === 0 && <p className="text-secondary text-center py-8 text-sm">немає історій</p>)}
+          </div>
+        </div>
+
+        {/* ІНФО-ПОСТИ */}
+        <div className="desktop-column">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>ІНФО-ПОСТИ</span>
+            <button className="add-btn" onClick={() => { setNewPost({ title: '', date: todayStr, notes: '', post_type: 'info' }); setShowNewPostCalendar(false); setShowNewPostDialog(true); }} data-testid="add-post-btn"><Plus className="w-4 h-4" /></button>
+          </div>
+          <div className="column-content">
+            {completedPosts.length > 0 && (
+              <div className="mb-3">
+                <button className="section-header-mini w-full text-left" style={{color: '#9CA3AF'}} onClick={() => setCompletedPostsOpen(!completedPostsOpen)}>
+                  <span>виконані ({completedPosts.length})</span>
+                  <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${completedPostsOpen ? "rotate-180" : ""}`} />
+                </button>
+                {completedPostsOpen && completedPosts.map(post => {
+                  const isInfo = !post.post_type || post.post_type === 'info';
+                  const badgeColor = isInfo ? '#059669' : '#EC4899';
+                  return (
+                    <div key={post.id} className="event-card-desktop opacity-40" data-testid={`completed-post-${post.id}`}>
+                      <div className="date-badge-desktop" style={{background: badgeColor, color: 'white'}}>
+                        <span className="date-badge-month" style={{color: 'rgba(255,255,255,0.8)'}}>{UK_MONTHS_SHORT[new Date(post.date).getMonth()]}</span>
+                        <span className="date-badge-day">{new Date(post.date).getDate()}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate line-through">{post.title}</p>
+                        <p className="text-xs text-secondary">{isInfo ? 'інфо' : 'мем'}</p>
+                      </div>
+                      <button className="task-checkbox checked" onClick={(e) => { e.stopPropagation(); handleTogglePostCompletion(post.id, true); }} data-testid={`undo-post-${post.id}`}>
+                        <Check className="w-4 h-4" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {activePosts.length > 0 ? activePosts.map(post => {
+              const isInfo = !post.post_type || post.post_type === 'info';
+              const badgeColor = isInfo ? '#059669' : '#EC4899';
+              return (
+                <div key={post.id} className="event-card-desktop" data-testid={`post-${post.id}`}>
+                  <div className="date-badge-desktop" style={{background: badgeColor, color: 'white'}}>
+                    <span className="date-badge-month" style={{color: 'rgba(255,255,255,0.8)'}}>{UK_MONTHS_SHORT[new Date(post.date).getMonth()]}</span>
+                    <span className="date-badge-day">{new Date(post.date).getDate()}</span>
+                  </div>
+                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { 
+                    setEditingTask({ id: post.id, post_id: post.id, task_name: post.title, date: post.date, event_title: isInfo ? 'інфо' : 'мем', type: 'post' });
+                    setShowTaskEditCalendar(false);
+                    setShowTaskEditDialog(true);
+                  }}>
+                    <p className="text-sm font-semibold truncate">{post.title}</p>
+                    <p className="text-xs text-secondary">{isInfo ? 'інфо' : 'мем'}</p>
+                  </div>
+                  <button className="task-checkbox" onClick={(e) => { e.stopPropagation(); handleTogglePostCompletion(post.id, false); }} data-testid={`complete-post-${post.id}`}>
+                    <Check className="w-4 h-4" />
+                  </button>
+                </div>
+              );
+            }) : <p className="text-secondary text-center py-8 text-sm">немає постів</p>}
+          </div>
+        </div>
+      </div>
+
+      {/* New Post Dialog */}
+      <Dialog open={showNewPostDialog} onOpenChange={setShowNewPostDialog}>
+        <DialogContent className="dialog-content" onOpenAutoFocus={(e) => e.preventDefault()}>
+          <DialogHeader><DialogTitle>новий пост</DialogTitle></DialogHeader>
+          <div className="space-y-4 pt-2">
+            <Input autoFocus placeholder="назва посту" value={newPost.title} onChange={(e) => setNewPost({...newPost, title: e.target.value})} onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleCreatePost(); }} className="form-input" />
+            <div className="flex items-center gap-3">
+              <button className="text-sm px-4 py-2 rounded-full bg-[rgba(0,0,0,0.05)]" onClick={() => setShowNewPostCalendar(!showNewPostCalendar)}>{formatDateUkrainian(newPost.date)}</button>
+              <PostTypeSelector value={newPost.post_type} onChange={(t) => setNewPost({...newPost, post_type: t})} />
+            </div>
+            {showNewPostCalendar && <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(newPost.date)} onSelect={(d) => { if (d) { setNewPost({...newPost, date: formatDateLocal(d)}); } setShowNewPostCalendar(false); }} className="w-full" />}
+            <textarea placeholder="нотатки..." value={newPost.notes} onChange={(e) => setNewPost({...newPost, notes: e.target.value})} className="form-input w-full min-h-[80px] resize-none text-sm p-3 rounded-xl border" />
+            <button className="btn-dark w-full" onClick={handleCreatePost}>створити</button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Post Dialog */}
+      {editingPost && (
+        <Dialog open={showPostDialog} onOpenChange={setShowPostDialog}>
+          <DialogContent className="dialog-content" onOpenAutoFocus={(e) => e.preventDefault()}>
+            <DialogHeader><DialogTitle>редагування</DialogTitle></DialogHeader>
+            <div className="space-y-4 pt-2">
+              <Input autoFocus value={editingPost.title} onChange={(e) => setEditingPost({...editingPost, title: e.target.value})} onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleSavePost(); }} className="form-input" />
+              <div className="flex items-center gap-3">
+                <button className="text-sm px-4 py-2 rounded-full bg-[rgba(0,0,0,0.05)]" onClick={() => setShowEditPostCalendar(!showEditPostCalendar)}>{formatDateUkrainian(editingPost.date)}</button>
+                <PostTypeSelector value={editingPost.post_type || 'info'} onChange={(t) => setEditingPost({...editingPost, post_type: t})} />
+              </div>
+              {showEditPostCalendar && <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(editingPost.date)} onSelect={(d) => { if (d) { setEditingPost({...editingPost, date: formatDateLocal(d)}); } setShowEditPostCalendar(false); }} className="w-full" />}
+              <textarea value={editingPost.notes || ''} onChange={(e) => setEditingPost({...editingPost, notes: e.target.value})} placeholder="нотатки..." className="form-input w-full min-h-[100px] resize-none text-sm p-3 rounded-xl border" />
+              <div className="flex gap-2">
+                <button className="flex-1 py-2.5 text-sm rounded-full border border-red-200 text-red-600" onClick={handleDeletePost}><Trash2 className="w-3.5 h-3.5 inline mr-1" />видалити</button>
+                <button className="btn-dark flex-1" onClick={handleSavePost}>зберегти</button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* New Story Dialog */}
+      <Dialog open={showNewStoryDialog} onOpenChange={setShowNewStoryDialog}>
+        <DialogContent className="dialog-content" onOpenAutoFocus={(e) => e.preventDefault()}>
+          <DialogHeader><DialogTitle>нова історія</DialogTitle></DialogHeader>
+          <div className="space-y-4 pt-2">
+            <Input autoFocus placeholder="назва історії" value={newStory.title} onChange={(e) => setNewStory({...newStory, title: e.target.value})} onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleCreateStory(); }} className="form-input" />
+            <button className="text-sm px-4 py-2 rounded-full bg-[rgba(0,0,0,0.05)]" onClick={() => setShowNewStoryCalendar(!showNewStoryCalendar)}>{formatDateUkrainian(newStory.date)}</button>
+            {showNewStoryCalendar && <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(newStory.date)} onSelect={(d) => { if (d) setNewStory({...newStory, date: formatDateLocal(d)}); setShowNewStoryCalendar(false); }} className="w-full" />}
+            <textarea placeholder="нотатки..." value={newStory.notes} onChange={(e) => setNewStory({...newStory, notes: e.target.value})} className="form-input w-full min-h-[80px] resize-none text-sm p-3 rounded-xl border" />
+            <button className="btn-dark w-full" onClick={handleCreateStory}>створити</button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Task Edit Dialog */}
+      {editingTask && (
+        <Dialog open={showTaskEditDialog} onOpenChange={setShowTaskEditDialog}>
+          <DialogContent className="dialog-content" onOpenAutoFocus={(e) => e.preventDefault()}>
+            <DialogHeader><DialogTitle>{editingTask.type === 'announcement' ? editingTask.event_title : editingTask.task_name}</DialogTitle></DialogHeader>
+            <div className="space-y-4 pt-2">
+              {editingTask.type === 'announcement' && (
+                <>
+                  <p className="text-xs text-secondary">{editingTask.event_title}</p>
+                  <textarea placeholder="деталі анонсу..." value={editingTask.notes || ''} onChange={(e) => setEditingTask({...editingTask, notes: e.target.value})} className="form-input w-full min-h-[80px] resize-none text-sm p-3 rounded-xl border" />
+                </>
+              )}
+              {editingTask.type === 'story' && (
+                <p className="text-xs text-secondary">{editingTask.event_title}</p>
+              )}
+              {editingTask.type !== 'announcement' && editingTask.event_title && editingTask.type !== 'story' && (
+                <div className="p-3 rounded-xl bg-black/5">
+                  <p className="font-medium text-sm">{editingTask.task_name}</p>
+                  <p className="text-xs text-secondary mt-0.5">{editingTask.event_title}</p>
+                </div>
+              )}
+              <div>
+                <button className="text-sm px-4 py-2 rounded-full bg-[rgba(0,0,0,0.05)] w-full text-left" onClick={() => setShowTaskEditCalendar(!showTaskEditCalendar)}>{formatDateUkrainian(editingTask.date)}</button>
+                {showTaskEditCalendar && <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(editingTask.date)} onSelect={(d) => { if (d) setEditingTask({...editingTask, date: formatDateLocal(d)}); setShowTaskEditCalendar(false); }} className="w-full mt-2" />}
+              </div>
+              <div className="flex gap-2">
+                {(editingTask.type === 'post' || editingTask.type === 'user-story') && (
+                  <button className="flex-1 py-2.5 text-sm rounded-full border border-red-200 text-red-600" onClick={async () => { try { await axios.delete(`${API}/posts/${editingTask.post_id}`); toast.success('видалено!'); refreshPosts(); setShowTaskEditDialog(false); } catch { toast.error('помилка'); } }} data-testid="task-dialog-delete-btn"><Trash2 className="w-3.5 h-3.5 inline mr-1" />видалити</button>
+                )}
+                {editingTask.type === 'announcement' && (
+                  <button className="flex-1 py-2.5 text-sm rounded-full border border-red-200 text-red-600" onClick={async () => { try { const event = events.find(e => e.id === editingTask.event_id); if (event) { const updatedSmmTasks = { ...event.smm_tasks }; (editingTask.tasks || []).forEach(t => delete updatedSmmTasks[t.task_id]); await axios.put(`${API}/events/${editingTask.event_id}`, { ...event, smm_tasks: updatedSmmTasks }); refreshEvents(); } toast.success('видалено!'); setShowTaskEditDialog(false); } catch { toast.error('помилка'); } }} data-testid="task-dialog-delete-btn"><Trash2 className="w-3.5 h-3.5 inline mr-1" />видалити</button>
+                )}
+                {editingTask.type === 'story' && (
+                  <button className="flex-1 py-2.5 text-sm rounded-full border border-red-200 text-red-600" onClick={async () => { try { const event = events.find(e => e.id === editingTask.event_id); if (event) { const updatedSmmTasks = { ...event.smm_tasks }; delete updatedSmmTasks[editingTask.task_id]; await axios.put(`${API}/events/${editingTask.event_id}`, { ...event, smm_tasks: updatedSmmTasks }); refreshEvents(); } toast.success('видалено!'); setShowTaskEditDialog(false); } catch { toast.error('помилка'); } }} data-testid="task-dialog-delete-btn"><Trash2 className="w-3.5 h-3.5 inline mr-1" />видалити</button>
+                )}
+                <button className="btn-dark flex-1" onClick={handleUpdateTaskDate}>зберегти</button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+};
+
+
+const SettingsPage = () => {
+  const { settings, refreshSettings, smmTasksDefinition, allTaskDefs, googleCalendarStatus, refreshGoogleStatus } = useApp();
+  const [reminderTypes, setReminderTypes] = useState([]);
+  const [activeTab, setActiveTab] = useState("management");
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editingReminder, setEditingReminder] = useState(null);
+  const [newReminder, setNewReminder] = useState({ name: "", days_before: 7, icon: "bell" });
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [reminderToDelete, setReminderToDelete] = useState(null);
+  // SMM editing state
+  const [editingSMM, setEditingSMM] = useState(null);
+  const [showEditSMMDialog, setShowEditSMMDialog] = useState(false);
+  // Google Calendar state
+  const [exportingAll, setExportingAll] = useState(false);
+  
+  useEffect(() => { if (settings?.reminder_types) setReminderTypes([...settings.reminder_types].sort((a, b) => b.days_before - a.days_before)); }, [settings]);
+  
+  const groupedSMMTasks = useMemo(() => {
+    const groups = {}; smmTasksDefinition.forEach(t => { if (!groups[t.days_before]) groups[t.days_before] = []; groups[t.days_before].push(t); });
+    return Object.entries(groups).sort(([a], [b]) => parseInt(b) - parseInt(a));
+  }, [smmTasksDefinition]);
+  
+  const handleAddReminder = async () => { if (!newReminder.name.trim()) return; try { await api.addReminder(newReminder); toast.success("додано!"); refreshSettings(); setShowAddDialog(false); setNewReminder({ name: "", days_before: 7, icon: "bell" }); } catch { toast.error("помилка"); } };
+  const handleEditReminder = async () => { if (!editingReminder.name.trim()) return; try { await api.updateReminder(editingReminder.id, editingReminder); toast.success("збережено!"); refreshSettings(); setShowEditDialog(false); } catch { toast.error("помилка"); } };
+  const handleDeleteReminder = async () => { try { await api.deleteReminder(reminderToDelete.id); toast.success("видалено!"); refreshSettings(); setDeleteDialogOpen(false); } catch { toast.error("помилка"); } };
+
+  const iconOptions = TASK_ICONS;
+  
+  const handleGoogleConnect = async () => {
+    try {
+      const response = await axios.get(`${API}/oauth/calendar/login`);
+      window.location.href = response.data.authorization_url;
+    } catch {
+      toast.error("помилка підключення");
+    }
+  };
+  
+  const handleGoogleDisconnect = async () => {
+    try {
+      await axios.post(`${API}/oauth/calendar/disconnect`);
+      refreshGoogleStatus();
+      toast.success("Google Calendar відключено");
+    } catch {
+      toast.error("помилка");
+    }
+  };
+  
+  const handleExportAllEvents = async () => {
+    setExportingAll(true);
+    try {
+      const response = await axios.post(`${API}/calendar/export-all`);
+      if (response.data.exported_count > 0) {
+        toast.success(`Експортовано ${response.data.exported_count} подій`);
+      } else {
+        toast.info("Немає нових подій для експорту");
+      }
+    } catch (e) {
+      toast.error("Помилка експорту");
+    } finally {
+      setExportingAll(false);
+    }
+  };
+
+  return (
+    <div className="animate-fade-in">
+      <header className="page-header">
+        <h1 className="logo">налаштування</h1>
+      </header>
+      
+      <div className="page-content pt-4 space-y-4">
+        <div className="settings-tabs">
+          <button className={`settings-tab ${activeTab === "management" ? "active" : ""}`} onClick={() => setActiveTab("management")}>менеджмент</button>
+          <button className={`settings-tab ${activeTab === "smm" ? "active" : ""}`} onClick={() => setActiveTab("smm")}>smm</button>
+          <button className={`settings-tab ${activeTab === "marketing" ? "active" : ""}`} onClick={() => setActiveTab("marketing")}>маркетинг</button>
+          <button className={`settings-tab ${activeTab === "sync" ? "active" : ""}`} onClick={() => setActiveTab("sync")}>інше</button>
+        </div>
+        
+        {activeTab === "sync" && (
+          <div className="section-card">
+            <p className="text-xs text-secondary mb-4">синхронізація з Google Calendar</p>
+            <div className="reminder-item">
+              <div className="flex items-center gap-3">
+                <div className="task-icon"><CalendarIcon /></div>
+                <div>
+                  <p className="text-sm font-medium">Google Calendar</p>
+                  <p className="text-xs text-secondary">{googleCalendarStatus.connected ? (googleCalendarStatus.email || "підключено ✓") : "не підключено"}</p>
+                </div>
+              </div>
+              {!googleCalendarStatus.connected ? (
+                <button className="btn-dark text-sm px-3 py-1" onClick={handleGoogleConnect}>підключити</button>
+              ) : (
+                <button className="text-red-500 text-sm" onClick={handleGoogleDisconnect}>відключити</button>
+              )}
+            </div>
+            {googleCalendarStatus.connected && (
+              <>
+                <p className="text-xs text-green-600 mt-2">✓ Нові події автоматично синхронізуються</p>
+                <button 
+                  className="btn-subtle w-full mt-4" 
+                  onClick={handleExportAllEvents}
+                  disabled={exportingAll}
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>{exportingAll ? "експортую..." : "експортувати всі події"}</span>
+                </button>
+              </>
+            )}
+            {!googleCalendarStatus.connected && (
+              <p className="text-xs text-secondary mt-4">після підключення події будуть автоматично додаватися до твого календаря</p>
+            )}
+          </div>
+        )}
+        
+        {activeTab === "sync" && (
+          <AltegioSyncSection />
+        )}
+        
+        {activeTab === "management" && (
+          <div className="section-card">
+            <p className="text-xs text-secondary mb-4">завдання менеджменту для кожної події</p>
+            {(allTaskDefs.management || []).sort((a, b) => b.days_before - a.days_before).map((task) => {
+              const IconComponent = getIconComponent(task.icon || "circle");
+              return (
+                <div key={task.id} className="reminder-item" onClick={() => { setEditingReminder({ ...task }); setShowEditDialog(true); }}>
+                  <div className="flex items-center gap-3">
+                    <div className="task-icon"><IconComponent /></div>
+                    <div><p className="text-sm font-medium">{task.name}</p><p className="text-xs text-secondary">за {task.days_before} днів</p></div>
+                  </div>
+                  <Edit className="w-4 h-4 text-secondary" />
+                </div>
+              );
+            })}
+          </div>
+        )}
+        
+        {activeTab === "smm" && (
+          <div className="section-card">
+            <p className="text-xs text-secondary mb-4">автоматичні завдання для SMM команди</p>
+            {(allTaskDefs.smm || []).sort((a, b) => b.days_before - a.days_before).map(task => {
+              const IconComponent = getIconComponent(SMM_ICONS[task.id] || "instagram");
+              return (
+                <div key={task.id} className="reminder-item" onClick={() => { setEditingSMM({ ...task, icon: SMM_ICONS[task.id] || "instagram" }); setShowEditSMMDialog(true); }}>
+                  <div className="flex items-center gap-3">
+                    <div className="task-icon"><IconComponent /></div>
+                    <div><p className="text-sm font-medium">{task.name}</p><p className="text-xs text-secondary">за {task.days_before} днів</p></div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {task.is_announcement && <span className="text-xs text-yellow-600">анонс</span>}
+                    {task.is_teamwork && <span className="text-xs text-blue-600">тімворк</span>}
+                    <Edit className="w-4 h-4 text-secondary" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {activeTab === "marketing" && (
+          <div className="section-card">
+            <p className="text-xs text-secondary mb-4">завдання маркетингу для кожної події</p>
+            {(allTaskDefs.marketing || []).sort((a, b) => b.days_before - a.days_before).map(task => {
+              const IconComponent = getIconComponent(task.icon || "circle");
+              return (
+                <div key={task.id} className="reminder-item" onClick={() => { setEditingSMM({ ...task, icon: task.icon || "circle" }); setShowEditSMMDialog(true); }}>
+                  <div className="flex items-center gap-3">
+                    <div className="task-icon"><IconComponent /></div>
+                    <div><p className="text-sm font-medium">{task.name}</p><p className="text-xs text-secondary">за {task.days_before} днів</p></div>
+                  </div>
+                  <Edit className="w-4 h-4 text-secondary" />
+                </div>
+              );
+            })}
+            {(allTaskDefs.marketing || []).length === 0 && <p className="text-center text-secondary text-sm py-4">немає завдань</p>}
+          </div>
+        )}
+      </div>
+      
+      {/* Add Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent className="dialog-content sm:max-w-[380px]">
+          <DialogHeader><DialogTitle className="text-xs font-medium">нове нагадування</DialogTitle></DialogHeader>
+          <div className="space-y-4 pt-2">
+            <Input placeholder="що треба зробити?" value={newReminder.name} onChange={(e) => setNewReminder({ ...newReminder, name: e.target.value })} className="form-input text-xs h-8" />
+            <Input type="number" placeholder="днів до події" value={newReminder.days_before} onFocus={(e) => { if (e.target.value === "7") e.target.value = ""; }} onChange={(e) => setNewReminder({ ...newReminder, days_before: parseInt(e.target.value) || 7 })} className="form-input text-xs h-8" />
+            <div className="grid grid-cols-7 gap-2 justify-items-center">{iconOptions.map(opt => <button key={opt.value} type="button" className={`icon-selector-btn ${newReminder.icon === opt.value ? "selected" : ""}`} onClick={() => setNewReminder({ ...newReminder, icon: opt.value })}><opt.Icon className="w-4 h-4" /></button>)}</div>
+          </div>
+          <DialogFooter className="mt-4"><button className="btn-dark w-full h-8 text-xs" onClick={handleAddReminder}>створити</button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Edit Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="dialog-content sm:max-w-[380px]">
+          <DialogHeader><DialogTitle className="text-xs font-medium">редагувати</DialogTitle></DialogHeader>
+          {editingReminder && (
+            <div className="space-y-4 pt-2">
+              <Input value={editingReminder.name} onChange={(e) => setEditingReminder({ ...editingReminder, name: e.target.value })} className="form-input text-xs h-8" />
+              <Input type="number" value={editingReminder.days_before} onChange={(e) => setEditingReminder({ ...editingReminder, days_before: parseInt(e.target.value) || 7 })} className="form-input text-xs h-8" />
+              <div className="grid grid-cols-7 gap-2 justify-items-center">{iconOptions.map(opt => <button key={opt.value} type="button" className={`icon-selector-btn ${editingReminder.icon === opt.value ? "selected" : ""}`} onClick={() => setEditingReminder({ ...editingReminder, icon: opt.value })}><opt.Icon className="w-4 h-4" /></button>)}</div>
+            </div>
+          )}
+          <DialogFooter className="mt-4 flex gap-2">
+            <button className="flex-1 h-8 text-xs rounded-full border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-1" onClick={() => { setReminderToDelete(editingReminder); setShowEditDialog(false); setDeleteDialogOpen(true); }}><Trash2 className="w-3 h-3" />видалити</button>
+            <button className="btn-dark flex-1 h-8 text-xs" onClick={handleEditReminder}>зберегти</button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent className="dialog-content"><AlertDialogHeader><AlertDialogTitle>видалити?</AlertDialogTitle></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>скасувати</AlertDialogCancel><AlertDialogAction onClick={handleDeleteReminder} className="bg-destructive">видалити</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      
+      {/* SMM Edit Dialog */}
+      <Dialog open={showEditSMMDialog} onOpenChange={setShowEditSMMDialog}>
+        <DialogContent className="dialog-content sm:max-w-[380px]">
+          <DialogHeader><DialogTitle className="text-xs font-medium">редагувати завдання</DialogTitle></DialogHeader>
+          {editingSMM && (
+            <div className="space-y-4 pt-2">
+              <Input value={editingSMM.name} onChange={(e) => setEditingSMM({ ...editingSMM, name: e.target.value })} className="form-input text-xs h-8" placeholder="назва завдання" />
+              <Input type="number" value={editingSMM.days_before} onChange={(e) => setEditingSMM({ ...editingSMM, days_before: parseInt(e.target.value) || 0 })} className="form-input text-xs h-8" placeholder="днів до події" />
+              <div className="grid grid-cols-7 gap-2 justify-items-center">{iconOptions.map(opt => <button key={opt.value} type="button" className={`icon-selector-btn ${editingSMM.icon === opt.value ? "selected" : ""}`} onClick={() => setEditingSMM({ ...editingSMM, icon: opt.value })}><opt.Icon className="w-4 h-4" /></button>)}</div>
+            </div>
+          )}
+          <DialogFooter className="mt-4"><button className="btn-dark w-full h-8 text-xs" onClick={() => { toast.success("збережено!"); setShowEditSMMDialog(false); }}>зберегти</button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      <BottomNav />
+    </div>
+  );
+};
+
+// Archive Content Component - 4 columns with week/month accordions
+const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, standaloneTasks, handleRestoreTask, handleRestoreEvent, refreshEvents }) => {
+  const [expandedWeeks, setExpandedWeeks] = useState({});
+  
+  // Helper to get week key from date
+  const getWeekKey = (dateStr) => {
+    const date = new Date(dateStr);
+    const startOfWeek = new Date(date);
+    startOfWeek.setDate(date.getDate() - date.getDay() + 1); // Monday
+    return startOfWeek.toISOString().split('T')[0];
+  };
+  
+  // Helper to get current week key
+  const currentWeekKey = getWeekKey(new Date().toISOString());
+  
+  // Group items by week
+  const groupByWeek = (items, dateField) => {
+    const groups = {};
+    items.forEach(item => {
+      const dateStr = item[dateField] || item.completed_at || item.date;
+      if (!dateStr) return;
+      const weekKey = getWeekKey(dateStr);
+      if (!groups[weekKey]) groups[weekKey] = [];
+      groups[weekKey].push(item);
+    });
+    return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
+  };
+  
+  // Format week range
+  const formatWeekRange = (weekKey) => {
+    const start = new Date(weekKey);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    const startDay = start.getDate();
+    const endDay = end.getDate();
+    const month = UK_MONTHS_SHORT[start.getMonth()];
+    const endMonth = UK_MONTHS_SHORT[end.getMonth()];
+    if (start.getMonth() === end.getMonth()) {
+      return `${startDay}—${endDay} ${month}`;
+    }
+    return `${startDay} ${month} — ${endDay} ${endMonth}`;
+  };
+  
+  const toggleWeek = (columnKey, weekKey) => {
+    const key = `${columnKey}-${weekKey}`;
+    setExpandedWeeks(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+  
+  const isExpanded = (columnKey, weekKey) => {
+    const key = `${columnKey}-${weekKey}`;
+    return expandedWeeks[key] ?? (weekKey === currentWeekKey);
+  };
+  
+  // Filter by team member color
+  const kasyaTasks = completedSMMTasksDesktop.filter(t => t.color === 'kasya' || t.color === 'emerald');
+  const karolinaTasks = [...archive.filter(item => !item.is_standalone || standaloneTasks.find(t => t.id === item.event_id)?.type !== "smm"), 
+    ...completedSMMTasksDesktop.filter(t => t.color === 'karolina' || t.color === 'standard' || (!t.color && !['kasya', 'emerald', 'vo', 'orange'].includes(t.color)))];
+  const voTasks = completedSMMTasksDesktop.filter(t => t.color === 'vo' || t.color === 'orange');
+  
+  const kasyaByWeek = groupByWeek(kasyaTasks, 'completed_at');
+  const karolinaByWeek = groupByWeek(karolinaTasks, 'completed_at');
+  const voByWeek = groupByWeek(voTasks, 'completed_at');
+  const eventsByWeek = groupByWeek(archivedEvents, 'date');
+  
+  const renderArchiveColumn = (title, colorHex, weekGroups, columnKey, renderItem) => (
+    <div className="desktop-column">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <span className="text-sm font-semibold tracking-wide" style={colorHex ? {color: colorHex} : {}}>{title}</span>
+      </div>
+      <div className="column-content">
+        {weekGroups.length === 0 ? (
+          <p className="text-secondary text-sm py-4 text-center">порожньо</p>
+        ) : (
+          weekGroups.map(([weekKey, items]) => (
+            <div key={weekKey} className="mb-3">
+              <button 
+                className="flex items-center justify-between w-full text-left py-2 text-sm font-medium text-secondary hover:text-primary"
+                onClick={() => toggleWeek(columnKey, weekKey)}
+              >
+                <span>{formatWeekRange(weekKey)}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">{items.length}</span>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded(columnKey, weekKey) ? "rotate-180" : ""}`} />
+                </div>
+              </button>
+              {isExpanded(columnKey, weekKey) && (
+                <div className="space-y-1 pt-2">
+                  {items.map((item, idx) => renderItem(item, idx))}
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+  
+  return (
+    <div className="desktop-columns-4">
+      {/* ПОДІЇ */}
+      {renderArchiveColumn("ПОДІЇ", null, eventsByWeek, "events", (event, idx) => (
+        <div key={event.id || idx} className="event-card-desktop">
+          <div className="date-badge-desktop">
+            <span className="date-badge-month">{UK_MONTHS_SHORT[new Date(event.date).getMonth()]}</span>
+            <span className="date-badge-day">{new Date(event.date).getDate()}</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm">{event.title}</p>
+            <p className="text-xs text-secondary">{event.price} ₴</p>
+          </div>
+          {event.cancelled ? (
+            <button className="restore-btn cancelled" onClick={() => handleRestoreEvent(event.id)} title="відновити">
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          ) : (
+            <span className="text-xs text-secondary">минула</span>
+          )}
+        </div>
+      ))}
+      
+      {/* МЕНЕДЖМЕНТ */}
+      {renderArchiveColumn("МЕНЕДЖМЕНТ", null, karolinaByWeek, "karolina", (item, idx) => {
+        const IconComponent = getIconComponent(item.icon || "check");
+        return (
+          <div key={idx} className="task-item">
+            <div className="task-icon"><IconComponent /></div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">{item.task_name || item.reminder_name}</p>
+              <p className="text-xs text-secondary">{item.event_title}</p>
+            </div>
+            <button className="restore-btn" onClick={() => handleRestoreTask(item)} title="відновити">
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          </div>
+        );
+      })}
+      
+      {/* SMM */}
+      {renderArchiveColumn("SMM", "#059669", kasyaByWeek, "kasya", (item, idx) => {
+        const IconComponent = getIconComponent(item.icon || "instagram");
+        return (
+          <div key={idx} className="task-item">
+            <div className="task-icon emerald"><IconComponent /></div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">{item.task_name || item.reminder_name}</p>
+              <p className="text-xs text-secondary">{item.event_title}</p>
+            </div>
+            <button className="restore-btn" onClick={async () => { 
+              try { 
+                await api.completeSMMTask({ event_id: item.event_id, task_id: item.task_id, completed: false }); 
+                refreshEvents(); 
+                toast.success("відновлено"); 
+              } catch { toast.error("помилка"); } 
+            }} title="відновити">
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          </div>
+        );
+      })}
+      
+      {/* ВО */}
+      {renderArchiveColumn("МАРКЕТИНГ", "#C4703D", voByWeek, "vo", (item, idx) => {
+        const IconComponent = getIconComponent(item.icon || "instagram");
+        return (
+          <div key={idx} className="task-item">
+            <div className="task-icon orange"><IconComponent /></div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">{item.task_name || item.reminder_name}</p>
+              <p className="text-xs text-secondary">{item.event_title}</p>
+            </div>
+            <button className="restore-btn" onClick={async () => { 
+              try { 
+                await api.completeSMMTask({ event_id: item.event_id, task_id: item.task_id, completed: false }); 
+                refreshEvents(); 
+                toast.success("відновлено"); 
+              } catch { toast.error("помилка"); } 
+            }} title="відновити">
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// Desktop Dashboard
+// Team Column Component - reusable for КАСЯ, КАРОЛІНА, ВО
+const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick, onStandaloneClick, onTaskEdit, onAddClick, overdueExpanded, setOverdueExpanded, soonExpanded, setSoonExpanded, smmTasksDefinition, columnAssignee, announcementOverlaps = {} }) => {
+  const TaskRenderer = ({ task }) => {
+    const colAssignee = columnAssignee || (colorClass === 'emerald' ? 'kasya' : colorClass === 'orange' ? 'vo' : 'karolina');
+    const taskDate = task.task_date || task.reminder_date;
+    const isOverlapping = !!(taskDate && announcementOverlaps[taskDate]);
+    const normalizedTask = {
+      ...task,
+      task_id: task.task_id || task.reminder_id,
+      task_name: task.task_name || task.reminder_name,
+      task_date: task.task_date || task.reminder_date,
+      color: task.color || (colorClass === 'emerald' ? 'kasya' : colorClass === 'orange' ? 'vo' : 'karolina'),
+      assignee: task.assignee || colAssignee,
+      isOverlapping
+    };
+    return (
+      <SMMTaskItem 
+        key={`${normalizedTask.event_id}-${normalizedTask.task_id}`} 
+        task={normalizedTask} 
+        onToggle={onToggle} 
+        onEventClick={onEventClick} 
+        onStandaloneClick={onStandaloneClick}
+        onTaskEdit={onTaskEdit}
+        smmTasksDefinition={smmTasksDefinition}
+      />
+    );
+  };
+
+  return (
+    <div className="desktop-column">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>{name}</span>
+        <button className="add-btn" onClick={onAddClick}><Plus className="w-4 h-4" /></button>
+      </div>
+      <div className="column-content">
+        {tasks.overdue.length > 0 && (
+          <div className="mb-3">
+            <button className="section-header-mini overdue-header" onClick={() => setOverdueExpanded(!overdueExpanded)}>
+              <span>протерміновано ({tasks.overdue.length})</span>
+              <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${overdueExpanded ? "rotate-180" : ""}`} />
+            </button>
+            {overdueExpanded && tasks.overdue.map((t, i) => <TaskRenderer key={i} task={t} />)}
+          </div>
+        )}
+        
+        <div className="mb-3">
+          <div className="section-header-mini"><span>сьогодні ({tasks.today.length})</span></div>
+          {tasks.today.length > 0 ? [...tasks.today].sort((a, b) => (a.completed ? 1 : 0) - (b.completed ? 1 : 0)).map((t, i) => <TaskRenderer key={i} task={t} />)
+            : <p className="text-center text-secondary text-sm py-2">все зроблено!</p>}
+        </div>
+        
+        {tasks.soon.length > 0 && (
+          <div>
+            <button className="section-header-mini" onClick={() => setSoonExpanded(!soonExpanded)}>
+              <span>незабаром ({tasks.soon.length})</span>
+              <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${soonExpanded ? "rotate-180" : ""}`} />
+            </button>
+            {soonExpanded && (
+              <div className="pt-2">
+                {Object.entries(tasks.soon.reduce((groups, task) => {
+                  const dateKey = task.task_date || task.reminder_date;
+                  if (!groups[dateKey]) groups[dateKey] = [];
+                  groups[dateKey].push(task);
+                  return groups;
+                }, {})).map(([date, dateTasks]) => (
+                  <div key={date} className="mb-2">
+                    <p className={`text-xs font-medium mb-1 ${announcementOverlaps[date] ? "text-red-500" : "text-secondary"}`}>
+                      {formatDateUkrainian(date)}
+                      {announcementOverlaps[date] && <span className="ml-1.5 text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">перетин</span>}
+                    </p>
+                    {dateTasks.map((t, i) => <TaskRenderer key={i} task={t} />)}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const DesktopDashboard = () => {
+  const { events, settings, standaloneTasks, smmTasksDefinition, refreshEvents, refreshStandaloneTasks } = useApp();
+  const navigate = useNavigate();
+  const [showSettings, setShowSettings] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
+  const [archive, setArchive] = useState([]);
+  const [overdueExpanded, setOverdueExpanded] = useState(false);
+  const [soonExpanded, setSoonExpanded] = useState(false);
+  const [smmOverdueExpanded, setSmmOverdueExpanded] = useState(false);
+  const [smmSoonExpanded, setSmmSoonExpanded] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [showEventDetail, setShowEventDetail] = useState(false);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [showTaskDialog, setShowTaskDialog] = useState(false);
+  const [showSMMTaskDialog, setShowSMMTaskDialog] = useState(false);
+  const [dialogColumnName, setDialogColumnName] = useState("");
+  const [showTaskCalendar, setShowTaskCalendar] = useState(false);
+  const [showSMMCalendar, setShowSMMCalendar] = useState(false);
+  const [newTask, setNewTask] = useState(() => ({ title: "", date: formatDateLocal(new Date()), icon: "coffee", color: "karolina" }));
+  const [newSMMTask, setNewSMMTask] = useState(() => ({ title: "", date: formatDateLocal(new Date()), icon: "instagram", color: "karolina" }));
+  const [selectedStandaloneTask, setSelectedStandaloneTask] = useState(null);
+  const [showStandaloneTaskPopup, setShowStandaloneTaskPopup] = useState(false);
+  const [editingStandaloneTask, setEditingStandaloneTask] = useState(null);
+  const [showEditStandaloneDialog, setShowEditStandaloneDialog] = useState(false);
+  const [showEditCalendar, setShowEditCalendar] = useState(false);
+  const [activeTab, setActiveTab] = useState('team'); // 'team' or 'events'
+  const [announcementOverlaps, setAnnouncementOverlaps] = useState({});
+  
+  // Fetch announcement overlaps
+  useEffect(() => {
+    axios.get(`${API}/smm/announcement-overlaps`).then(r => setAnnouncementOverlaps(r.data || {})).catch(() => {});
+  }, [events]);
+  
+  // Expand states for each team column
+  const [kasyaOverdue, setKasyaOverdue] = useState(false);
+  const [kasyaSoon, setKasyaSoon] = useState(true);
+  const [karolinaOverdue, setKarolinaOverdue] = useState(false);
+  const [karolinaSoon, setKarolinaSoon] = useState(true);
+  const [voOverdue, setVoOverdue] = useState(false);
+  const [voSoon, setVoSoon] = useState(true);
+  
+  const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
+  const todayFormatted = formatDateWithWeekday(today);
+  const todayStr = formatDateLocal(today);
+  const twoWeeksFromNow = new Date(today); twoWeeksFromNow.setDate(twoWeeksFromNow.getDate() + 14);
+  const twoWeeksStr = formatDateLocal(twoWeeksFromNow);
+  
+  // Archived events: cancelled OR past
+  const archivedEvents = useMemo(() => {
+    return events.filter(e => {
+      const eventDate = new Date(e.date);
+      eventDate.setHours(0, 0, 0, 0);
+      return e.cancelled || eventDate < today;
+    }).sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [events, today]);
+  
+  // Completed SMM tasks from events
+  const completedSMMTasksDesktop = useMemo(() => {
+    const completed = [];
+    events.forEach(event => {
+      Object.entries(event.completed_smm_tasks || {}).forEach(([taskId, isCompleted]) => {
+        if (isCompleted && smmTasksDefinition.find(t => t.id === taskId)) {
+          const taskInfo = smmTasksDefinition.find(t => t.id === taskId);
+          completed.push({
+            event_id: event.id,
+            event_title: event.title,
+            task_id: taskId,
+            task_name: taskInfo.name,
+            icon: SMM_ICONS[taskId] || "instagram"
+          });
+        }
+      });
+    });
+    return completed;
+  }, [events, smmTasksDefinition]);
+  
+  // Tasks
+  const getTasks = useCallback(() => {
+    if (!settings?.reminder_types) return { overdue: [], today: [], soon: [] };
+    const overdueTasks = [], todayTasks = [], soonTasks = [];
+    const reminderMap = {}; settings.reminder_types.forEach(rt => { reminderMap[rt.id] = rt; });
+    
+    events.forEach(event => {
+      if (event.cancelled) return;
+      const eventDate = new Date(event.date); eventDate.setHours(0, 0, 0, 0);
+      if (eventDate < today) return;
+      
+      Object.entries(event.reminders || {}).forEach(([reminderId, reminderDateStr]) => {
+        const reminderInfo = reminderMap[reminderId]; if (!reminderInfo) return;
+        const reminderDate = new Date(reminderDateStr); reminderDate.setHours(0, 0, 0, 0);
+        const ov = (event.task_overrides || {})[reminderId] || {};
+        const task = { event_id: event.id, event_title: event.title, reminder_id: reminderId, reminder_name: ov.title || reminderInfo.name, reminder_date: reminderDateStr, icon: ov.icon || reminderInfo.icon, completed: !!(event.completed_tasks || {})[reminderId], is_standalone: false, color: ov.color, assignee: ov.assignee };
+        
+        if (reminderDateStr === todayStr) todayTasks.push(task);
+        else if (reminderDate < today && !task.completed) overdueTasks.push(task);
+        else if (reminderDate > today && reminderDateStr <= twoWeeksStr) soonTasks.push(task);
+      });
+    });
+    
+    standaloneTasks.filter(t => t.type !== "smm").forEach(task => {
+      const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
+      const t = { event_id: task.id, event_title: task.title, reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "karolina", assignee: task.assignee || "karolina" };
+      if (task.date === todayStr) todayTasks.push(t);
+      else if (taskDate < today && !task.completed) overdueTasks.push(t);
+      else if (taskDate > today && task.date <= twoWeeksStr) soonTasks.push(t);
+    });
+    
+    soonTasks.sort((a, b) => new Date(a.reminder_date) - new Date(b.reminder_date));
+    overdueTasks.sort((a, b) => new Date(a.reminder_date) - new Date(b.reminder_date));
+    return { overdue: overdueTasks, today: todayTasks, soon: soonTasks };
+  }, [events, settings, standaloneTasks, today, todayStr, twoWeeksStr]);
+  
+  // SMM Tasks
+  const smmTasksMap = useMemo(() => { const map = {}; smmTasksDefinition.forEach(t => { map[t.id] = t; }); return map; }, [smmTasksDefinition]);
+  
+  const getSMMTasks = useCallback(() => {
+    const overdueTasks = [], todayTasks = [], soonTasks = [];
+    const processTasksDict = (event, tasksDict, completedDict) => {
+      Object.entries(tasksDict || {}).forEach(([taskId, taskDateStr]) => {
+        const taskInfo = smmTasksMap[taskId]; if (!taskInfo) return;
+        const taskDate = new Date(taskDateStr); taskDate.setHours(0, 0, 0, 0);
+        const ov2 = (event.task_overrides || {})[taskId] || {};
+        const task = { event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov2.title || taskInfo.name, task_date: taskDateStr, completed: !!(completedDict || {})[taskId], color: ov2.color || taskInfo.color || "standard", icon: ov2.icon || taskInfo.icon, assignee: ov2.assignee };
+        if (taskDateStr === todayStr) todayTasks.push(task);
+        else if (taskDate < today && !task.completed) overdueTasks.push(task);
+        else if (taskDate > today && taskDateStr <= twoWeeksStr) soonTasks.push(task);
+      });
+    };
+    events.forEach(event => {
+      if (event.cancelled) return;
+      const eventDate = new Date(event.date); eventDate.setHours(0, 0, 0, 0);
+      if (eventDate < today) return;
+      processTasksDict(event, event.smm_tasks, event.completed_smm_tasks);
+      processTasksDict(event, event.marketing_tasks, event.completed_smm_tasks);
+    });
+    
+    // Add standalone tasks
+    standaloneTasks.filter(t => t.type === "smm").forEach(task => {
+      const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
+      const t = { event_id: task.id, event_title: task.title, task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "karolina", assignee: task.assignee || "kasya" };
+      if (task.date === todayStr) todayTasks.push(t);
+      else if (taskDate < today && !task.completed) overdueTasks.push(t);
+      else if (taskDate > today && task.date <= twoWeeksStr) soonTasks.push(t);
+    });
+    
+    soonTasks.sort((a, b) => new Date(a.task_date) - new Date(b.task_date));
+    overdueTasks.sort((a, b) => new Date(a.task_date) - new Date(b.task_date));
+    return { overdue: overdueTasks, today: todayTasks, soon: soonTasks };
+  }, [events, smmTasksMap, standaloneTasks, today, todayStr, twoWeeksStr]);
+  
+  const regularTasks = getTasks();
+  const allSmmTasks = getSMMTasks();
+  
+  // Split tasks by team member
+  const tasksByTeam = useMemo(() => {
+    // Task column assignment by ID prefix or explicit assignee
+    const getColumn = (t) => {
+      if (t.assignee) return t.assignee === 'kasya' ? 'smm' : t.assignee === 'vo' ? 'marketing' : 'management';
+      const id = t.task_id || '';
+      if (id.startsWith('mgmt_')) return 'management';
+      if (id.startsWith('smm_')) return 'smm';
+      if (id.startsWith('mktg_')) return 'marketing';
+      // Fallback to old color-based logic
+      if (t.color === 'emerald' || t.color === 'kasya') return 'smm';
+      return 'management';
+    };
+    const isKasya = (t) => getColumn(t) === 'smm';
+    const isKarolina = (t) => getColumn(t) === 'management';
+    const isVo = (t) => getColumn(t) === 'marketing';
+    
+    // Regular tasks: split by assignee
+    const kasyaRegular = { overdue: [], today: [], soon: [] };
+    const karolinaRegular = { overdue: [], today: [], soon: [] };
+    const voRegular = { overdue: [], today: [], soon: [] };
+    ['overdue', 'today', 'soon'].forEach(k => {
+      regularTasks[k].forEach(t => {
+        if (t.assignee === 'kasya') kasyaRegular[k].push(t);
+        else if (t.assignee === 'vo') voRegular[k].push(t);
+        else karolinaRegular[k].push(t);
+      });
+    });
+    
+    // Sort tasks: daily first, then event-based, then monthly
+    const sortByType = (tasks) => {
+      return tasks.sort((a, b) => {
+        const typeOrder = (t) => {
+          const id = t.task_id || t.reminder_id || t.event_id || '';
+          if (id.startsWith('daily_') || (t.is_standalone && t.type !== 'monthly')) return 0; // daily/standalone
+          if (typeof id === 'string' && id.startsWith('monthly-')) return 2; // monthly
+          return 1; // event-based
+        };
+        const oa = typeOrder(a), ob = typeOrder(b);
+        if (oa !== ob) return oa - ob;
+        return new Date(a.task_date || a.reminder_date) - new Date(b.task_date || b.reminder_date);
+      });
+    };
+
+    return {
+      kasya: {
+        overdue: sortByType([...allSmmTasks.overdue.filter(t => isKasya(t)), ...kasyaRegular.overdue]),
+        today: sortByType([...allSmmTasks.today.filter(t => isKasya(t)), ...kasyaRegular.today]),
+        soon: sortByType([...allSmmTasks.soon.filter(t => isKasya(t)), ...kasyaRegular.soon]),
+      },
+      karolina: {
+        overdue: sortByType([...allSmmTasks.overdue.filter(t => isKarolina(t)), ...karolinaRegular.overdue]),
+        today: sortByType([...allSmmTasks.today.filter(t => isKarolina(t)), ...karolinaRegular.today]),
+        soon: sortByType([...allSmmTasks.soon.filter(t => isKarolina(t)), ...karolinaRegular.soon]),
+      },
+      vo: {
+        overdue: sortByType([...allSmmTasks.overdue.filter(t => isVo(t)), ...voRegular.overdue]),
+        today: sortByType([...allSmmTasks.today.filter(t => isVo(t)), ...voRegular.today]),
+        soon: sortByType([...allSmmTasks.soon.filter(t => isVo(t)), ...voRegular.soon]),
+      }
+    };
+  }, [allSmmTasks, regularTasks]);
+  
+  const eventDates = new Set(events.filter(e => !e.cancelled && !e.archived).map(e => e.date.split('T')[0]));
+  const allEvents = [...events].filter(e => !e.cancelled && !e.archived).sort((a, b) => new Date(a.date) - new Date(b.date));
+  
+  const handleToggleTask = async (eventId, reminderId, completed, isStandalone) => {
+    try { if (isStandalone) { await api.updateStandaloneTask(eventId, completed); refreshStandaloneTasks(); } else { await api.completeTask({ event_id: eventId, reminder_id: reminderId, completed }); refreshEvents(); } }
+    catch { toast.error("помилка"); }
+  };
+  
+  const handleToggleSMMTask = async (eventId, taskId, completed, isStandalone) => { 
+    try { 
+      if (isStandalone) { await api.updateStandaloneTask(eventId, completed); refreshStandaloneTasks(); }
+      else { await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed }); refreshEvents(); }
+    } catch { toast.error("помилка"); } 
+  };
+  const loadArchive = async () => { try { const r = await api.getTaskArchive(); setArchive(r.data); setShowArchive(true); } catch { toast.error("помилка"); } };
+  const handleRestoreTask = async (item) => {
+    try {
+      if (item.is_standalone) { await api.updateStandaloneTask(item.event_id, false); refreshStandaloneTasks(); }
+      else { await api.completeTask({ event_id: item.event_id, reminder_id: item.reminder_id, completed: false }); refreshEvents(); }
+      const r = await api.getTaskArchive(); setArchive(r.data);
+    } catch { toast.error("помилка"); }
+  };
+  
+  const handleDateClick = (date) => {
+    if (date) {
+      const dateStr = formatDateLocal(date);
+      const element = document.querySelector(`[data-event-date="${dateStr}"]`);
+      if (element) {
+        const scrollContainer = element.closest('.column-content');
+        if (scrollContainer) {
+          const offset = element.offsetTop - scrollContainer.offsetTop - 10;
+          scrollContainer.scrollTo({ top: offset, behavior: 'smooth' });
+        }
+        element.classList.add('event-highlight');
+        setTimeout(() => element.classList.remove('event-highlight'), 2000);
+      }
+    }
+  };
+  
+  const handleEventClick = async (eventId) => { try { const r = await axios.get(`${API}/events/${eventId}`); setSelectedEvent(r.data); setShowEventDetail(true); } catch { toast.error("помилка"); } };
+  const handleToggleTaskInPopup = async (reminderId, completed) => { try { await api.completeTask({ event_id: selectedEvent.id, reminder_id: reminderId, completed }); refreshEvents(); const r = await axios.get(`${API}/events/${selectedEvent.id}`); setSelectedEvent(r.data); } catch { toast.error("помилка"); } };
+  const handleToggleSMMTaskInPopup = async (taskId, completed) => { try { await api.completeSMMTask({ event_id: selectedEvent.id, task_id: taskId, completed }); refreshEvents(); const r = await axios.get(`${API}/events/${selectedEvent.id}`); setSelectedEvent(r.data); } catch { toast.error("помилка"); } };
+  
+  const [syncingEvent, setSyncingEvent] = useState(false);
+  const [exportingEvent, setExportingEvent] = useState(false);
+  
+  const handleSyncAltegioInPopup = async () => {
+    if (!selectedEvent) return;
+    setSyncingEvent(true);
+    try {
+      await api.syncEventFromAltegio(selectedEvent.id);
+      toast.success("синхронізовано");
+      const r = await axios.get(`${API}/events/${selectedEvent.id}`);
+      setSelectedEvent(r.data);
+      refreshEvents();
+    } catch { toast.error("помилка синхронізації"); }
+    finally { setSyncingEvent(false); }
+  };
+  
+  const handleExportCalendarInPopup = async () => {
+    if (!selectedEvent) return;
+    setExportingEvent(true);
+    try {
+      await api.exportEventToCalendar(selectedEvent.id);
+      toast.success("додано до календаря");
+      const r = await axios.get(`${API}/events/${selectedEvent.id}`);
+      setSelectedEvent(r.data);
+    } catch { toast.error("помилка експорту"); }
+    finally { setExportingEvent(false); }
+  };
+  
+  const handleStandaloneTaskClick = (task) => {
+    const fullTask = standaloneTasks.find(t => t.id === task.event_id);
+    if (fullTask) { setSelectedStandaloneTask(fullTask); setShowStandaloneTaskPopup(true); }
+  };
+  
+  const handleTaskEdit = (task) => {
+    if (task.is_standalone) {
+      const fullTask = standaloneTasks.find(t => t.id === task.event_id);
+      if (fullTask) {
+        setEditingStandaloneTask({...fullTask, _isStandalone: true, assignee: fullTask.assignee || task.assignee || 'karolina'});
+        setShowEditStandaloneDialog(true);
+      }
+    } else {
+      // Event-based task
+      const taskColor = task.color || "karolina";
+      const currentAssignee = task.assignee || 'karolina';
+      setEditingStandaloneTask({
+        _isStandalone: false,
+        _eventId: task.event_id,
+        _taskId: task.task_id,
+        assignee: currentAssignee,
+        id: task.event_id,
+        title: task.task_name,
+        date: task.task_date,
+        icon: task.icon || "circle",
+        color: taskColor,
+        type: "smm",
+        completed: task.completed,
+        eventTitle: task.event_title,
+      });
+      setShowEditStandaloneDialog(true);
+    }
+  };
+  
+  const handleDeleteStandaloneTask = async () => {
+    if (!selectedStandaloneTask) return;
+    try { await api.deleteStandaloneTask(selectedStandaloneTask.id); toast.success("видалено!"); refreshStandaloneTasks(); setShowStandaloneTaskPopup(false); }
+    catch { toast.error("помилка"); }
+  };
+  
+  const handleCancelEvent = async (eventId) => {
+    try { 
+      await axios.patch(`${API}/events/${eventId}`, { cancelled: true }); 
+      toast.success("подію скасовано"); 
+      refreshEvents(); 
+      setShowEventDetail(false); 
+    } catch { toast.error("помилка"); }
+  };
+  
+  const handleRestoreEvent = async (eventId) => {
+    try { 
+      await axios.patch(`${API}/events/${eventId}`, { cancelled: false }); 
+      toast.success("подію відновлено"); 
+      refreshEvents();
+      const r = await axios.get(`${API}/events/${eventId}`);
+      setSelectedEvent(r.data);
+    } catch { toast.error("помилка"); }
+  };
+  
+  const handleCreateTask = async () => {
+    if (!newTask.title.trim()) return;
+    try { await api.createStandaloneTask({ ...newTask, type: "regular", assignee: dialogColumnName === "SMM" ? "kasya" : dialogColumnName === "Маркетинг" ? "vo" : "karolina" }); toast.success("додано!"); refreshStandaloneTasks(); setShowTaskDialog(false); setNewTask({ title: "", date: todayStr, icon: "coffee", color: "karolina" }); }
+    catch { toast.error("помилка"); }
+  };
+  
+  const handleCreateSMMTask = async () => {
+    if (!newSMMTask.title.trim()) return;
+    try { 
+      await api.createStandaloneTask({ ...newSMMTask, type: "smm", assignee: dialogColumnName === "SMM" ? "kasya" : dialogColumnName === "Маркетинг" ? "vo" : "karolina" }); 
+      toast.success("додано!"); 
+      refreshStandaloneTasks(); 
+      setShowSMMTaskDialog(false); 
+      setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "karolina" }); 
+    }
+    catch { toast.error("помилка"); }
+  };
+  
+  const handleSaveStandaloneTask = async () => {
+    if (!editingStandaloneTask?.title?.trim()) return;
+    try {
+      if (editingStandaloneTask._isStandalone === false) {
+        await axios.patch(`${API}/events/${editingStandaloneTask._eventId}/tasks/${editingStandaloneTask._taskId}`, {
+          color: editingStandaloneTask.color,
+          icon: editingStandaloneTask.icon,
+          title: editingStandaloneTask.title,
+          assignee: editingStandaloneTask.assignee,
+          date: editingStandaloneTask.date,
+        });
+        toast.success("збережено!");
+        refreshEvents();
+      } else {
+        await api.updateStandaloneTaskFull(editingStandaloneTask.id, {
+          title: editingStandaloneTask.title,
+          date: editingStandaloneTask.date,
+          icon: editingStandaloneTask.icon,
+          type: editingStandaloneTask.type,
+          color: editingStandaloneTask.color,
+          assignee: editingStandaloneTask.assignee || 'karolina',
+        });
+        toast.success("збережено!");
+        refreshStandaloneTasks();
+      }
+      setShowEditStandaloneDialog(false);
+      setEditingStandaloneTask(null);
+    } catch { toast.error("помилка"); }
+  };
+  
+  // Keyboard shortcut for save (Ctrl/Cmd + Enter)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        if (showTaskDialog && newTask.title.trim()) {
+          e.preventDefault();
+          handleCreateTask();
+        } else if (showSMMTaskDialog && newSMMTask.title.trim()) {
+          e.preventDefault();
+          handleCreateSMMTask();
+        } else if (showEditStandaloneDialog && editingStandaloneTask?.title?.trim()) {
+          e.preventDefault();
+          handleSaveStandaloneTask();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showTaskDialog, showSMMTaskDialog, showEditStandaloneDialog, newTask, newSMMTask, editingStandaloneTask]);
+
+  return (
+    <div className="desktop-dashboard">
+      <header className="desktop-header">
+        <div className="desktop-header-left">
+          <h1 className="logo">sensa</h1>
+        </div>
+        <div className="desktop-date-center">
+          <span className="desktop-date-simple">{todayFormatted.day} {todayFormatted.month} — {todayFormatted.weekday}</span>
+        </div>
+        <div className="desktop-header-right">
+          <button className="desktop-header-btn" onClick={() => setShowStats(true)} title="Аналітика" data-testid="analytics-btn"><BarChart3 className="w-5 h-5" /></button>
+          <button className="desktop-header-btn" onClick={() => navigate("/content")} title="Контент" data-testid="content-btn"><FileText className="w-5 h-5" /></button>
+          <button className="btn-dark" onClick={() => navigate("/event/new")}><Plus className="w-4 h-4" /><span>подія</span></button>
+          <button className="desktop-header-btn" onClick={() => setShowSettings(true)} title="Налаштування"><Settings className="w-5 h-5" /></button>
+        </div>
+      </header>
+      
+      {/* Main Content - 4 columns */}
+      <div className="desktop-columns-4">
+          {/* Events Column */}
+          <div className="desktop-column">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>ПОДІЇ</span>
+                <div className="flex items-center gap-1">
+                  <button className="p-0.5 hover:bg-gray-100 rounded-full transition-colors" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}><ChevronLeft className="w-3.5 h-3.5 text-secondary" /></button>
+                  <span className="text-xs font-medium text-secondary min-w-[60px] text-center">{UK_MONTHS_NOMINATIVE[currentMonth.getMonth()]}</span>
+                  <button className="p-0.5 hover:bg-gray-100 rounded-full transition-colors" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}><ChevronRight className="w-3.5 h-3.5 text-secondary" /></button>
+                </div>
+              </div>
+              <button className="add-btn" onClick={() => navigate("/event/new")}><Plus className="w-4 h-4" /></button>
+            </div>
+            <div className="column-content">
+              <div className="calendar-container-desktop">
+                <Calendar mode="single" locale={uk} weekStartsOn={1} month={currentMonth} onMonthChange={setCurrentMonth} onSelect={handleDateClick} className="w-full calendar-minimal calendar-wide !p-1"
+                  classNames={{ month: "space-y-0 w-full", caption: "hidden", row: "flex w-full", head_row: "flex w-full", table: "w-full border-collapse" }}
+                  modifiersClassNames={{ today: "calendar-today-visible" }}
+                  components={{ DayContent: ({ date }) => {
+                    const checkDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                    const hasEvent = events.some(e => !e.cancelled && e.date.startsWith(checkDate));
+                    return <div className="calendar-day-content"><span>{date.getDate()}</span>{hasEvent && <span className="event-dot" />}</div>;
+                  }}}
+                />
+              </div>
+              <div className="events-list">{allEvents.slice(0, 10).map(event => {
+                const eventDate = new Date(event.date);
+                return (
+                  <div key={event.id} className="event-card-desktop" onClick={() => handleEventClick(event.id)} data-event-date={event.date.split('T')[0]}>
+                    <div className="date-badge-desktop">
+                      <span className="date-badge-month">{UK_MONTHS_SHORT[eventDate.getMonth()]}</span>
+                      <span className="date-badge-day">{eventDate.getDate()}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate">{event.title}</p>
+                      <p className="text-xs text-secondary">{event.price} ₴</p>
+                    </div>
+                    <div className="text-right">
+                      <span className={`text-sm font-bold ${getBookingColorClass(getBookingStatusColor(event))}`}>
+                        {event.altegio_booked_count != null ? event.altegio_booked_count : 0}/{event.spots || 10}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}</div>
+            </div>
+          </div>
+          
+          {/* МЕНЕДЖМЕНТ Column (black) - First */}
+          <TeamColumn 
+            name="МЕНЕДЖМЕНТ"
+            tasks={tasksByTeam.karolina}
+            colorClass=""
+            colorHex={null}
+            onToggle={(eventId, taskId, completed, isStandalone) => {
+              if (isStandalone || taskId === "standalone") {
+                handleToggleSMMTask(eventId, taskId, completed, isStandalone);
+              } else {
+                handleToggleTask(eventId, taskId, completed, isStandalone);
+              }
+            }}
+            onEventClick={handleEventClick}
+            onStandaloneClick={handleStandaloneTaskClick}
+            onTaskEdit={handleTaskEdit}
+            onAddClick={() => { setNewTask({ title: "", date: todayStr, icon: "coffee", color: "karolina" }); setDialogColumnName("Менеджмент"); setShowTaskDialog(true); }}
+            overdueExpanded={karolinaOverdue}
+            setOverdueExpanded={setKarolinaOverdue}
+            soonExpanded={karolinaSoon}
+            setSoonExpanded={setKarolinaSoon}
+            smmTasksDefinition={smmTasksDefinition}
+            columnAssignee="karolina"
+          />
+          
+          {/* SMM Column (emerald) - Second */}
+          <TeamColumn 
+            name="SMM"
+            tasks={tasksByTeam.kasya}
+            colorClass="emerald"
+            colorHex="#059669"
+            onToggle={handleToggleSMMTask}
+            onEventClick={handleEventClick}
+            onStandaloneClick={handleStandaloneTaskClick}
+            onTaskEdit={handleTaskEdit}
+            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "kasya" }); setDialogColumnName("SMM"); setShowSMMTaskDialog(true); }}
+            overdueExpanded={kasyaOverdue}
+            setOverdueExpanded={setKasyaOverdue}
+            soonExpanded={kasyaSoon}
+            setSoonExpanded={setKasyaSoon}
+            smmTasksDefinition={smmTasksDefinition}
+            columnAssignee="kasya"
+            announcementOverlaps={announcementOverlaps}
+          />
+          
+          {/* МАРКЕТИНГ Column (orange) - Third */}
+          <TeamColumn 
+            name="МАРКЕТИНГ"
+            tasks={tasksByTeam.vo}
+            colorClass="orange"
+            colorHex="#C4703D"
+            onToggle={handleToggleSMMTask}
+            onEventClick={handleEventClick}
+            onStandaloneClick={handleStandaloneTaskClick}
+            onTaskEdit={handleTaskEdit}
+            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "karolina" }); setDialogColumnName("Маркетинг"); setShowSMMTaskDialog(true); }}
+            overdueExpanded={voOverdue}
+            setOverdueExpanded={setVoOverdue}
+            soonExpanded={voSoon}
+            setSoonExpanded={setVoSoon}
+            smmTasksDefinition={smmTasksDefinition}
+            columnAssignee="vo"
+          />
+        </div>
+      ) : (
+        <div className="desktop-columns">
+          {/* Events Tab - Full Calendar & Events List */}
+          <div className="desktop-column" style={{flex: 1}}>
+            <div className="column-content">
+              <div className="calendar-container-desktop">
+                <Calendar mode="single" locale={uk} weekStartsOn={1} month={currentMonth} onMonthChange={setCurrentMonth} onSelect={handleDateClick} className="w-full calendar-minimal calendar-wide !p-1"
+                  classNames={{ month: "space-y-0 w-full", caption: "hidden", row: "flex w-full", head_row: "flex w-full", table: "w-full border-collapse" }}
+                  modifiersClassNames={{ today: "calendar-today-visible" }}
+                  components={{ DayContent: ({ date }) => {
+                    const checkDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                    const hasEvent = events.some(e => !e.cancelled && e.date.startsWith(checkDate));
+                    return <div className="calendar-day-content"><span>{date.getDate()}</span>{hasEvent && <span className="event-dot" />}</div>;
+                  }}}
+                />
+              </div>
+            </div>
+          </div>
+          <div className="desktop-column" style={{flex: 2}}>
+            <div className="column-header">
+              <span className="column-title">всі події</span>
+              <button className="add-btn" onClick={() => navigate("/event/new")}><Plus className="w-4 h-4" /></button>
+            </div>
+            <div className="column-content">
+              <div className="events-list">{allEvents.map(event => {
+                const eventDate = new Date(event.date);
+                return (
+                  <div key={event.id} className="event-card-desktop" onClick={() => handleEventClick(event.id)} data-event-date={event.date.split('T')[0]}>
+                    <div className="date-badge-desktop">
+                      <span className="date-badge-month">{UK_MONTHS_SHORT[eventDate.getMonth()]}</span>
+                      <span className="date-badge-day">{eventDate.getDate()}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate">{event.title}</p>
+                      <p className="text-xs text-secondary">{event.price} ₴</p>
+                    </div>
+                    {event.altegio_booked_count !== undefined && event.altegio_booked_count !== null && (
+                      <div className="text-right">
+                        <span className={`text-sm font-bold ${getBookingColorClass(getBookingStatusColor(event))}`}>
+                          {event.altegio_booked_count}/{event.spots}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}</div>
+            </div>
+          </div>
+      </div>
+      
+      {/* Dialogs */}
+      <Dialog open={showTaskDialog} onOpenChange={setShowTaskDialog}>
+        <DialogContent className="dialog-content sm:max-w-[380px]">
+          <DialogHeader><DialogTitle className="text-xs font-medium">нове завдання для {dialogColumnName}</DialogTitle></DialogHeader>
+          {(() => { const PALETTE = [{c:'karolina',bg:'#1A1717'},{c:'red',bg:'#EF4444'},{c:'purple',bg:'#9333EA'},{c:'kasya',bg:'#059669'},{c:'blue',bg:'#3B82F6'},{c:'orange',bg:'#C4703D'},{c:'pink',bg:'#EC4899'},{c:'teal',bg:'#14B8A6'}]; const COLOR_MAP = {'karolina':'#1A1717','red':'#EF4444','purple':'#9333EA','kasya':'#059669','blue':'#3B82F6','orange':'#C4703D','pink':'#EC4899','teal':'#14B8A6'}; const selectedHex = COLOR_MAP[newTask.color] || '#1A1717'; return (
+          <div className="space-y-4 pt-2">
+            <Input placeholder="що треба зробити?" value={newTask.title} onChange={(e) => setNewTask({ ...newTask, title: e.target.value })} className="form-input text-xs h-8" />
+            <div className="flex items-center gap-3">
+              <Button type="button" variant="outline" className="form-input justify-start w-1/2 h-8 text-xs" onClick={() => setShowTaskCalendar(true)}>
+                {newTask.date === todayStr ? "сьогодні" : formatDateUkrainian(newTask.date)}
+              </Button>
+              <div className="flex items-center gap-1.5 flex-1 justify-end">
+                {PALETTE.map(({c,bg}) => (
+                  <button key={c} type="button" onClick={() => setNewTask({...newTask, color: c})}
+                    className={`color-circle ${(newTask.color === c || (c==='karolina' && (!newTask.color || newTask.color==='standard'))) ? 'selected' : ''}`}
+                    style={{background:bg, '--circle-color': bg}} />
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-7 gap-2 justify-items-center">
+              {CUSTOM_TASK_ICONS.map(opt => (
+                <button key={opt.value} type="button" className={`icon-selector-btn ${newTask.icon === opt.value ? "selected" : ""}`} style={{color: selectedHex}} onClick={() => setNewTask({ ...newTask, icon: opt.value })}>
+                  <opt.Icon className="w-4 h-4" />
+                </button>
+              ))}
+            </div>
+          </div>); })()}
+          <DialogFooter className="mt-4"><button className="btn-dark w-full h-8 text-xs" onClick={handleCreateTask}>створити</button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      <Dialog open={showTaskCalendar} onOpenChange={setShowTaskCalendar}>
+        <DialogContent className="dialog-content">
+          <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(newTask.date)} onSelect={(d) => { if (d) { setNewTask({ ...newTask, date: formatDateLocal(d) }); } setShowTaskCalendar(false); }} className="w-full" />
+        </DialogContent>
+      </Dialog>
+      
+      <Dialog open={showSMMCalendar} onOpenChange={setShowSMMCalendar}>
+        <DialogContent className="dialog-content">
+          <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(newSMMTask.date)} onSelect={(d) => { if (d) { setNewSMMTask({ ...newSMMTask, date: formatDateLocal(d) }); } setShowSMMCalendar(false); }} className="w-full" />
+        </DialogContent>
+      </Dialog>
+      
+      {/* Event Detail Fullscreen */}
+      <FullscreenModal isOpen={showEventDetail} onClose={() => setShowEventDetail(false)} title={selectedEvent?.title || "подія"}>
+        {selectedEvent && (
+          <div className="desktop-columns-4">
+            {/* Column 1 - Event Info */}
+            <div className="desktop-column">
+              <div className="px-4 py-3 border-b border-gray-100">
+                <span className="text-sm font-semibold tracking-wide">ПОДІЯ</span>
+              </div>
+              <div className="column-content">
+                <div className="section-card">
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                      <span className="text-secondary text-sm">дата</span>
+                      <span className="font-medium">{formatDateUkrainian(selectedEvent.date)}</span>
+                    </div>
+                    {selectedEvent.start_time && (
+                      <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                        <span className="text-secondary text-sm">час</span>
+                        <span className="font-medium">{selectedEvent.start_time}{selectedEvent.end_time ? ` — ${selectedEvent.end_time}` : ''}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                      <span className="text-secondary text-sm">ціна</span>
+                      <span className="font-medium">{selectedEvent.price} ₴</span>
+                    </div>
+                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                      <span className="text-secondary text-sm">учасники</span>
+                      {(selectedEvent.altegio_booked_count !== null && selectedEvent.altegio_booked_count !== undefined) ? (
+                        <span className={`font-bold ${getBookingColorClass(getBookingStatusColor(selectedEvent))}`}>
+                          {selectedEvent.altegio_booked_count}/{selectedEvent.spots || 10}
+                        </span>
+                      ) : (
+                        <span className="font-medium">0/{selectedEvent.spots || 10}</span>
+                      )}
+                    </div>
+                    {selectedEvent.description && (
+                      <div className="py-2">
+                        <span className="text-secondary text-sm block mb-1">опис</span>
+                        <p className="text-sm">{selectedEvent.description}</p>
+                      </div>
+                    )}
+                  </div>
+                  {selectedEvent.cancelled && (
+                    <div className="mt-4 p-3 bg-red-50 rounded-lg text-center">
+                      <p className="text-red-600 font-medium">подію скасовано</p>
+                    </div>
+                  )}
+                </div>
+                <div className="section-card mt-4">
+                  <p className="text-xs text-secondary mb-3">синхронізація</p>
+                  <div className="flex gap-2">
+                    <button className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 transition-colors" onClick={handleExportCalendarInPopup} disabled={exportingEvent}>
+                      <ExternalLink className="w-4 h-4" /><span>{exportingEvent ? "..." : "Calendar"}</span>
+                    </button>
+                    <button className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 transition-colors" onClick={handleSyncAltegioInPopup} disabled={syncingEvent}>
+                      <RefreshCw className={`w-4 h-4 ${syncingEvent ? 'animate-spin' : ''}`} /><span>{syncingEvent ? "..." : "Altegio"}</span>
+                    </button>
+                  </div>
+                  {selectedEvent.altegio_last_sync && (
+                    <p className="text-xs text-secondary mt-2 text-center">оновлено: {new Date(selectedEvent.altegio_last_sync).toLocaleString('uk-UA')}</p>
+                  )}
+                </div>
+                <div className="flex gap-2 mt-4">
+                  <Button variant="outline" className="flex-1" onClick={() => { setShowEventDetail(false); navigate(`/event/${selectedEvent.id}`); }}>
+                    <Edit className="w-4 h-4 mr-2" />редагувати
+                  </Button>
+                  {!selectedEvent.cancelled ? (
+                    <Button variant="outline" className="flex-1 text-orange-600 border-orange-200 hover:bg-orange-50" onClick={() => handleCancelEvent(selectedEvent.id)}>
+                      <X className="w-4 h-4 mr-2" />скасувати
+                    </Button>
+                  ) : (
+                    <Button variant="outline" className="flex-1 text-green-600 border-green-200 hover:bg-green-50" onClick={() => handleRestoreEvent(selectedEvent.id)}>
+                      <RotateCcw className="w-4 h-4 mr-2" />відновити
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            {/* Column 2 - МЕНЕДЖМЕНТ */}
+            <div className="desktop-column">
+              <div className="px-4 py-3 border-b border-gray-100">
+                <span className="text-sm font-semibold tracking-wide">МЕНЕДЖМЕНТ</span>
+              </div>
+              <div className="column-content">
+                <div className="space-y-2">
+                  {settings?.reminder_types?.map(rt => {
+                    const reminderDate = selectedEvent.reminders?.[rt.id];
+                    const isCompleted = !!selectedEvent.completed_tasks?.[rt.id];
+                    if (!reminderDate) return null;
+                    const IconComponent = getIconComponent(rt.icon);
+                    return (
+                      <div key={rt.id} className="task-item" onClick={() => handleToggleTaskInPopup(rt.id, !isCompleted)}>
+                        <div className="task-icon"><IconComponent /></div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium ${isCompleted ? "opacity-50" : ""}`}>{rt.name}</p>
+                          <p className="text-xs text-secondary">{formatDateUkrainian(reminderDate)}</p>
+                        </div>
+                        <button className={`task-checkbox ${isCompleted ? "checked" : ""}`}><Check className="w-4 h-4" /></button>
+                      </div>
+                    );
+                  })}
+                  {!settings?.reminder_types?.some(rt => selectedEvent.reminders?.[rt.id]) && (
+                    <p className="text-secondary text-sm py-4">немає завдань</p>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            {/* Column 3 - SMM */}
+            <div className="desktop-column">
+              <div className="px-4 py-3 border-b border-gray-100">
+                <span className="text-sm font-semibold tracking-wide">SMM</span>
+              </div>
+              <div className="column-content">
+                <div className="space-y-2">
+                  {smmTasksDefinition.map(t => {
+                    const taskDate = selectedEvent.smm_tasks?.[t.id];
+                    const isCompleted = !!selectedEvent.completed_smm_tasks?.[t.id];
+                    if (!taskDate) return null;
+                    const isTextWork = TEXT_WORK_SMM_TASKS.has(t.id);
+                    const iconName = isTextWork ? "file" : (SMM_ICONS[t.id] || "circle");
+                    const IconComponent = getIconComponent(iconName);
+                    return (
+                      <div key={t.id} className="task-item" onClick={() => handleToggleSMMTaskInPopup(t.id, !isCompleted)}>
+                        <div className="task-icon"><IconComponent /></div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium ${isCompleted ? "opacity-50" : ""}`}>{t.name}</p>
+                          <p className="text-xs text-secondary">{formatDateUkrainian(taskDate)}</p>
+                        </div>
+                        <button className={`task-checkbox ${isCompleted ? "checked" : ""}`}><Check className="w-4 h-4" /></button>
+                      </div>
+                    );
+                  })}
+                  {!smmTasksDefinition.some(t => selectedEvent.smm_tasks?.[t.id]) && (
+                    <p className="text-secondary text-sm py-4">немає smm завдань</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Column 4 - МАРКЕТИНГ */}
+            <div className="desktop-column">
+              <div className="px-4 py-3 border-b border-gray-100">
+                <span className="text-sm font-semibold tracking-wide">МАРКЕТИНГ</span>
+              </div>
+              <div className="column-content">
+                <div className="space-y-2">
+                  {(allTaskDefs.marketing || []).map(t => {
+                    const taskDate = selectedEvent.marketing_tasks?.[t.id];
+                    const isCompleted = !!selectedEvent.completed_marketing_tasks?.[t.id];
+                    if (!taskDate) return null;
+                    const IconComponent = getIconComponent(t.icon || "circle");
+                    return (
+                      <div key={t.id} className="task-item" onClick={async () => {
+                        try {
+                          await api.completeMarketingTask({ event_id: selectedEvent.id, task_id: t.id, completed: !isCompleted });
+                          refreshEvents();
+                          const r = await axios.get(`${API}/events/${selectedEvent.id}`);
+                          setSelectedEvent(r.data);
+                        } catch { toast.error("помилка"); }
+                      }}>
+                        <div className="task-icon"><IconComponent /></div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium ${isCompleted ? "opacity-50" : ""}`}>{t.name}</p>
+                          <p className="text-xs text-secondary">{formatDateUkrainian(taskDate)}</p>
+                        </div>
+                        <button className={`task-checkbox ${isCompleted ? "checked" : ""}`}><Check className="w-4 h-4" /></button>
+                      </div>
+                    );
+                  })}
+                  {!(allTaskDefs.marketing || []).some(t => selectedEvent.marketing_tasks?.[t.id]) && (
+                    <p className="text-secondary text-sm py-4">немає маркетинг завдань</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </FullscreenModal>
+      
+      <Dialog open={showSMMTaskDialog} onOpenChange={setShowSMMTaskDialog}>
+        <DialogContent className="dialog-content sm:max-w-[380px]">
+          <DialogHeader><DialogTitle className="text-xs font-medium">нове завдання для {dialogColumnName}</DialogTitle></DialogHeader>
+          {(() => { const PALETTE = [{c:'karolina',bg:'#1A1717'},{c:'red',bg:'#EF4444'},{c:'purple',bg:'#9333EA'},{c:'kasya',bg:'#059669'},{c:'blue',bg:'#3B82F6'},{c:'orange',bg:'#C4703D'},{c:'pink',bg:'#EC4899'},{c:'teal',bg:'#14B8A6'}]; const COLOR_MAP = {'karolina':'#1A1717','red':'#EF4444','purple':'#9333EA','kasya':'#059669','blue':'#3B82F6','orange':'#C4703D','pink':'#EC4899','teal':'#14B8A6'}; const selectedHex = COLOR_MAP[newSMMTask.color] || '#1A1717'; return (
+          <div className="space-y-4 pt-2">
+            <Input placeholder="що треба зробити?" value={newSMMTask.title} onChange={(e) => setNewSMMTask({ ...newSMMTask, title: e.target.value })} className="form-input text-xs h-8" />
+            <div className="flex items-center gap-3">
+              <Button type="button" variant="outline" className="form-input justify-start w-1/2 h-8 text-xs" onClick={() => setShowSMMCalendar(true)}>
+                {newSMMTask.date === todayStr ? "сьогодні" : formatDateUkrainian(newSMMTask.date)}
+              </Button>
+              <div className="flex items-center gap-1.5 flex-1 justify-end">
+                {PALETTE.map(({c,bg}) => (
+                  <button key={c} type="button" onClick={() => setNewSMMTask({...newSMMTask, color: c})}
+                    className={`color-circle ${(newSMMTask.color === c || (c==='karolina' && (!newSMMTask.color || newSMMTask.color==='standard'))) ? 'selected' : ''}`}
+                    style={{background:bg, '--circle-color': bg}} />
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-7 gap-2 justify-items-center">
+              {SMM_TASK_ICONS.map(opt => (
+                <button key={opt.value} type="button" className={`icon-selector-btn ${newSMMTask.icon === opt.value ? "selected" : ""}`} style={{color: selectedHex}} onClick={() => setNewSMMTask({ ...newSMMTask, icon: opt.value })}>
+                  <opt.Icon className="w-4 h-4" />
+                </button>
+              ))}
+            </div>
+          </div>); })()}
+          <DialogFooter className="mt-4"><button className="btn-dark w-full h-8 text-xs" onClick={handleCreateSMMTask}>створити</button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      <FullscreenModal isOpen={showSettings} onClose={() => setShowSettings(false)} title="налаштування">
+        <SettingsContent />
+      </FullscreenModal>
+      
+      {/* Analytics Modal - no animation, custom header */}
+      {showStats && (
+        <div className="fixed inset-0 z-50 bg-white">
+          <StatsContent onClose={() => setShowStats(false)} settings={settings} />
+        </div>
+      )}
+      
+      <Dialog open={showStandaloneTaskPopup} onOpenChange={setShowStandaloneTaskPopup}>
+        <DialogContent className="dialog-content">
+          {selectedStandaloneTask && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{selectedStandaloneTask.title}</DialogTitle>
+                <DialogDescription>{formatDateUkrainian(selectedStandaloneTask.date)} — {UK_WEEKDAYS[new Date(selectedStandaloneTask.date).getDay()]}</DialogDescription>
+              </DialogHeader>
+              <div className="flex items-center gap-3 py-4">
+                {(() => { const IconComp = getIconComponent(selectedStandaloneTask.icon || "circle"); return <div className="task-icon"><IconComp /></div>; })()}
+                <div>
+                  <p className="text-sm font-medium">{selectedStandaloneTask.type === "smm" ? "SMM завдання" : "Завдання"}</p>
+                  <p className="text-xs text-secondary">{selectedStandaloneTask.completed ? "виконано" : "не виконано"}</p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="destructive" onClick={handleDeleteStandaloneTask}><Trash2 className="w-4 h-4 mr-1" />ВИДАЛИТИ</Button>
+                <button className="btn-dark" onClick={() => { setEditingStandaloneTask({...selectedStandaloneTask}); setShowStandaloneTaskPopup(false); setShowEditStandaloneDialog(true); }}>РЕДАГУВАТИ</button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+      
+      {/* Edit Task Dialog (both standalone and event-based) */}
+      <Dialog open={showEditStandaloneDialog} onOpenChange={setShowEditStandaloneDialog}>
+        <DialogContent className="dialog-content sm:max-w-[380px]">
+          {editingStandaloneTask && (() => {
+            const getAssigneeName = () => {
+              const a = editingStandaloneTask.assignee;
+              if (a === 'kasya') return 'SMM';
+              if (a === 'vo') return 'Маркетинг';
+              return 'Менеджмент';
+            };
+            const assigneeName = getAssigneeName();
+            const isStandalone = editingStandaloneTask._isStandalone !== false;
+            const iconSet = TASK_ICONS;
+            const COLOR_MAP = {'karolina':'#1A1717','red':'#EF4444','purple':'#9333EA','kasya':'#059669','blue':'#3B82F6','orange':'#C4703D','pink':'#EC4899','teal':'#14B8A6'};
+            const selectedHex = COLOR_MAP[editingStandaloneTask.color] || '#1A1717';
+            const PALETTE = [{c:'karolina',bg:'#1A1717'},{c:'red',bg:'#EF4444'},{c:'purple',bg:'#9333EA'},{c:'kasya',bg:'#059669'},{c:'blue',bg:'#3B82F6'},{c:'orange',bg:'#C4703D'},{c:'pink',bg:'#EC4899'},{c:'teal',bg:'#14B8A6'}];
+            return (
+              <>
+                <DialogHeader className="pb-1">
+                  <DialogTitle className="text-xs font-medium flex items-center justify-between" data-testid="edit-task-title">
+                    <span>завдання</span>
+                    <span className="relative inline-flex items-center">
+                      <select data-testid="assignee-dropdown" value={assigneeName}
+                        onChange={(e) => {
+                          const name = e.target.value;
+                          if (name === 'SMM') setEditingStandaloneTask({...editingStandaloneTask, assignee: 'kasya'});
+                          else if (name === 'Менеджмент') setEditingStandaloneTask({...editingStandaloneTask, assignee: 'karolina'});
+                          else setEditingStandaloneTask({...editingStandaloneTask, assignee: 'vo'});
+                        }}
+                        className="appearance-none bg-transparent font-medium cursor-pointer pr-4 outline-none border-none text-right" style={{fontSize: 'inherit'}}>
+                        <option value="SMM">SMM</option>
+                        <option value="Менеджмент">Менеджмент</option>
+                        <option value="Маркетинг">Маркетинг</option>
+                      </select>
+                      <ChevronRight className="w-3 h-3 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-secondary" />
+                    </span>
+                  </DialogTitle>
+                  {!isStandalone && editingStandaloneTask.eventTitle && (
+                    <p className="text-xs text-secondary mt-0.5">{editingStandaloneTask.eventTitle}</p>
+                  )}
+                </DialogHeader>
+                <div className="space-y-4 pt-2">
+                  <Input placeholder="що треба зробити?" value={editingStandaloneTask.title} onChange={(e) => setEditingStandaloneTask({ ...editingStandaloneTask, title: e.target.value })} className="form-input text-xs h-8" data-testid="edit-task-input" />
+                  <div className="flex items-center gap-3">
+                    <Button type="button" variant="outline" className="form-input justify-start w-1/2 h-8 text-xs" onClick={() => setShowEditCalendar(true)}>
+                      {editingStandaloneTask.date === todayStr ? "сьогодні" : formatDateUkrainian(editingStandaloneTask.date)}
+                    </Button>
+                    <div className="flex items-center gap-1.5 flex-1 justify-end">
+                      {PALETTE.map(({c,bg}) => (
+                        <button key={c} type="button" onClick={() => setEditingStandaloneTask({...editingStandaloneTask, color: c})}
+                          className={`color-circle ${(editingStandaloneTask.color === c || (c==='karolina' && (!editingStandaloneTask.color || editingStandaloneTask.color==='standard'))) ? 'selected' : ''}`}
+                          style={{background:bg, '--circle-color': bg}} />
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-7 gap-2 justify-items-center">
+                    {iconSet.map(opt => (
+                      <button key={opt.value} type="button"
+                        className={`icon-selector-btn ${editingStandaloneTask.icon === opt.value ? "selected" : ""}`}
+                        style={{color: selectedHex}}
+                        onClick={() => setEditingStandaloneTask({ ...editingStandaloneTask, icon: opt.value })}>
+                        <opt.Icon className="w-4 h-4" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <DialogFooter className="mt-4 flex gap-2">
+                  {isStandalone && (
+                    <button className="flex-1 h-8 text-xs rounded-full border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-1" data-testid="edit-task-delete" onClick={async () => { try { await api.deleteStandaloneTask(editingStandaloneTask.id); toast.success("видалено!"); refreshStandaloneTasks(); setShowEditStandaloneDialog(false); setEditingStandaloneTask(null); } catch { toast.error("помилка"); } }}><Trash2 className="w-3 h-3" />видалити</button>
+                  )}
+                  <button className="btn-dark flex-1 h-8 text-xs" data-testid="edit-task-save" onClick={handleSaveStandaloneTask}>зберегти</button>
+                </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+      
+      {/* Edit Calendar for standalone task */}
+      <Dialog open={showEditCalendar} onOpenChange={setShowEditCalendar}>
+        <DialogContent className="dialog-content">
+          <Calendar mode="single" locale={uk} weekStartsOn={1} selected={editingStandaloneTask ? new Date(editingStandaloneTask.date) : new Date()} onSelect={(d) => { if (d && editingStandaloneTask) { setEditingStandaloneTask({ ...editingStandaloneTask, date: formatDateLocal(d) }); } setShowEditCalendar(false); }} className="w-full" />
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+// Settings Content for modals - with 4 columns layout
+const SettingsContent = () => {
+  const { settings, refreshSettings, allTaskDefs, googleCalendarStatus, refreshGoogleStatus } = useApp();
+  const [exportingAll, setExportingAll] = useState(false);
+  const [altegioConnected, setAltegioConnected] = useState(false);
+
+  useEffect(() => {
+    axios.get(`${API}/altegio/status`).then(r => setAltegioConnected(r.data?.connected || false)).catch(() => {});
+  }, []);
+
+  const handleGoogleConnect = async () => {
+    try { const response = await axios.get(`${API}/oauth/calendar/login`); window.location.href = response.data.authorization_url; }
+    catch { toast.error("помилка підключення"); }
+  };
+  const handleGoogleDisconnect = async () => {
+    try { await axios.post(`${API}/oauth/calendar/disconnect`); refreshGoogleStatus(); toast.success("Google Calendar відключено"); }
+    catch { toast.error("помилка"); }
+  };
+  const handleExportAllEvents = async () => {
+    setExportingAll(true);
+    try { const response = await axios.post(`${API}/calendar/export-all`); response.data.exported_count > 0 ? toast.success(`Експортовано ${response.data.exported_count} подій`) : toast.info("Немає нових подій для експорту"); }
+    catch { toast.error("Помилка експорту"); }
+    finally { setExportingAll(false); }
+  };
+
+  const [editTask, setEditTask] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editDays, setEditDays] = useState('');
+
+  const handleSaveTask = async () => {
+    if (!editTask) return;
+    try {
+      await axios.patch(`${API}/settings/task/${editTask.id}`, { name: editName, days_before: parseInt(editDays) });
+      refreshSettings();
+      setEditTask(null);
+      toast.success("завдання оновлено");
+    } catch { toast.error("помилка збереження"); }
+  };
+
+  const allTasks = useMemo(() => {
+    const mgmt = (allTaskDefs.management || []).map(t => ({ ...t, _col: 'менеджмент' }));
+    const smm = (allTaskDefs.smm || []).map(t => ({ ...t, _col: 'smm' }));
+    const mktg = (allTaskDefs.marketing || []).map(t => ({ ...t, _col: 'маркетинг' }));
+    const monthly = (allTaskDefs.monthly || []).map(t => ({ ...t, _col: 'щомісяця', _colTarget: t.column === 'smm' ? 'smm' : t.column === 'marketing' ? 'маркетинг' : 'менеджмент' }));
+    const daily = (allTaskDefs.daily || []).map(t => ({ ...t, _col: 'щоденно' }));
+    // Split monthly by target column
+    const monthlyMgmt = monthly.filter(t => t._colTarget === 'менеджмент');
+    const monthlySMM = monthly.filter(t => t._colTarget === 'smm');
+    const monthlyMktg = monthly.filter(t => t._colTarget === 'маркетинг');
+    // Split daily by column
+    const dailyMgmt = daily.filter(t => t.column === 'management');
+    const dailySMM = daily.filter(t => t.column === 'smm');
+    const dailyMktg = daily.filter(t => t.column === 'marketing');
+    return { mgmt, smm, mktg, monthly, daily, monthlyMgmt, monthlySMM, monthlyMktg, dailyMgmt, dailySMM, dailyMktg };
+  }, [allTaskDefs]);
+
+  const TaskRow = ({ task }) => {
+    const IconComponent = getIconComponent(task.icon || SMM_ICONS[task.id] || "circle");
+    const badges = [];
+    if (task.is_teamwork) badges.push("тімворк");
+    if (task.is_announcement) badges.push("анонс");
+    if (task.condition) badges.push(task.condition.type === "booking_below" ? `<${task.condition.threshold}%` : `>${task.condition.threshold}%`);
+    if (task._colTarget && task._col !== 'щомісяця') badges.push(task._colTarget);
+    return (
+      <div className="reminder-item cursor-pointer hover:bg-black/3 transition-colors" data-testid={`settings-task-${task.id}`} onClick={() => { setEditTask(task); setEditName(task.name); setEditDays(String(task.days_before)); }}>
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="task-icon"><IconComponent /></div>
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-sm truncate">{task.name}</p>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-secondary">за {task.days_before} дн.</span>
+              {badges.map((b, i) => <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-full bg-black/5 text-secondary">{b}</span>)}
+            </div>
+          </div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-secondary" />
+      </div>
+    );
+  };
+
+  return (
+    <>
+    <div className="desktop-columns-4" data-testid="settings-list">
+      {/* Column 1: Automation */}
+      <div className="desktop-column">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <span className="text-sm font-semibold tracking-wide">ІНШЕ</span>
+        </div>
+        <div className="column-content space-y-4">
+          <div>
+            <p className="text-xs text-secondary font-medium mb-2 uppercase tracking-wider">автоматизація</p>
+            <div className="space-y-1">
+              <div className="reminder-item !py-2">
+                <div className="flex items-center gap-3">
+                  <div className="task-icon"><CalendarIcon /></div>
+                  <div><p className="font-medium text-sm">Google Calendar</p><p className="text-xs text-secondary">{googleCalendarStatus.connected ? (googleCalendarStatus.email || "підключено") : "не підключено"}</p></div>
+                </div>
+                {!googleCalendarStatus.connected ? (
+                  <button className="btn-dark text-xs px-2 py-1" onClick={handleGoogleConnect}>підключити</button>
+                ) : (
+                  <button className="text-red-500 text-xs" onClick={handleGoogleDisconnect}>відключити</button>
+                )}
+              </div>
+              {googleCalendarStatus.connected && (
+                <button className="btn-subtle w-full text-xs !h-7" onClick={handleExportAllEvents} disabled={exportingAll}>
+                  <ExternalLink className="w-3.5 h-3.5" /><span>{exportingAll ? "експортую..." : "експортувати всі"}</span>
+                </button>
+              )}
+              <div className="reminder-item !py-2 border-t border-gray-100">
+                <div className="flex items-center gap-3">
+                  <div className="task-icon"><ExternalLink /></div>
+                  <div><p className="font-medium text-sm">Altegio</p><p className="text-xs text-secondary">{altegioConnected ? "підключено" : "не підключено"}</p></div>
+                </div>
+                <span className={`text-xs ${altegioConnected ? 'text-green-600' : 'text-secondary'}`}>{altegioConnected ? "активний" : "—"}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Column 2: МЕНЕДЖМЕНТ + daily + monthly */}
+      <div className="desktop-column">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <span className="text-sm font-semibold tracking-wide">МЕНЕДЖМЕНТ</span>
+          <span className="text-xs text-secondary ml-2">({allTasks.mgmt.length})</span>
+        </div>
+        <div className="column-content space-y-4">
+          {allTasks.dailyMgmt.length > 0 && (
+            <div>
+              <p className="text-xs text-secondary font-medium mb-2 uppercase tracking-wider">щоденно</p>
+              <div className="space-y-0.5">{allTasks.dailyMgmt.map(t => <TaskRow key={t.id} task={t} />)}</div>
+            </div>
+          )}
+          <div>
+            <p className="text-xs text-secondary font-medium mb-2 uppercase tracking-wider">на подію</p>
+            <div className="space-y-0.5">{allTasks.mgmt.sort((a, b) => b.days_before - a.days_before).map(t => <TaskRow key={t.id} task={t} />)}</div>
+          </div>
+          {allTasks.monthlyMgmt.length > 0 && (
+            <div>
+              <p className="text-xs text-secondary font-medium mb-2 uppercase tracking-wider">щомісяця ({allTasks.monthlyMgmt.length})</p>
+              <div className="space-y-0.5">{allTasks.monthlyMgmt.sort((a, b) => b.days_before - a.days_before).map(t => <TaskRow key={t.id} task={t} />)}</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Column 3: SMM + daily + monthly */}
+      <div className="desktop-column">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <span className="text-sm font-semibold tracking-wide">SMM</span>
+          <span className="text-xs text-secondary ml-2">({allTasks.smm.length})</span>
+        </div>
+        <div className="column-content space-y-4">
+          {allTasks.dailySMM.length > 0 && (
+            <div>
+              <p className="text-xs text-secondary font-medium mb-2 uppercase tracking-wider">щоденно</p>
+              <div className="space-y-0.5">{allTasks.dailySMM.map(t => <TaskRow key={t.id} task={t} />)}</div>
+            </div>
+          )}
+          <div>
+            <p className="text-xs text-secondary font-medium mb-2 uppercase tracking-wider">на подію</p>
+            <div className="space-y-0.5">{allTasks.smm.sort((a, b) => b.days_before - a.days_before).map(t => <TaskRow key={t.id} task={t} />)}</div>
+          </div>
+          {allTasks.monthlySMM.length > 0 && (
+            <div>
+              <p className="text-xs text-secondary font-medium mb-2 uppercase tracking-wider">щомісяця ({allTasks.monthlySMM.length})</p>
+              <div className="space-y-0.5">{allTasks.monthlySMM.sort((a, b) => b.days_before - a.days_before).map(t => <TaskRow key={t.id} task={t} />)}</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Column 4: МАРКЕТИНГ + daily + monthly */}
+      <div className="desktop-column">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <span className="text-sm font-semibold tracking-wide">МАРКЕТИНГ</span>
+          <span className="text-xs text-secondary ml-2">({allTasks.mktg.length})</span>
+        </div>
+        <div className="column-content space-y-4">
+          {allTasks.dailyMktg.length > 0 && (
+            <div>
+              <p className="text-xs text-secondary font-medium mb-2 uppercase tracking-wider">щоденно</p>
+              <div className="space-y-0.5">{allTasks.dailyMktg.map(t => <TaskRow key={t.id} task={t} />)}</div>
+            </div>
+          )}
+          <div>
+            <p className="text-xs text-secondary font-medium mb-2 uppercase tracking-wider">на подію</p>
+            <div className="space-y-0.5">{allTasks.mktg.sort((a, b) => b.days_before - a.days_before).map(t => <TaskRow key={t.id} task={t} />)}</div>
+            {allTasks.mktg.length === 0 && <p className="text-secondary text-center py-4 text-sm">немає завдань</p>}
+          </div>
+          {allTasks.monthlyMktg.length > 0 && (
+            <div>
+              <p className="text-xs text-secondary font-medium mb-2 uppercase tracking-wider">щомісяця ({allTasks.monthlyMktg.length})</p>
+              <div className="space-y-0.5">{allTasks.monthlyMktg.sort((a, b) => b.days_before - a.days_before).map(t => <TaskRow key={t.id} task={t} />)}</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+    {editTask && (
+      <Dialog open={!!editTask} onOpenChange={() => setEditTask(null)}>
+        <DialogContent className="dialog-content">
+          <DialogHeader><DialogTitle>редагувати завдання</DialogTitle></DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label className="text-sm text-secondary">назва</Label>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} className="form-input mt-1" />
+            </div>
+            <div>
+              <Label className="text-sm text-secondary">за скільки днів до</Label>
+              <Input type="number" value={editDays} onChange={(e) => setEditDays(e.target.value)} className="form-input mt-1" />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button className="flex-1 btn-dark" onClick={handleSaveTask}>зберегти</Button>
+              <Button variant="outline" className="flex-1" onClick={() => setEditTask(null)}>скасувати</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )}
+    </>
+  );
+};
+const StatsContent = ({ onClose, settings }) => {
+  const { events, standaloneTasks, smmTasksDefinition, refreshEvents } = useApp();
+  const [periodType, setPeriodType] = useState('week'); // 'week' or 'month'
+  const [currentPeriod, setCurrentPeriod] = useState(new Date());
+  const [selectedTask, setSelectedTask] = useState(null);
+  
+  // ESC key handler
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && onClose) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+  
+  // SMM task name lookup
+  const getSMMTaskName = (taskId) => {
+    const task = smmTasksDefinition?.find(t => t.id === taskId);
+    return task?.name || taskId;
+  };
+  
+  // Get week boundaries
+  const getWeekStart = (date) => {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    d.setDate(diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+  
+  const getWeekEnd = (date) => {
+    const start = getWeekStart(date);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+    return end;
+  };
+  
+  // Get month boundaries
+  const getMonthStart = (date) => {
+    const d = new Date(date);
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+  
+  const getMonthEnd = (date) => {
+    const d = new Date(date);
+    d.setMonth(d.getMonth() + 1);
+    d.setDate(0);
+    d.setHours(23, 59, 59, 999);
+    return d;
+  };
+  
+  // Navigate periods
+  const goToPrevPeriod = () => {
+    const newDate = new Date(currentPeriod);
+    if (periodType === 'week') {
+      newDate.setDate(newDate.getDate() - 7);
+    } else {
+      newDate.setMonth(newDate.getMonth() - 1);
+    }
+    setCurrentPeriod(newDate);
+  };
+  
+  const goToNextPeriod = () => {
+    const newDate = new Date(currentPeriod);
+    if (periodType === 'week') {
+      newDate.setDate(newDate.getDate() + 7);
+    } else {
+      newDate.setMonth(newDate.getMonth() + 1);
+    }
+    setCurrentPeriod(newDate);
+  };
+  
+  // Format period label
+  const getPeriodLabel = () => {
+    if (periodType === 'week') {
+      const start = getWeekStart(currentPeriod);
+      const end = getWeekEnd(currentPeriod);
+      const startDay = start.getDate();
+      const endDay = end.getDate();
+      const startMonth = UK_MONTHS_SHORT[start.getMonth()];
+      const endMonth = UK_MONTHS_SHORT[end.getMonth()];
+      if (start.getMonth() === end.getMonth()) {
+        return `${startDay}—${endDay} ${startMonth}`;
+      }
+      return `${startDay} ${startMonth} — ${endDay} ${endMonth}`;
+    } else {
+      return `${UK_MONTHS[currentPeriod.getMonth()]} ${currentPeriod.getFullYear()}`;
+    }
+  };
+  
+  // Get period boundaries
+  const periodStart = periodType === 'week' ? getWeekStart(currentPeriod) : getMonthStart(currentPeriod);
+  const periodEnd = periodType === 'week' ? getWeekEnd(currentPeriod) : getMonthEnd(currentPeriod);
+  
+  // Get completed tasks with full info - split into on-time and late
+  const getCompletedOnTime = (color) => {
+    const results = [];
+    
+    events.forEach(event => {
+      if (!event.completed_smm_tasks) return;
+      Object.entries(event.completed_smm_tasks).forEach(([taskId, completedAt]) => {
+        if (!completedAt) return;
+        const taskDate = event.smm_tasks?.[taskId];
+        if (!taskDate) return;
+        const date = new Date(taskDate);
+        if (date >= periodStart && date <= periodEnd) {
+          const taskDef = smmTasksDefinition?.find(t => t.id === taskId);
+          const taskColor = taskDef?.color || 'standard';
+          const isKasyaTask = taskColor === 'kasya' || taskColor === 'emerald';
+          const isMatch = (color === 'kasya' && isKasyaTask) ||
+                          (color === 'vo' && !isKasyaTask);
+          if (isMatch) {
+            const completedDate = new Date(typeof completedAt === 'string' ? completedAt : taskDate);
+            const dueDate = new Date(taskDate);
+            dueDate.setHours(23, 59, 59, 999);
+            const isLate = completedDate > dueDate;
+            if (!isLate) {
+              results.push({ 
+                id: `${event.id}-${taskId}`, taskId, eventId: event.id,
+                date: taskDate, completedAt: typeof completedAt === 'string' ? completedAt : taskDate,
+                name: getSMMTaskName(taskId), event: event.title, type: 'smm', color: taskColor
+              });
+            }
+          }
+        }
+      });
+    });
+    
+    standaloneTasks.filter(t => t.completed).forEach(task => {
+      const date = new Date(task.date);
+      if (date >= periodStart && date <= periodEnd) {
+        const taskColor = task.color || 'standard';
+        const isKasyaTask = taskColor === 'kasya' || taskColor === 'emerald';
+        const isMatch = (color === 'kasya' && isKasyaTask) ||
+                        (color === 'vo' && !isKasyaTask && task.type === 'smm');
+        if (isMatch) {
+          const completedDate = new Date(task.completed_at || task.date);
+          const dueDate = new Date(task.date);
+          dueDate.setHours(23, 59, 59, 999);
+          const isLate = completedDate > dueDate;
+          if (!isLate) {
+            results.push({ 
+              id: task.id, date: task.date, completedAt: task.completed_at || task.date,
+              name: task.title, event: task.title, type: 'standalone', color: taskColor
+            });
+          }
+        }
+      }
+    });
+    
+    return results;
+  };
+  
+  const getCompletedLate = (color) => {
+    const results = [];
+    
+    events.forEach(event => {
+      if (!event.completed_smm_tasks) return;
+      Object.entries(event.completed_smm_tasks).forEach(([taskId, completedAt]) => {
+        if (!completedAt) return;
+        const taskDate = event.smm_tasks?.[taskId];
+        if (!taskDate) return;
+        const date = new Date(taskDate);
+        if (date >= periodStart && date <= periodEnd) {
+          const taskDef = smmTasksDefinition?.find(t => t.id === taskId);
+          const taskColor = taskDef?.color || 'standard';
+          const isKasyaTask = taskColor === 'kasya' || taskColor === 'emerald';
+          const isMatch = (color === 'kasya' && isKasyaTask) ||
+                          (color === 'vo' && !isKasyaTask);
+          if (isMatch) {
+            const completedDate = new Date(typeof completedAt === 'string' ? completedAt : taskDate);
+            const dueDate = new Date(taskDate);
+            dueDate.setHours(23, 59, 59, 999);
+            const isLate = completedDate > dueDate;
+            if (isLate) {
+              results.push({ 
+                id: `${event.id}-${taskId}`, taskId, eventId: event.id,
+                date: taskDate, completedAt: typeof completedAt === 'string' ? completedAt : taskDate,
+                name: getSMMTaskName(taskId), event: event.title, type: 'smm', color: taskColor
+              });
+            }
+          }
+        }
+      });
+    });
+    
+    standaloneTasks.filter(t => t.completed).forEach(task => {
+      const date = new Date(task.date);
+      if (date >= periodStart && date <= periodEnd) {
+        const taskColor = task.color || 'standard';
+        const isKasyaTask = taskColor === 'kasya' || taskColor === 'emerald';
+        const isMatch = (color === 'kasya' && isKasyaTask) ||
+                        (color === 'vo' && !isKasyaTask && task.type === 'smm');
+        if (isMatch) {
+          const completedDate = new Date(task.completed_at || task.date);
+          const dueDate = new Date(task.date);
+          dueDate.setHours(23, 59, 59, 999);
+          const isLate = completedDate > dueDate;
+          if (isLate) {
+            results.push({ 
+              id: task.id, date: task.date, completedAt: task.completed_at || task.date,
+              name: task.title, event: task.title, type: 'standalone', color: taskColor
+            });
+          }
+        }
+      }
+    });
+    
+    return results;
+  };
+  
+  // Get uncompleted tasks
+  const getUncompleted = (color) => {
+    const uncompleted = [];
+    const today = new Date();
+    
+    events.forEach(event => {
+      if (event.cancelled) return;
+      Object.entries(event.smm_tasks || {}).forEach(([taskId, taskDate]) => {
+        const date = new Date(taskDate);
+        if (date >= periodStart && date <= periodEnd && date < today) {
+          const isCompleted = event.completed_smm_tasks?.[taskId];
+          if (!isCompleted) {
+            const taskDef = smmTasksDefinition?.find(t => t.id === taskId);
+            const taskColor = taskDef?.color || 'standard';
+            const isKasyaTask = taskColor === 'kasya' || taskColor === 'emerald';
+            const isMatch = (color === 'kasya' && isKasyaTask) ||
+                            (color === 'vo' && !isKasyaTask);
+            if (isMatch) {
+              uncompleted.push({ 
+                id: `${event.id}-${taskId}`,
+                taskId,
+                eventId: event.id,
+                date: taskDate, 
+                name: getSMMTaskName(taskId), 
+                event: event.title, 
+                type: 'smm',
+                color: taskColor
+              });
+            }
+          }
+        }
+      });
+    });
+    
+    return uncompleted;
+  };
+  
+  // Get КАРОЛІНА tasks from event reminders
+  const getKarolinaOnTime = () => {
+    const results = [];
+    events.forEach(event => {
+      if (event.cancelled) return;
+      Object.entries(event.reminders || {}).forEach(([reminderId, reminderDate]) => {
+        const date = new Date(reminderDate);
+        if (date >= periodStart && date <= periodEnd) {
+          const isCompleted = event.completed_tasks?.[reminderId];
+          if (isCompleted) {
+            const completedDate = new Date(typeof isCompleted === 'string' ? isCompleted : reminderDate);
+            const dueDate = new Date(reminderDate);
+            dueDate.setHours(23, 59, 59, 999);
+            if (completedDate <= dueDate) {
+              const rt = settings?.reminder_types?.find(r => r.id === reminderId);
+              results.push({ id: `${event.id}-${reminderId}`, date: reminderDate, completedAt: typeof isCompleted === 'string' ? isCompleted : reminderDate, name: rt?.name || reminderId, event: event.title, type: 'reminder' });
+            }
+          }
+        }
+      });
+    });
+    standaloneTasks.filter(t => t.completed && t.type === 'regular').forEach(task => {
+      const date = new Date(task.date);
+      if (date >= periodStart && date <= periodEnd) {
+        const completedDate = new Date(task.completed_at || task.date);
+        const dueDate = new Date(task.date); dueDate.setHours(23, 59, 59, 999);
+        if (completedDate <= dueDate) {
+          results.push({ id: task.id, date: task.date, completedAt: task.completed_at || task.date, name: task.title, event: task.title, type: 'standalone' });
+        }
+      }
+    });
+    return results;
+  };
+  
+  const getKarolinaLate = () => {
+    const results = [];
+    events.forEach(event => {
+      if (event.cancelled) return;
+      Object.entries(event.reminders || {}).forEach(([reminderId, reminderDate]) => {
+        const date = new Date(reminderDate);
+        if (date >= periodStart && date <= periodEnd) {
+          const isCompleted = event.completed_tasks?.[reminderId];
+          if (isCompleted) {
+            const completedDate = new Date(typeof isCompleted === 'string' ? isCompleted : reminderDate);
+            const dueDate = new Date(reminderDate);
+            dueDate.setHours(23, 59, 59, 999);
+            if (completedDate > dueDate) {
+              const rt = settings?.reminder_types?.find(r => r.id === reminderId);
+              results.push({ id: `${event.id}-${reminderId}`, date: reminderDate, completedAt: typeof isCompleted === 'string' ? isCompleted : reminderDate, name: rt?.name || reminderId, event: event.title, type: 'reminder' });
+            }
+          }
+        }
+      });
+    });
+    standaloneTasks.filter(t => t.completed && t.type === 'regular').forEach(task => {
+      const date = new Date(task.date);
+      if (date >= periodStart && date <= periodEnd) {
+        const completedDate = new Date(task.completed_at || task.date);
+        const dueDate = new Date(task.date); dueDate.setHours(23, 59, 59, 999);
+        if (completedDate > dueDate) {
+          results.push({ id: task.id, date: task.date, completedAt: task.completed_at || task.date, name: task.title, event: task.title, type: 'standalone' });
+        }
+      }
+    });
+    return results;
+  };
+  
+  const getKarolinaUncompleted = () => {
+    const uncompleted = [];
+    const today = new Date();
+    events.forEach(event => {
+      if (event.cancelled) return;
+      Object.entries(event.reminders || {}).forEach(([reminderId, reminderDate]) => {
+        const date = new Date(reminderDate);
+        if (date >= periodStart && date <= periodEnd && date < today) {
+          const isCompleted = event.completed_tasks?.[reminderId];
+          if (!isCompleted) {
+            const rt = settings?.reminder_types?.find(r => r.id === reminderId);
+            uncompleted.push({ id: `${event.id}-${reminderId}`, date: reminderDate, name: rt?.name || reminderId, event: event.title, type: 'reminder' });
+          }
+        }
+      });
+    });
+    return uncompleted;
+  };
+  const handleRestoreTask = async (task) => {
+    try {
+      if (task.type === 'smm') {
+        await api.completeSMMTask({ event_id: task.eventId, task_id: task.taskId, completed: false });
+      } else if (task.type === 'standalone') {
+        await api.updateStandaloneTask(task.id, false);
+      }
+      refreshEvents();
+      toast.success("відновлено");
+      setSelectedTask(null);
+    } catch { 
+      toast.error("помилка"); 
+    }
+  };
+  
+  // Get events in period - all (not just non-cancelled)
+  const getEventsInPeriod = () => {
+    return events.filter(event => {
+      const date = new Date(event.date);
+      return date >= periodStart && date <= periodEnd && !event.cancelled;
+    });
+  };
+  
+  const getCancelledEventsInPeriod = () => {
+    return events.filter(event => {
+      const date = new Date(event.date);
+      return date >= periodStart && date <= periodEnd && event.cancelled;
+    });
+  };
+  
+  const periodEvents = getEventsInPeriod();
+  const cancelledEvents = getCancelledEventsInPeriod();
+  const plannedRevenue = periodEvents.reduce((sum, e) => sum + (parseFloat(e.price) || 0) * (parseInt(e.spots) || 10), 0);
+  const realRevenue = periodEvents.reduce((sum, e) => {
+    const booked = e.altegio_booked_count != null ? e.altegio_booked_count : (parseInt(e.spots) || 10);
+    return sum + (parseFloat(e.price) || 0) * booked;
+  }, 0);
+  
+  const kasyaOnTime = getCompletedOnTime('kasya');
+  const kasyaLate = getCompletedLate('kasya');
+  const kasyaUncompleted = getUncompleted('kasya');
+  const karolinaOnTime = getKarolinaOnTime();
+  const karolinaLate = getKarolinaLate();
+  const karolinaUncompleted = getKarolinaUncompleted();
+  const voOnTime = getCompletedOnTime('vo');
+  const voLate = getCompletedLate('vo');
+  const voUncompleted = getUncompleted('vo');
+  
+  const renderStatsColumn = (title, onTime, late, uncompleted) => {
+    const total = onTime.length + late.length + uncompleted.length;
+    const allOnTime = total > 0 && late.length === 0 && uncompleted.length === 0;
+    return (
+    <div className="desktop-column">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold tracking-wide">{title}</span>
+          {allOnTime && <span className="text-base" title="всі вчасно">🏆</span>}
+        </div>
+        <span className="text-xs text-secondary">{total} тасків</span>
+      </div>
+      <div className="column-content">
+        <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div>
+              <p className="text-lg font-bold text-emerald-600">{onTime.length}</p>
+              <p className="text-xs text-secondary">збс</p>
+            </div>
+            <div>
+              <p className="text-lg font-bold text-orange-500">{late.length}</p>
+              <p className="text-xs text-secondary">опіздали</p>
+            </div>
+            <div>
+              <p className="text-lg font-bold text-red-500">{uncompleted.length}</p>
+              <p className="text-xs text-secondary">пупупу</p>
+            </div>
+          </div>
+        </div>
+        
+        {onTime.length > 0 && (
+          <div className="mb-3">
+            <p className="text-xs font-medium text-emerald-600 mb-2">збс</p>
+            <div className="space-y-1">
+              {onTime.map((task) => (
+                <div key={task.id} className="flex items-center gap-2 py-2 px-2 bg-emerald-50 rounded cursor-pointer hover:bg-emerald-100 transition-colors" onClick={() => setSelectedTask(task)}>
+                  <div className="w-5 h-5 rounded-full bg-emerald-600 flex items-center justify-center flex-shrink-0"><Check className="w-3 h-3 text-white" /></div>
+                  <span className="flex-1 text-sm truncate text-emerald-800">{task.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {late.length > 0 && (
+          <div className="mb-3">
+            <p className="text-xs font-medium text-orange-500 mb-2">опіздали</p>
+            <div className="space-y-1">
+              {late.map((task) => (
+                <div key={task.id} className="flex items-center gap-2 py-2 px-2 bg-orange-50 rounded cursor-pointer hover:bg-orange-100 transition-colors" onClick={() => setSelectedTask(task)}>
+                  <div className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0"><Check className="w-3 h-3 text-white" /></div>
+                  <span className="flex-1 text-sm truncate text-orange-800">{task.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {uncompleted.length > 0 && (
+          <div>
+            <p className="text-xs font-medium text-red-500 mb-2">пупупу</p>
+            <div className="space-y-1">
+              {uncompleted.map((task) => (
+                <div key={task.id} className="flex items-center gap-2 py-2 px-2 bg-red-50 rounded cursor-pointer hover:bg-red-100 transition-colors" onClick={() => setSelectedTask(task)}>
+                  <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0"><X className="w-3 h-3 text-white" /></div>
+                  <span className="flex-1 text-sm truncate text-red-800">{task.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {total === 0 && (
+          <p className="text-secondary text-sm text-center py-4">немає даних</p>
+        )}
+      </div>
+    </div>
+  )};
+  
+  return (
+    <div className="desktop-dashboard">
+      <header className="desktop-header" style={{position: 'relative'}}>
+        <div className="desktop-header-left">
+          <span className="text-xl font-semibold">аналітика</span>
+        </div>
+        <div style={{position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)'}} className="flex items-center gap-3">
+          <button
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${periodType === 'week' ? 'bg-[#1A1717] text-white' : 'bg-gray-100 text-secondary hover:bg-gray-200'}`}
+            onClick={() => setPeriodType('week')}
+          >
+            ТИЖДЕНЬ
+          </button>
+          <button
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${periodType === 'month' ? 'bg-[#1A1717] text-white' : 'bg-gray-100 text-secondary hover:bg-gray-200'}`}
+            onClick={() => setPeriodType('month')}
+          >
+            МІСЯЦЬ
+          </button>
+          <div className="flex items-center gap-1 ml-1">
+            <button onClick={goToPrevPeriod} className="p-1.5 hover:bg-gray-100 rounded-full transition-colors">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-sm font-medium min-w-[110px] text-center">{getPeriodLabel()}</span>
+            <button onClick={goToNextPeriod} className="p-1.5 hover:bg-gray-100 rounded-full transition-colors">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+        <div className="desktop-header-right cursor-pointer" onClick={onClose} style={{marginRight: '-24px', paddingRight: '24px'}} data-testid="analytics-close-area">
+          <div className="desktop-header-btn relative">
+            <X className="w-5 h-5" />
+            <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 text-xs text-secondary flex items-center gap-1 whitespace-nowrap pointer-events-none font-normal">або <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px] font-mono border border-gray-200">ESC</kbd> щоб закрити</span>
+          </div>
+          <div className="desktop-header-btn opacity-0 pointer-events-none"><FileText className="w-5 h-5" /></div>
+          <div className="btn-dark opacity-0 pointer-events-none"><Plus className="w-4 h-4" /><span>подія</span></div>
+          <div className="desktop-header-btn opacity-0 pointer-events-none"><Settings className="w-5 h-5" /></div>
+        </div>
+      </header>
+      <div className="desktop-columns-4">
+        {/* ПОДІЇ */}
+        <div className="desktop-column">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <span className="text-sm font-semibold tracking-wide">ПОДІЇ</span>
+          </div>
+          <div className="column-content">
+            <div className="space-y-3">
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <p className="text-lg font-bold">{periodEvents.length + cancelledEvents.length}</p>
+                    <p className="text-xs text-secondary">заплановано</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-emerald-600">{periodEvents.length}</p>
+                    <p className="text-xs text-secondary">відбулося</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-red-500">{cancelledEvents.length}</p>
+                    <p className="text-xs text-secondary">скасовано</p>
+                  </div>
+                </div>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-lg space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-secondary">плановий дохід</span>
+                  <span className="text-sm font-bold">{plannedRevenue.toLocaleString()} ₴</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-secondary">реальний дохід</span>
+                  <span className="text-sm font-bold text-emerald-600">{realRevenue.toLocaleString()} ₴</span>
+                </div>
+              </div>
+              {periodEvents.length > 0 && (
+                <div className="space-y-1.5">
+                  {periodEvents.map(event => (
+                    <div key={event.id} className="p-2 bg-white border border-gray-100 rounded-lg">
+                      <p className="font-medium text-sm">{event.title}</p>
+                      <p className="text-xs text-secondary">{formatDateUkrainian(event.date)} • {event.price} ₴ {event.altegio_booked_count != null ? `• ${event.altegio_booked_count}/${event.spots}` : ''}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {cancelledEvents.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-red-500 mb-2">скасовані</p>
+                  <div className="space-y-1.5">
+                    {cancelledEvents.map(event => (
+                      <div key={event.id} className="p-2 bg-red-50 border border-red-100 rounded-lg">
+                        <p className="font-medium text-sm text-red-700">{event.title}</p>
+                        <p className="text-xs text-red-500">{formatDateUkrainian(event.date)} • {event.price} ₴</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        
+        {/* МЕНЕДЖМЕНТ */}
+        {renderStatsColumn("МЕНЕДЖМЕНТ", karolinaOnTime, karolinaLate, karolinaUncompleted)}
+        
+        {/* SMM */}
+        {renderStatsColumn("SMM", kasyaOnTime, kasyaLate, kasyaUncompleted)}
+        
+        {/* МАРКЕТИНГ */}
+        {renderStatsColumn("МАРКЕТИНГ", voOnTime, voLate, voUncompleted)}
+      </div>
+      
+      {/* Task Detail Dialog */}
+      <Dialog open={!!selectedTask} onOpenChange={(open) => !open && setSelectedTask(null)}>
+        <DialogContent className="dialog-content sm:max-w-[340px]">
+          {selectedTask && (
+            <>
+              <DialogHeader className="pb-1">
+                <DialogTitle className="text-xs font-medium">{selectedTask.name}</DialogTitle>
+                <DialogDescription className="text-xs text-secondary">{selectedTask.event}</DialogDescription>
+              </DialogHeader>
+              <div className="py-3 space-y-2">
+                <div className="flex items-center gap-2 text-xs">
+                  <Clock className="w-3.5 h-3.5 text-secondary" />
+                  <span className="text-secondary">дедлайн:</span>
+                  <span>{formatDateUkrainian(selectedTask.date)}</span>
+                </div>
+                {selectedTask.completedAt && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="text-secondary">виконано:</span>
+                    <span>{new Date(selectedTask.completedAt).toLocaleString('uk-UA', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                )}
+              </div>
+              <DialogFooter className="mt-2">
+                <button className="btn-dark w-full h-8 text-xs" onClick={() => handleRestoreTask(selectedTask)}>відновити</button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+// Responsive wrapper
+const ResponsiveWrapper = ({ children }) => {
+  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1024);
+  useEffect(() => { const h = () => setIsDesktop(window.innerWidth >= 1024); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
+  
+  if (isDesktop) return <DesktopDashboard />;
+  return children;
+};
+
+// Theme Context
+// Main App
+function App() {
+  const [events, setEvents] = useState([]);
+  const [settings, setSettings] = useState(null);
+  const [standaloneTasks, setStandaloneTasks] = useState([]);
+  const [smmTasksDefinition, setSmmTasksDefinition] = useState([]);
+  const [allTaskDefs, setAllTaskDefs] = useState({ management: [], smm: [], marketing: [], monthly: [], daily: [] });
+  const [googleCalendarStatus, setGoogleCalendarStatus] = useState({ connected: false, email: null });
+  const [loading, setLoading] = useState(true);
+  
+  const refreshEvents = async () => { try { const r = await api.getEvents(); setEvents(r.data); } catch (e) { console.error(e); } };
+  const refreshSettings = async () => { try { const r = await api.getSettings(); setSettings(r.data); } catch (e) { console.error(e); } };
+  const refreshStandaloneTasks = async () => { try { const r = await api.getStandaloneTasks(); setStandaloneTasks(r.data); } catch (e) { console.error(e); } };
+  const refreshSMMTasksDefinition = async () => { try { const r = await api.getSMMTasksDefinition(); const data = r.data; if (data.smm) { setAllTaskDefs(data); setSmmTasksDefinition([...data.management, ...data.smm, ...data.marketing]); } else { setSmmTasksDefinition(Array.isArray(data) ? data : []); } } catch (e) { console.error(e); } };
+  const refreshGoogleStatus = async () => { 
+    try { 
+      const r = await axios.get(`${API}/oauth/calendar/status`); 
+      setGoogleCalendarStatus(r.data); 
+    } catch (e) { console.error(e); } 
+  };
+  
+  // Check for Google OAuth callback on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("google_connected") === "true") {
+      toast.success("Google Calendar підключено! Нові події будуть автоматично синхронізуватися.");
+      refreshGoogleStatus();
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+    if (params.get("error")) {
+      toast.error("Помилка підключення Google Calendar");
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+  
+  useEffect(() => { 
+    Promise.all([
+      refreshEvents(), 
+      refreshSettings(), 
+      refreshStandaloneTasks(), 
+      refreshSMMTasksDefinition(),
+      refreshGoogleStatus()
+    ]).then(() => setLoading(false)); 
+  }, []);
+  
+  if (loading) return <div className="app-container flex items-center justify-center min-h-screen"><div className="text-center"><h1 className="logo mb-2">sensa</h1><p className="text-secondary text-sm">завантажую...</p></div></div>;
+  
+  return (
+      <AppContext.Provider value={{ events, settings, standaloneTasks, smmTasksDefinition, allTaskDefs, googleCalendarStatus, refreshEvents, refreshSettings, refreshStandaloneTasks, refreshGoogleStatus }}>
+        <BrowserRouter>
+          <div className="app-container">
+            <Toaster position="top-center" richColors />
+            <Routes>
+              <Route path="/" element={<ResponsiveWrapper><Dashboard /></ResponsiveWrapper>} />
+              <Route path="/events" element={<EventsPage />} />
+              <Route path="/smm" element={<SMMPage />} />
+              <Route path="/task/new" element={<NewTaskPage />} />
+              <Route path="/smm/task/new" element={<NewSMMTaskPage />} />
+              <Route path="/event/new" element={<EventForm />} />
+              <Route path="/event/:id" element={<EventForm />} />
+              <Route path="/event/:id/view" element={<EventDetailPage />} />
+              <Route path="/stats" element={<StatsPage />} />
+              <Route path="/analytics" element={<StatsPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/cal" element={<CalendarFullPage />} />
+              <Route path="/content" element={<ContentPage />} />
+            </Routes>
+          </div>
+        </BrowserRouter>
+      </AppContext.Provider>
+  );
+}
+
+export default App;
