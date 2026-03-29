@@ -1100,16 +1100,16 @@ async def get_announcement_overlaps():
 @api_router.post("/events/parse", response_model=ParseEventResponse)
 async def parse_events_with_ai(request: ParseEventRequest):
     """Parse natural language text to extract event details using AI"""
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    from openai import AsyncOpenAI
     import json
-    
-    emergent_key = os.environ.get("EMERGENT_LLM_KEY")
+
+    emergent_key = os.environ.get("EMERGENT_LLM_KEY") or os.environ.get("OPENAI_API_KEY")
     if not emergent_key:
-        raise HTTPException(status_code=500, detail="Emergent LLM key not configured")
-    
+        raise HTTPException(status_code=500, detail="OpenAI API key not configured")
+
     today = datetime.now().strftime("%Y-%m-%d")
     current_year = datetime.now().year
-    
+
     system_prompt = f"""Ти - асистент для парсингу інформації про події з тексту українською мовою.
 Сьогоднішня дата: {today}
 Поточний рік: {current_year}
@@ -1147,14 +1147,15 @@ async def parse_events_with_ai(request: ParseEventRequest):
 Якщо в тексті кілька подій - розпарси всі."""
 
     try:
-        chat = LlmChat(
-            api_key=emergent_key,
-            session_id=f"parse-{uuid.uuid4()}",
-            system_message=system_prompt
-        ).with_model("openai", "gpt-4o")
-        
-        user_message = UserMessage(text=request.text)
-        response = await chat.send_message(user_message)
+        client = AsyncOpenAI(api_key=emergent_key)
+        completion = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": request.text}
+            ]
+        )
+        response = completion.choices[0].message.content
         
         # Clean response - remove markdown code blocks if present
         response_text = response.strip()
