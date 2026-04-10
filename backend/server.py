@@ -473,10 +473,8 @@ MONTHLY_TASKS = [
     {"id": "monthly_content_plan_tw", "name": "контент-план тімворк", "days_before": 40, "column": "smm", "is_teamwork": True, "calendar_event": {"title_template": "контент-план на {month}", "start_time": "14:00", "end_time": "16:00"}},
     {"id": "monthly_approve_memes", "name": "затвердити ідеї мемів", "days_before": 7, "column": "marketing", "calendar_event": {"title_template": "затвердити ідеї мемів", "start_time": "17:00", "end_time": "18:00"}},
     # Management monthly
-    {"id": "monthly_mgmt_plan_tw", "name": "план подій тімворк", "days_before": 50, "column": "management"},
     {"id": "monthly_mgmt_check_mktg", "name": "перевірити маркетинг план", "days_before": 39, "column": "management"},
     # SMM monthly
-    {"id": "monthly_smm_content_tw", "name": "контент-план тімворк", "days_before": 40, "column": "smm"},
     {"id": "monthly_smm_influencers", "name": "написати інфлюенсерам", "days_before": 40, "column": "smm"},
     {"id": "monthly_smm_info_posts", "name": "обговорення інфо-постів", "days_before": 40, "column": "smm"},
     {"id": "monthly_smm_meme_ideas", "name": "ідеї для мемів", "days_before": 10, "column": "smm"},
@@ -484,9 +482,11 @@ MONTHLY_TASKS = [
     {"id": "monthly_smm_calendar_memes", "name": "внести в календар меми", "days_before": 7, "column": "smm"},
     {"id": "monthly_smm_make_meme_5", "name": "зробити мем", "days_before": 5, "column": "smm"},
     {"id": "monthly_smm_make_meme_3", "name": "зробити мем", "days_before": 3, "column": "smm"},
-    # Marketing monthly (duplicates from other columns — only 1 calendar event)
+    # Marketing monthly
     {"id": "monthly_mktg_plan_tw", "name": "план подій тімворк", "days_before": 50, "column": "marketing", "is_teamwork": True},
     {"id": "monthly_mktg_content_tw", "name": "контент-план тімворк", "days_before": 40, "column": "marketing", "is_teamwork": True},
+    {"id": "monthly_mktg_info_posts", "name": "обговорення інфо-постів", "days_before": 40, "column": "marketing"},
+    {"id": "monthly_mktg_discuss_memes", "name": "обговорити ідеї мемів", "days_before": 7, "column": "marketing"},
 ]
 
 # DAILY TASKS
@@ -2572,10 +2572,13 @@ async def link_event_to_altegio(event_id: str, altegio_id: str):
 # Include router
 app.include_router(api_router)
 
+_cors_origins = os.environ.get('CORS_ORIGINS', '')
+_allowed_origins = [o.strip() for o in _cors_origins.split(',') if o.strip()] if _cors_origins else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_credentials=len(_allowed_origins) > 0 and _allowed_origins != ["*"],
+    allow_origins=_allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
