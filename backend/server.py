@@ -2572,13 +2572,10 @@ async def link_event_to_altegio(event_id: str, altegio_id: str):
 # Include router
 app.include_router(api_router)
 
-_cors_origins = os.environ.get('CORS_ORIGINS', '')
-_allowed_origins = [o.strip() for o in _cors_origins.split(',') if o.strip()] if _cors_origins else ["*"]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=len(_allowed_origins) > 0 and _allowed_origins != ["*"],
-    allow_origins=_allowed_origins,
+    allow_credentials=False,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
