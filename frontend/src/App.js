@@ -61,6 +61,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Calendar } from "@/components/ui/calendar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { uk } from "date-fns/locale";
@@ -1930,17 +1931,29 @@ const EventForm = () => {
                     <div className="grid grid-cols-3 gap-3">
                       <div className="form-field">
                         <Label className="text-sm text-secondary">дата</Label>
-                        <button 
-                          type="button"
-                          onClick={() => {
-                            closeAllDropdowns(index, '_showCalendar');
-                            updateParsedEvent(index, "_showCalendar", !event._showCalendar);
-                          }}
-                          className={`form-input w-full text-left cursor-pointer ${event._isRepeat && event.date < formatDateLocal(new Date()) ? 'text-red-500 border-red-300' : ''}`}
-                          data-testid={`date-picker-${index}`}
-                        >
-                          {event.date ? `${new Date(event.date).getDate()} ${UK_MONTHS_NOMINATIVE[new Date(event.date).getMonth()]}` : 'обери дату'}
-                        </button>
+                        <Popover open={event._showCalendar} onOpenChange={(open) => { closeAllDropdowns(index, '_showCalendar'); updateParsedEvent(index, "_showCalendar", open); }}>
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              className={`form-input w-full text-left cursor-pointer ${event._isRepeat && event.date < formatDateLocal(new Date()) ? 'text-red-500 border-red-300' : ''}`}
+                              data-testid={`date-picker-${index}`}
+                            >
+                              {event.date ? `${new Date(event.date).getDate()} ${UK_MONTHS_NOMINATIVE[new Date(event.date).getMonth()]}` : 'обери дату'}
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-2" align="start">
+                            <Calendar
+                              mode="single" locale={uk} weekStartsOn={1}
+                              selected={event.date ? new Date(event.date) : undefined}
+                              onSelect={(d) => {
+                                if (d) updateParsedEvent(index, "date", formatDateLocal(d));
+                                updateParsedEvent(index, "_showCalendar", false);
+                              }}
+                              className="calendar-minimal"
+                              modifiersClassNames={{ today: "calendar-today-visible" }}
+                            />
+                          </PopoverContent>
+                        </Popover>
                       </div>
                       <div className="form-field relative">
                         <Label className="text-sm text-secondary">ціна (₴)</Label>
@@ -2001,22 +2014,7 @@ const EventForm = () => {
                     </div>
                   )}
                   
-                  {/* Calendar popup for date */}
-                  {event._showCalendar && (
-                    <div className="rounded-xl border bg-white p-2 shadow-lg">
-                      <Calendar 
-                        mode="single" locale={uk} weekStartsOn={1} 
-                        selected={event.date ? new Date(event.date) : undefined}
-                        onSelect={(d) => { 
-                          if (d) updateParsedEvent(index, "date", formatDateLocal(d));
-                          updateParsedEvent(index, "_showCalendar", false);
-                        }} 
-                        className="w-full calendar-minimal" 
-                        classNames={{ month: "space-y-0 w-full", row: "flex w-full", head_row: "flex w-full", table: "w-full border-collapse" }}
-                        modifiersClassNames={{ today: "calendar-today-visible" }}
-                      />
-                    </div>
-                  )}
+                  {/* Calendar is now in Popover above */}
                   
                   {/* Time inputs with dropdown */}
                   <div className="grid grid-cols-2 gap-3">
@@ -3444,7 +3442,7 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
 };
 
 const DesktopDashboard = () => {
-  const { events, settings, standaloneTasks, smmTasksDefinition, refreshEvents, refreshStandaloneTasks } = useApp();
+  const { events, settings, standaloneTasks, smmTasksDefinition, allTaskDefs, refreshEvents, refreshStandaloneTasks } = useApp();
   const navigate = useNavigate();
   const [showSettings, setShowSettings] = useState(false);
   const [showStats, setShowStats] = useState(false);
