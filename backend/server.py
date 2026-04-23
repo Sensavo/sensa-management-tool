@@ -1643,9 +1643,13 @@ GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 GOOGLE_SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 def get_google_redirect_uri():
-    """Get redirect URI based on environment"""
-    frontend_url = os.environ.get("FRONTEND_URL", "https://task-hub-890.preview.emergentagent.com")
-    return f"{frontend_url}/api/oauth/calendar/callback"
+    """Get redirect URI based on environment - must point to BACKEND (where the /api/ routes live)"""
+    # GOOGLE_REDIRECT_URI takes precedence if explicitly set
+    if os.environ.get("GOOGLE_REDIRECT_URI"):
+        return os.environ.get("GOOGLE_REDIRECT_URI")
+    # BACKEND_URL is the Railway backend service URL
+    backend_url = os.environ.get("BACKEND_URL", "https://sensa-management-tool-production.up.railway.app")
+    return f"{backend_url}/api/oauth/calendar/callback"
 
 @api_router.get("/oauth/calendar/login")
 async def google_calendar_login():
