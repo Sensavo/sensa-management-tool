@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException
-from fastapi.responses import RedirectResponse, FileResponse
+from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -16,7 +16,6 @@ import random
 import requests
 import httpx
 from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request as GoogleRequest
 from googleapiclient.discovery import build
 from contextlib import asynccontextmanager
 
@@ -611,14 +610,11 @@ def adjust_for_weekend(date: datetime, is_posting: bool) -> datetime:
     """
     if not is_posting:
         return date
-    
-    weekday = date.weekday()  # 0=Monday, 4=Friday, 5=Saturday, 6=Sunday
-    
-    if weekday == 4:  # Friday -> Thursday
+    weekday = date.weekday()
+    if weekday == 4:   # Friday -> Thursday
         return date - timedelta(days=1)
     elif weekday == 5:  # Saturday -> Sunday
         return date + timedelta(days=1)
-    
     return date
 
 def calculate_smm_dates(event_date: str) -> Dict[str, str]:
@@ -2038,44 +2034,6 @@ async def altegio_status():
         "staff_id": ALTEGIO_DEFAULT_STAFF_ID if v2_configured else None
     }
 
-@api_router.get("/docs/app-logic")
-async def download_app_logic():
-    """Download the APP_LOGIC.md document."""
-    file_path = Path(__file__).parent.parent / "docs" / "APP_LOGIC.md"
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Document not found")
-    return FileResponse(str(file_path), media_type="text/markdown", filename="APP_LOGIC.md")
-
-
-@api_router.get("/docs/app-logic.pdf")
-async def download_app_logic_pdf():
-    """Download the APP_LOGIC as PDF."""
-    import markdown
-    from weasyprint import HTML
-    md_path = Path(__file__).parent.parent / "docs" / "APP_LOGIC.md"
-    if not md_path.exists():
-        raise HTTPException(status_code=404, detail="Document not found")
-    md_content = md_path.read_text(encoding="utf-8")
-    html_body = markdown.markdown(md_content, extensions=["tables", "fenced_code"])
-    full_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-    <style>
-      body {{ font-family: sans-serif; font-size: 13px; line-height: 1.6; padding: 40px; color: #1a1a1a; }}
-      h1 {{ font-size: 24px; border-bottom: 2px solid #1a1a1a; padding-bottom: 8px; }}
-      h2 {{ font-size: 18px; margin-top: 28px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }}
-      h3 {{ font-size: 15px; margin-top: 20px; }}
-      table {{ border-collapse: collapse; width: 100%; margin: 12px 0; }}
-      th, td {{ border: 1px solid #ccc; padding: 6px 10px; text-align: left; font-size: 12px; }}
-      th {{ background: #f5f5f5; font-weight: 600; }}
-      code {{ background: #f0f0f0; padding: 2px 4px; border-radius: 3px; font-size: 12px; }}
-      ul, ol {{ padding-left: 24px; }}
-      li {{ margin: 2px 0; }}
-      strong {{ font-weight: 700; }}
-      hr {{ border: none; border-top: 1px solid #ddd; margin: 20px 0; }}
-    </style></head><body>{html_body}</body></html>"""
-    pdf_path = Path("/tmp/APP_LOGIC.pdf")
-    HTML(string=full_html).write_pdf(str(pdf_path))
-    return FileResponse(str(pdf_path), media_type="application/pdf", filename="Sensa_Logic.pdf")
-
 
 
 
@@ -2109,36 +2067,6 @@ async def get_altegio_url(event_id: str):
             "spots": event.get("spots", 10)
         }
     }
-
-# ==================== CLEAR DATA ====================
-
-@api_router.delete("/clear-all-data")
-async def clear_all_data():
-    await db.events.delete_many({})
-    await db.standalone_tasks.delete_many({})
-    return {"message": "All data deleted"}
-
-# ==================== UPDATE EXISTING EVENTS WITH SMM ====================
-
-@api_router.post("/migrate/add-smm-tasks")
-async def migrate_add_smm_tasks():
-    """One-time migration to add SMM tasks to existing events"""
-    events = await db.events.find({}, {"_id": 0}).to_list(1000)
-    
-    if events:
-        operations = []
-        for event in events:
-            if "smm_tasks" not in event or not event["smm_tasks"]:
-                smm_tasks = calculate_smm_dates(event["date"])
-                operations.append(UpdateOne(
-                    {"id": event["id"]},
-                    {"$set": {"smm_tasks": smm_tasks, "completed_smm_tasks": {}}}
-                ))
-        if operations:
-            await db.events.bulk_write(operations)
-            return {"message": f"Migrated {len(operations)} events"}
-    
-    return {"message": "No events to migrate"}
 
 # ==================== ALTEGIO INTEGRATION ====================
 
