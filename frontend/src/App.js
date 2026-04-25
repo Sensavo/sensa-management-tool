@@ -1929,8 +1929,10 @@ const EventForm = () => {
                       </div>
                     </div>
                     <div className="form-field" style={{width: '170px', flexShrink: 0}}>
-                      <select 
-                        value={event.event_type || "new"} 
+                      <select
+                        value={event.event_type || "new"}
+                        onMouseDown={() => closeAllDropdowns(index, null)}
+                        onFocus={() => closeAllDropdowns(index, null)}
                         onChange={(e) => updateParsedEvent(index, "event_type", e.target.value)}
                         className="form-input w-full bg-[#E8E5DF] font-medium cursor-pointer text-sm"
                         style={{paddingRight: '36px', backgroundPosition: 'right 14px center'}}
@@ -2038,13 +2040,30 @@ const EventForm = () => {
                             {event.spots || 10}
                           </button>
                           {event._showSpotsDropdown && (
-                            <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto">
-                              {Array.from({length: 20}, (_, i) => i + 1).map(s => (
-                                <button key={s} className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 transition-colors ${String(event.spots) === String(s) ? 'bg-black/5 font-medium' : ''}`} onClick={() => {
-                                  updateParsedEvent(index, "spots", String(s));
-                                  updateParsedEvent(index, "_showSpotsDropdown", false);
-                                }}>{s}</button>
-                              ))}
+                            <div
+                              ref={(el) => {
+                                if (!el) return;
+                                // Auto-scroll so the currently selected value sits in the middle
+                                // of the visible window (8-14 visible if value is 10).
+                                const sel = el.querySelector('[data-selected="true"]');
+                                if (sel) sel.scrollIntoView({ block: 'center' });
+                              }}
+                              className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto"
+                            >
+                              {Array.from({length: 20}, (_, i) => i + 1).map(s => {
+                                const selected = String(event.spots) === String(s);
+                                return (
+                                  <button
+                                    key={s}
+                                    data-selected={selected}
+                                    className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 transition-colors ${selected ? 'bg-black/5 font-medium' : ''}`}
+                                    onClick={() => {
+                                      updateParsedEvent(index, "spots", String(s));
+                                      updateParsedEvent(index, "_showSpotsDropdown", false);
+                                    }}
+                                  >{s}</button>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
