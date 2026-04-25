@@ -1703,17 +1703,24 @@ const EventForm = () => {
   // Confirm and create parsed event
   const handleConfirmEvent = async (event, index) => {
     try {
+      const isRegular = event.event_type === "regular";
       const data = {
         title: event.title,
-        date: event.date,
+        date: event.date || formatDateLocal(new Date()),
         price: parseFloat(event.price) || 0,
         spots: parseInt(event.spots) || 10,
         description: event.description || "",
         start_time: event.start_time || "",
-        end_time: event.end_time || ""
+        end_time: event.end_time || "",
+        event_type: event.event_type || "new",
+        repeat_days: isRegular ? (event.repeat_days || []) : [],
       };
-      await api.createEvent(data);
-      toast.success(`"${event.title}" створено!`);
+      const result = await api.createEvent(data);
+      if (isRegular && result?.series_count > 1) {
+        toast.success(`серія "${event.title}" — ${result.series_count} подій створено!`);
+      } else {
+        toast.success(`"${event.title}" створено!`);
+      }
       
       // Remove from list
       setParsedEvents(prev => prev.filter((_, i) => i !== index));
@@ -1854,8 +1861,8 @@ const EventForm = () => {
                   <div className="flex gap-3 items-start">
                     <div className="form-field flex-1">
                       <div className="relative">
-                        <Input 
-                          value={event.title} 
+                        <Input
+                          value={event.title}
                           onChange={(e) => {
                             updateParsedEvent(index, "title", e.target.value);
                             updateParsedEvent(index, "_showTitleDropdown", true);
@@ -1865,25 +1872,56 @@ const EventForm = () => {
                             updateParsedEvent(index, "_showTitleDropdown", true);
                           }}
                           onBlur={() => setTimeout(() => updateParsedEvent(index, "_showTitleDropdown", false), 200)}
-                          className="form-input text-lg font-semibold"
+                          className="form-input text-lg font-semibold pr-10"
                           placeholder="назва події"
                           autoComplete="off"
                         />
+                        {event.title && (
+                          <button
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              updateParsedEvent(index, "title", "");
+                            }}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-black/10 transition-colors"
+                            aria-label="очистити назву"
+                            data-testid={`clear-title-${index}`}
+                          >
+                            <X className="w-4 h-4 text-secondary" />
+                          </button>
+                        )}
                         {event._showTitleDropdown && (() => {
                           const q = (event.title || '').toLowerCase().trim();
-                          const recentTitles = allEvents
+                          // De-dup by title, keep newest entry per title (carries price/spots/time/desc)
+                          const seen = new Set();
+                          const recentEvents = [...allEvents]
                             .sort((a, b) => new Date(b.created_at || b.date) - new Date(a.created_at || a.date))
-                            .map(e => e.title)
-                            .filter((t, i, arr) => t && arr.indexOf(t) === i)
-                            .filter(t => !q || t.toLowerCase().includes(q));
-                          if (recentTitles.length === 0) return null;
+                            .filter(e => {
+                              if (!e.title || seen.has(e.title)) return false;
+                              seen.add(e.title);
+                              return true;
+                            })
+                            .filter(e => !q || e.title.toLowerCase().includes(q));
+                          if (recentEvents.length === 0) return null;
                           return (
                             <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto">
-                              {recentTitles.map((t, i) => (
+                              {recentEvents.map((src, i) => (
                                 <button key={i} className="w-full text-left px-3 py-2 text-sm hover:bg-black/5 transition-colors" onMouseDown={() => {
-                                  updateParsedEvent(index, "title", t);
-                                  updateParsedEvent(index, "_showTitleDropdown", false);
-                                }}>{t}</button>
+                                  // Auto-fill everything from the past event EXCEPT the date
+                                  setParsedEvents(prev => prev.map((ev, idx) => {
+                                    if (idx !== index) return ev;
+                                    return {
+                                      ...ev,
+                                      title: src.title,
+                                      price: src.price ?? ev.price,
+                                      spots: src.spots ?? ev.spots,
+                                      description: src.description ?? ev.description,
+                                      start_time: src.start_time || ev.start_time,
+                                      end_time: src.end_time || ev.end_time,
+                                      _showTitleDropdown: false,
+                                    };
+                                  }));
+                                }}>{src.title}</button>
                               ))}
                             </div>
                           );
@@ -2001,7 +2039,7 @@ const EventForm = () => {
                           </button>
                           {event._showSpotsDropdown && (
                             <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto">
-                              {[8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 25, 30].map(s => (
+                              {Array.from({length: 20}, (_, i) => i + 1).map(s => (
                                 <button key={s} className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 transition-colors ${String(event.spots) === String(s) ? 'bg-black/5 font-medium' : ''}`} onClick={() => {
                                   updateParsedEvent(index, "spots", String(s));
                                   updateParsedEvent(index, "_showSpotsDropdown", false);

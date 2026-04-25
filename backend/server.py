@@ -11,7 +11,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 import random
 import requests
 import httpx
@@ -632,13 +632,148 @@ async def root():
 async def get_quote():
     return {"quote": get_daily_quote()}
 
-@api_router.post("/events", response_model=Event)
+async def _persist_event(event_data: EventCreate, settings, source_event_id: str = "", sync_external: bool = True) -> Event:
+    """Insert one event into DB; optionally push to Google Calendar + Altegio.
+
+    Used by both single-event creation and regular-series expansion.
+    """
+    reminders = calculate_reminder_dates(event_data.date, settings.reminder_types)
+    smm_tasks = calculate_smm_dates(event_data.date)
+    marketing_tasks = calculate_marketing_dates(event_data.date)
+
+    payload = event_data.model_dump()
+    if source_event_id:
+        payload["source_event_id"] = source_event_id
+
+    event = Event(
+        **payload,
+        reminders=reminders,
+        completed_tasks={},
+        smm_tasks=smm_tasks,
+        completed_smm_tasks={},
+        marketing_tasks=marketing_tasks,
+        completed_marketing_tasks={},
+    )
+
+    await db.events.insert_one(event.model_dump())
+
+    if sync_external:
+        await _sync_event_to_external(event)
+
+    return event
+
+
+async def _sync_event_to_external(event: Event) -> None:
+    """Best-effort push to Google Calendar + Altegio for a single event."""
+    # Google Calendar
+    try:
+        creds = await get_google_credentials()
+        if creds:
+            service = build('calendar', 'v3', credentials=creds)
+            try:
+                event_date = datetime.fromisoformat(event.date.replace('Z', '+00:00'))
+            except Exception:
+                event_date = datetime.strptime(event.date[:10], '%Y-%m-%d')
+
+            start_time = event.start_time or ''
+            end_time = event.end_time or ''
+            calendar_event = {
+                'summary': event.title,
+                'description': f"{event.description or ''}\n\nціна: {event.price} грн\nмісць: {event.spots}",
+            }
+            if start_time and end_time:
+                date_str = event_date.strftime('%Y-%m-%d')
+                calendar_event['start'] = {'dateTime': f"{date_str}T{start_time}:00", 'timeZone': 'Europe/Kyiv'}
+                calendar_event['end'] = {'dateTime': f"{date_str}T{end_time}:00", 'timeZone': 'Europe/Kyiv'}
+            elif start_time:
+                date_str = event_date.strftime('%Y-%m-%d')
+                start_hour, start_min = map(int, start_time.split(':'))
+                end_hour = (start_hour + 3) % 24
+                default_end = f"{end_hour:02d}:{start_min:02d}"
+                calendar_event['start'] = {'dateTime': f"{date_str}T{start_time}:00", 'timeZone': 'Europe/Kyiv'}
+                calendar_event['end'] = {'dateTime': f"{date_str}T{default_end}:00", 'timeZone': 'Europe/Kyiv'}
+            else:
+                calendar_event['start'] = {'date': event_date.strftime('%Y-%m-%d'), 'timeZone': 'Europe/Kyiv'}
+                calendar_event['end'] = {'date': (event_date + timedelta(days=1)).strftime('%Y-%m-%d'), 'timeZone': 'Europe/Kyiv'}
+
+            result = service.events().insert(calendarId='primary', body=calendar_event).execute()
+            await db.events.update_one({"id": event.id}, {"$set": {"google_calendar_id": result.get("id")}})
+            logging.info(f"Auto-exported event {event.title} to Google Calendar")
+    except Exception as e:
+        logging.error(f"Failed to auto-export to Google Calendar: {e}")
+
+    # Altegio (per-event service_id wins, default as fallback)
+    try:
+        effective_service_id = event.altegio_service_id or ALTEGIO_DEFAULT_SERVICE_ID
+        if ALTEGIO_PARTNER_TOKEN and effective_service_id:
+            altegio_id = await altegio_client.create_activity(
+                title=event.title,
+                date=event.date[:10],
+                start_time=event.start_time or "14:00",
+                end_time=event.end_time or "16:00",
+                capacity=event.spots or 10,
+                comment=event.description or "",
+                service_id=event.altegio_service_id,
+            )
+            if altegio_id:
+                await db.events.update_one({"id": event.id}, {"$set": {"altegio_activity_id": str(altegio_id)}})
+                logging.info(f"Auto-pushed event '{event.title}' to Altegio: {altegio_id}")
+    except Exception as e:
+        logging.error(f"Failed to push event to Altegio: {e}")
+
+
+@api_router.post("/events")
 async def create_event(event_data: EventCreate):
+    settings = await get_settings()
+
+    is_regular = event_data.event_type == "regular" and bool(event_data.repeat_days)
+
+    if not is_regular:
+        # Single one-off event — full external sync
+        event = await _persist_event(event_data, settings, sync_external=True)
+        return {**event.model_dump(), "series_count": 1}
+
+    # Regular series — expand to SERIES_WEEKS of instances on selected weekdays
+    SERIES_WEEKS = 6
+    try:
+        start_dt = datetime.strptime(event_data.date[:10], '%Y-%m-%d').date()
+    except Exception:
+        start_dt = datetime.now(timezone.utc).date()
+    today = datetime.now(timezone.utc).date()
+    if start_dt < today:
+        start_dt = today
+    end_dt = start_dt + timedelta(weeks=SERIES_WEEKS)
+
+    # Collect all dates within window matching the chosen weekdays
+    dates: List[date] = []
+    cur = start_dt
+    while cur < end_dt:
+        if cur.weekday() in event_data.repeat_days:
+            dates.append(cur)
+        cur += timedelta(days=1)
+
+    if not dates:
+        raise HTTPException(status_code=400, detail="Жоден день тижня не потрапляє в найближчі 6 тижнів")
+
+    # First instance is the master (full sync); children link to it via source_event_id
+    master_payload = event_data.model_copy(update={"date": dates[0].isoformat()})
+    master = await _persist_event(master_payload, settings, sync_external=True)
+
+    for d in dates[1:]:
+        child_payload = event_data.model_copy(update={"date": d.isoformat()})
+        # External sync of children skipped for speed; Phase 8B (cron sync) will fill them in
+        await _persist_event(child_payload, settings, source_event_id=master.id, sync_external=False)
+
+    return {**master.model_dump(), "series_count": len(dates)}
+
+
+# legacy block below preserved as no-op for diff readability
+async def _create_event_legacy_keepalive(event_data: EventCreate):  # pragma: no cover
     settings = await get_settings()
     reminders = calculate_reminder_dates(event_data.date, settings.reminder_types)
     smm_tasks = calculate_smm_dates(event_data.date)
     marketing_tasks = calculate_marketing_dates(event_data.date)
-    
+
     event = Event(
         **event_data.model_dump(),
         reminders=reminders,
@@ -648,9 +783,9 @@ async def create_event(event_data: EventCreate):
         marketing_tasks=marketing_tasks,
         completed_marketing_tasks={}
     )
-    
+
     await db.events.insert_one(event.model_dump())
-    
+
     # Auto-export to Google Calendar if connected
     try:
         creds = await get_google_credentials()
