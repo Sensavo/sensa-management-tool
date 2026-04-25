@@ -296,6 +296,7 @@ class Event(BaseModel):
     altegio_activity_id: Optional[str] = None
     # Altegio integration fields
     altegio_id: Optional[str] = None
+    altegio_service_id: Optional[int] = None  # per-event Altegio service (overrides default)
     altegio_booked_count: Optional[int] = None
     altegio_last_sync: Optional[str] = None
     task_overrides: Dict[str, dict] = {}
@@ -690,16 +691,18 @@ async def create_event(event_data: EventCreate):
     except Exception as e:
         logging.error(f"Failed to auto-export to Google Calendar: {e}")
     
-    # Auto-push to Altegio if configured
+    # Auto-push to Altegio if configured (per-event service_id wins, default as fallback)
     try:
-        if ALTEGIO_PARTNER_TOKEN and ALTEGIO_DEFAULT_SERVICE_ID:
+        effective_service_id = event.altegio_service_id or ALTEGIO_DEFAULT_SERVICE_ID
+        if ALTEGIO_PARTNER_TOKEN and effective_service_id:
             altegio_id = await altegio_client.create_activity(
                 title=event.title,
                 date=event.date[:10],
                 start_time=event.start_time or "14:00",
                 end_time=event.end_time or "16:00",
                 capacity=event.spots or 10,
-                comment=event.description or ""
+                comment=event.description or "",
+                service_id=event.altegio_service_id
             )
             if altegio_id:
                 await db.events.update_one({"id": event.id}, {"$set": {"altegio_activity_id": str(altegio_id)}})
@@ -789,7 +792,8 @@ async def update_event(event_id: str, event_data: EventUpdate):
                     start_time=updated.get("start_time") or existing.get("start_time") or "14:00",
                     end_time=updated.get("end_time") or existing.get("end_time") or "16:00",
                     capacity=updated.get("spots") or existing.get("spots") or 10,
-                    comment=updated.get("description") or existing.get("description") or ""
+                    comment=updated.get("description") or existing.get("description") or "",
+                    service_id=updated.get("altegio_service_id") or existing.get("altegio_service_id")
                 )
     except Exception as e:
         logging.error(f"Failed to sync event update to Altegio: {e}")
@@ -851,7 +855,8 @@ async def patch_event(event_id: str, event_data: dict):
                     start_time=updated.get("start_time") or "14:00",
                     end_time=updated.get("end_time") or "16:00",
                     capacity=updated.get("spots") or 10,
-                    comment=updated.get("description") or ""
+                    comment=updated.get("description") or "",
+                    service_id=updated.get("altegio_service_id") or existing.get("altegio_service_id")
                 )
                 if new_id:
                     await db.events.update_one({"id": event_id}, {"$set": {"altegio_activity_id": str(new_id)}})
@@ -2198,19 +2203,24 @@ class AltegioClient:
         except:
             return 3600  # default 1 hour
     
-    async def create_activity(self, title: str, date: str, start_time: str = "14:00", 
-                               end_time: str = "16:00", capacity: int = 10, comment: str = ""):
-        """Create a group activity/event in Altegio via V2 API"""
-        if not ALTEGIO_PARTNER_TOKEN or not ALTEGIO_DEFAULT_SERVICE_ID:
-            logging.warning("Altegio push skipped: ALTEGIO_PARTNER_TOKEN or ALTEGIO_DEFAULT_SERVICE_ID not configured")
+    async def create_activity(self, title: str, date: str, start_time: str = "14:00",
+                               end_time: str = "16:00", capacity: int = 10, comment: str = "",
+                               service_id: Optional[int] = None):
+        """Create a group activity/event in Altegio via V2 API.
+
+        service_id: per-event Altegio service id. If not provided, falls back to ALTEGIO_DEFAULT_SERVICE_ID.
+        """
+        effective_service_id = service_id or ALTEGIO_DEFAULT_SERVICE_ID
+        if not ALTEGIO_PARTNER_TOKEN or not effective_service_id:
+            logging.warning("Altegio push skipped: ALTEGIO_PARTNER_TOKEN missing, or no service_id (per-event nor default)")
             return None
-        
+
         url = f"{ALTEGIO_BASE_URL_V2}/companies/{self.company_id}/activities"
         length = self._calc_length_seconds(start_time, end_time)
-        
+
         payload = {
             "staff_id": ALTEGIO_DEFAULT_STAFF_ID or 0,
-            "service_id": ALTEGIO_DEFAULT_SERVICE_ID,
+            "service_id": int(effective_service_id),
             "resource_instance_ids": [],
             "label_ids": [],
             "date": f"{date} {start_time}:00",
@@ -2231,19 +2241,24 @@ class AltegioClient:
                 logging.error(f"Altegio create activity error: {response.status_code} - {response.text}")
                 return None
     
-    async def update_activity(self, activity_id: str, title: str, date: str, 
-                               start_time: str = "14:00", end_time: str = "16:00", 
-                               capacity: int = 10, comment: str = ""):
-        """Update an existing activity/event in Altegio via V2 API"""
-        if not ALTEGIO_PARTNER_TOKEN or not activity_id:
+    async def update_activity(self, activity_id: str, title: str, date: str,
+                               start_time: str = "14:00", end_time: str = "16:00",
+                               capacity: int = 10, comment: str = "",
+                               service_id: Optional[int] = None):
+        """Update an existing activity/event in Altegio via V2 API.
+
+        service_id: per-event Altegio service id. If not provided, falls back to ALTEGIO_DEFAULT_SERVICE_ID.
+        """
+        effective_service_id = service_id or ALTEGIO_DEFAULT_SERVICE_ID
+        if not ALTEGIO_PARTNER_TOKEN or not activity_id or not effective_service_id:
             return None
-        
+
         url = f"{ALTEGIO_BASE_URL_V2}/companies/{self.company_id}/activities/{activity_id}"
         length = self._calc_length_seconds(start_time, end_time)
-        
+
         payload = {
             "staff_id": ALTEGIO_DEFAULT_STAFF_ID or 0,
-            "service_id": ALTEGIO_DEFAULT_SERVICE_ID,
+            "service_id": int(effective_service_id),
             "resource_instance_ids": [],
             "label_ids": [],
             "date": f"{date} {start_time}:00",
