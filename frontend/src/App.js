@@ -1944,15 +1944,16 @@ const EventForm = () => {
                     </div>
                   </div>
                   
-                  {/* Regular → weekday selector horizontal */}
-                  {event.event_type === "regular" ? (
+                  {/* Regular → weekday selector horizontal (replaces date) */}
+                  {event.event_type === "regular" && (
                     <div className="form-field">
                       <Label className="text-sm text-secondary">дні тижня</Label>
                       <div className="flex gap-1.5 mt-1">
                         {[{v:0,l:'пн'},{v:1,l:'вт'},{v:2,l:'ср'},{v:3,l:'чт'},{v:4,l:'пт'},{v:5,l:'сб'},{v:6,l:'нд'}].map(day => {
                           const selected = (event.repeat_days || [0]).includes(day.v);
                           return (
-                            <button key={day.v} 
+                            <button key={day.v}
+                              type="button"
                               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${selected ? 'bg-[#1A1717] text-white' : 'bg-white hover:bg-black/5'}`}
                               data-testid={`weekday-${day.v}`}
                               onClick={() => {
@@ -1966,9 +1967,11 @@ const EventForm = () => {
                         })}
                       </div>
                     </div>
-                  ) : (
-                    /* Date + Price + Spots row */
-                    <div className="grid grid-cols-3 gap-3">
+                  )}
+
+                  {/* Date + Price + Spots row (date hidden for regular — weekdays above replace it) */}
+                  <div className={`grid gap-3 ${event.event_type === "regular" ? "grid-cols-2" : "grid-cols-3"}`}>
+                    {event.event_type !== "regular" && (
                       <div className="form-field">
                         <Label className="text-sm text-secondary">дата</Label>
                         <Popover open={event._showCalendar} onOpenChange={(open) => { closeAllDropdowns(index, '_showCalendar'); updateParsedEvent(index, "_showCalendar", open); }}>
@@ -1995,6 +1998,7 @@ const EventForm = () => {
                           </PopoverContent>
                         </Popover>
                       </div>
+                    )}
                       <div className="form-field relative">
                         <Label className="text-sm text-secondary">ціна (₴)</Label>
                         <div className="relative">
@@ -2068,9 +2072,8 @@ const EventForm = () => {
                           )}
                         </div>
                       </div>
-                    </div>
-                  )}
-                  
+                  </div>
+
                   {/* Calendar is now in Popover above */}
                   
                   {/* Time inputs with dropdown */}
