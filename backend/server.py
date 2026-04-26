@@ -1000,6 +1000,63 @@ async def patch_event(event_id: str, event_data: dict):
     
     return updated
 
+@api_router.post("/events/{event_id}/cancel-series")
+async def cancel_event_series(event_id: str):
+    """Cancel this event AND all future events in the same recurring series.
+
+    Series membership: an event is part of a series if it has a non-empty
+    source_event_id (it's a child) OR if other events reference it via
+    source_event_id (it's the master).
+
+    "Future" means date >= the supplied event's date. Events already
+    cancelled are skipped.
+    """
+    existing = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    master_id = existing.get("source_event_id") or event_id
+    cutoff_date = existing.get("date", "")
+
+    # All series instances at or after the cutoff that are still active
+    cursor = db.events.find({
+        "$or": [{"id": master_id}, {"source_event_id": master_id}],
+        "date": {"$gte": cutoff_date},
+        "cancelled": {"$ne": True},
+    }, {"_id": 0})
+    targets = await cursor.to_list(1000)
+
+    cancelled_ids: List[str] = []
+    for t in targets:
+        tid = t["id"]
+        await db.events.update_one(
+            {"id": tid},
+            {"$set": {"cancelled": True, "reminders": {}, "smm_tasks": {}}},
+        )
+        cancelled_ids.append(tid)
+
+        # Best-effort external cleanup per instance
+        gcal_id = t.get("google_calendar_event_id")
+        if gcal_id:
+            try:
+                service = await get_google_calendar_service()
+                if service:
+                    service.events().delete(calendarId='primary', eventId=gcal_id).execute()
+                    await db.events.update_one({"id": tid}, {"$set": {"google_calendar_event_id": None}})
+            except Exception as e:
+                logging.error(f"Failed to delete series instance {tid} from Google Calendar: {e}")
+
+        altegio_id = t.get("altegio_activity_id")
+        if altegio_id and ALTEGIO_PARTNER_TOKEN:
+            try:
+                await altegio_client.delete_activity(altegio_id)
+                await db.events.update_one({"id": tid}, {"$set": {"altegio_activity_id": None}})
+            except Exception as e:
+                logging.error(f"Failed to delete series instance {tid} from Altegio: {e}")
+
+    return {"cancelled_count": len(cancelled_ids), "cancelled_ids": cancelled_ids, "master_id": master_id}
+
+
 @api_router.delete("/events/{event_id}")
 async def delete_event(event_id: str):
     existing = await db.events.find_one({"id": event_id}, {"_id": 0})

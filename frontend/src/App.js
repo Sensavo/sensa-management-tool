@@ -77,6 +77,7 @@ const api = {
   createEvent: (data) => axios.post(`${API}/events`, data),
   updateEvent: (id, data) => axios.put(`${API}/events/${id}`, data),
   deleteEvent: (id) => axios.delete(`${API}/events/${id}`),
+  cancelEventSeries: (id) => axios.post(`${API}/events/${id}/cancel-series`),
   getSettings: () => axios.get(`${API}/settings`),
   updateSettings: (data) => axios.put(`${API}/settings`, data),
   addReminder: (data) => axios.post(`${API}/settings/reminders`, data),
@@ -1422,6 +1423,20 @@ const EventDetailPage = () => {
   
   const handleCancel = async () => {
     try {
+      const isSeries = !!event?.source_event_id || event?.event_type === "regular";
+      if (isSeries) {
+        const choice = window.confirm(
+          "Ця подія — частина регулярної серії.\n\n" +
+          "OK — скасувати ЦЮ + всі НАСТУПНІ події серії\n" +
+          "Cancel — скасувати тільки цю"
+        );
+        if (choice) {
+          const r = await api.cancelEventSeries(eventId);
+          toast.success(`серію скасовано (${r.data.cancelled_count} подій)`);
+          refreshEvents(); navigate(-1);
+          return;
+        }
+      }
       await axios.patch(`${API}/events/${eventId}`, { cancelled: true });
       toast.success("скасовано"); refreshEvents(); navigate(-1);
     } catch { toast.error("помилка"); }
@@ -3830,11 +3845,26 @@ const DesktopDashboard = () => {
   };
   
   const handleCancelEvent = async (eventId) => {
-    try { 
-      await axios.patch(`${API}/events/${eventId}`, { cancelled: true }); 
-      toast.success("подію скасовано"); 
-      refreshEvents(); 
-      setShowEventDetail(false); 
+    try {
+      const isSeries = !!selectedEvent?.source_event_id || selectedEvent?.event_type === "regular";
+      if (isSeries) {
+        const choice = window.confirm(
+          "Ця подія — частина регулярної серії.\n\n" +
+          "OK — скасувати ЦЮ + всі НАСТУПНІ події серії\n" +
+          "Cancel — скасувати тільки цю"
+        );
+        if (choice) {
+          const r = await api.cancelEventSeries(eventId);
+          toast.success(`серію скасовано (${r.data.cancelled_count} подій)`);
+          refreshEvents();
+          setShowEventDetail(false);
+          return;
+        }
+      }
+      await axios.patch(`${API}/events/${eventId}`, { cancelled: true });
+      toast.success("подію скасовано");
+      refreshEvents();
+      setShowEventDetail(false);
     } catch { toast.error("помилка"); }
   };
   
