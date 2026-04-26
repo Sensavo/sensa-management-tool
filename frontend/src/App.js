@@ -1594,7 +1594,7 @@ const EventDetailPage = () => {
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent className="dialog-content"><AlertDialogHeader><AlertDialogTitle>видалити?</AlertDialogTitle></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>скасувати</AlertDialogCancel><AlertDialogAction onClick={handleDelete} className="bg-destructive">видалити</AlertDialogAction></AlertDialogFooter>
+          <AlertDialogFooter><AlertDialogCancel>скасувати</AlertDialogCancel><AlertDialogAction onClick={handleDelete} variant="danger">видалити</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
@@ -3210,7 +3210,7 @@ const SettingsPage = () => {
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent className="dialog-content"><AlertDialogHeader><AlertDialogTitle>видалити?</AlertDialogTitle></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>скасувати</AlertDialogCancel><AlertDialogAction onClick={handleDeleteReminder} className="bg-destructive">видалити</AlertDialogAction></AlertDialogFooter>
+          <AlertDialogFooter><AlertDialogCancel>скасувати</AlertDialogCancel><AlertDialogAction onClick={handleDeleteReminder} variant="danger">видалити</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
       
@@ -4508,27 +4508,27 @@ const DesktopDashboard = () => {
 
       {/* Cancel-series choice dialog (regular events only) */}
       <AlertDialog open={!!cancelSeriesDialogFor} onOpenChange={(open) => { if (!open) setCancelSeriesDialogFor(null); }}>
-        <AlertDialogContent className="dialog-content">
+        <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>скасувати регулярну подію</AlertDialogTitle>
             <AlertDialogDescription>
               {cancelSeriesDialogFor?.title
-                ? <>"{cancelSeriesDialogFor.title}" — частина регулярної серії. що скасовуємо?</>
+                ? <>«{cancelSeriesDialogFor.title}» — частина регулярної серії. що скасовуємо?</>
                 : "ця подія — частина регулярної серії. що скасовуємо?"}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-            <AlertDialogCancel className="sm:mr-auto" data-testid="cancel-series-keep-all">залишити все</AlertDialogCancel>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="cancel-series-keep-all">залишити все</AlertDialogCancel>
             <AlertDialogAction
+              variant="warning"
               onClick={cancelSeriesOnlyThis}
-              className="bg-orange-500 hover:bg-orange-600"
               data-testid="cancel-series-only-this"
             >
               тільки цю
             </AlertDialogAction>
             <AlertDialogAction
+              variant="danger"
               onClick={cancelSeriesAllFuture}
-              className="bg-destructive"
               data-testid="cancel-series-all-future"
             >
               цю + всі наступні
