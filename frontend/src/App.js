@@ -1423,20 +1423,6 @@ const EventDetailPage = () => {
   
   const handleCancel = async () => {
     try {
-      const isSeries = !!event?.source_event_id || event?.event_type === "regular";
-      if (isSeries) {
-        const choice = window.confirm(
-          "Ця подія — частина регулярної серії.\n\n" +
-          "OK — скасувати ЦЮ + всі НАСТУПНІ події серії\n" +
-          "Cancel — скасувати тільки цю"
-        );
-        if (choice) {
-          const r = await api.cancelEventSeries(eventId);
-          toast.success(`серію скасовано (${r.data.cancelled_count} подій)`);
-          refreshEvents(); navigate(-1);
-          return;
-        }
-      }
       await axios.patch(`${API}/events/${eventId}`, { cancelled: true });
       toast.success("скасовано"); refreshEvents(); navigate(-1);
     } catch { toast.error("помилка"); }
@@ -1611,6 +1597,7 @@ const EventDetailPage = () => {
           <AlertDialogFooter><AlertDialogCancel>скасувати</AlertDialogCancel><AlertDialogAction onClick={handleDelete} className="bg-destructive">видалити</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
     </div>
   );
 };
@@ -3529,6 +3516,7 @@ const DesktopDashboard = () => {
   const [smmSoonExpanded, setSmmSoonExpanded] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showEventDetail, setShowEventDetail] = useState(false);
+  const [cancelSeriesDialogFor, setCancelSeriesDialogFor] = useState(null); // event when series-cancel choice is needed
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showTaskDialog, setShowTaskDialog] = useState(false);
   const [showSMMTaskDialog, setShowSMMTaskDialog] = useState(false);
@@ -3845,26 +3833,42 @@ const DesktopDashboard = () => {
   };
   
   const handleCancelEvent = async (eventId) => {
+    const ev = selectedEvent;
+    const isSeries = !!ev?.source_event_id || ev?.event_type === "regular";
+    if (isSeries) {
+      // Defer to dialog — user picks "тільки цю" or "цю + наступні"
+      setCancelSeriesDialogFor(ev);
+      return;
+    }
     try {
-      const isSeries = !!selectedEvent?.source_event_id || selectedEvent?.event_type === "regular";
-      if (isSeries) {
-        const choice = window.confirm(
-          "Ця подія — частина регулярної серії.\n\n" +
-          "OK — скасувати ЦЮ + всі НАСТУПНІ події серії\n" +
-          "Cancel — скасувати тільки цю"
-        );
-        if (choice) {
-          const r = await api.cancelEventSeries(eventId);
-          toast.success(`серію скасовано (${r.data.cancelled_count} подій)`);
-          refreshEvents();
-          setShowEventDetail(false);
-          return;
-        }
-      }
       await axios.patch(`${API}/events/${eventId}`, { cancelled: true });
       toast.success("подію скасовано");
       refreshEvents();
       setShowEventDetail(false);
+    } catch { toast.error("помилка"); }
+  };
+
+  const cancelSeriesOnlyThis = async () => {
+    const id = cancelSeriesDialogFor?.id;
+    if (!id) return;
+    try {
+      await axios.patch(`${API}/events/${id}`, { cancelled: true });
+      toast.success("подію скасовано");
+      setCancelSeriesDialogFor(null);
+      setShowEventDetail(false);
+      refreshEvents();
+    } catch { toast.error("помилка"); }
+  };
+
+  const cancelSeriesAllFuture = async () => {
+    const id = cancelSeriesDialogFor?.id;
+    if (!id) return;
+    try {
+      const r = await api.cancelEventSeries(id);
+      toast.success(`серію скасовано — ${r.data.cancelled_count} подій`);
+      setCancelSeriesDialogFor(null);
+      setShowEventDetail(false);
+      refreshEvents();
     } catch { toast.error("помилка"); }
   };
   
@@ -4501,6 +4505,37 @@ const DesktopDashboard = () => {
           <Calendar mode="single" locale={uk} weekStartsOn={1} selected={editingStandaloneTask ? new Date(editingStandaloneTask.date) : new Date()} onSelect={(d) => { if (d && editingStandaloneTask) { setEditingStandaloneTask({ ...editingStandaloneTask, date: formatDateLocal(d) }); } setShowEditCalendar(false); }} className="w-full" />
         </DialogContent>
       </Dialog>
+
+      {/* Cancel-series choice dialog (regular events only) */}
+      <AlertDialog open={!!cancelSeriesDialogFor} onOpenChange={(open) => { if (!open) setCancelSeriesDialogFor(null); }}>
+        <AlertDialogContent className="dialog-content">
+          <AlertDialogHeader>
+            <AlertDialogTitle>скасувати регулярну подію</AlertDialogTitle>
+            <AlertDialogDescription>
+              {cancelSeriesDialogFor?.title
+                ? <>"{cancelSeriesDialogFor.title}" — частина регулярної серії. що скасовуємо?</>
+                : "ця подія — частина регулярної серії. що скасовуємо?"}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel className="sm:mr-auto" data-testid="cancel-series-keep-all">залишити все</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={cancelSeriesOnlyThis}
+              className="bg-orange-500 hover:bg-orange-600"
+              data-testid="cancel-series-only-this"
+            >
+              тільки цю
+            </AlertDialogAction>
+            <AlertDialogAction
+              onClick={cancelSeriesAllFuture}
+              className="bg-destructive"
+              data-testid="cancel-series-all-future"
+            >
+              цю + всі наступні
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
