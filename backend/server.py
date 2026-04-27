@@ -408,11 +408,14 @@ def check_teamwork_conflict(dt, existing_teamwork_dates):
     return dt
 
 # MANAGEMENT event tasks (column: karolina)
+# series_master_only: True = task created ONLY for the master (first) instance
+# of a recurring series; series children skip it. Used for one-off prep work
+# that doesn't repeat per session (gathering info, designing announcement, etc.)
 MANAGEMENT_TASKS = [
-    {"id": "mgmt_info_master", "name": "попросити інфу від майстра", "days_before": 35, "condition": None},
-    {"id": "mgmt_photo_master", "name": "узгодити зйомки майстра і передати контакт оператору", "days_before": 35, "condition": None},
-    {"id": "mgmt_info_to_smm", "name": "інфу від майстра в smm", "days_before": 30, "condition": None},
-    {"id": "mgmt_check_announce", "name": "перевірити чи все готово до анонсу", "days_before": 13, "condition": None},
+    {"id": "mgmt_info_master", "name": "попросити інфу від майстра", "days_before": 35, "condition": None, "series_master_only": True},
+    {"id": "mgmt_photo_master", "name": "узгодити зйомки майстра і передати контакт оператору", "days_before": 35, "condition": None, "series_master_only": True},
+    {"id": "mgmt_info_to_smm", "name": "інфу від майстра в smm", "days_before": 30, "condition": None, "series_master_only": True},
+    {"id": "mgmt_check_announce", "name": "перевірити чи все готово до анонсу", "days_before": 13, "condition": None, "series_master_only": True},
     {"id": "mgmt_master_story", "name": "попросити майстра зняти розмовний сторіс", "days_before": 10, "condition": {"type": "booking_below", "threshold": 50}},
     {"id": "mgmt_direct_discuss", "name": "дірект розсилка і обговорити з маркетологом", "days_before": 10, "condition": {"type": "booking_below", "threshold": 50}},
     {"id": "mgmt_cancel_event", "name": "відміна події", "days_before": 3, "condition": {"type": "booking_below", "threshold": 50}},
@@ -427,21 +430,24 @@ MANAGEMENT_TASKS = [
 ]
 
 # SMM event tasks (column: kasya)
+# series_master_only: True = created only for the master of a regular series
+# (announce design / shoot / post / share / threads — done once per series).
+# Storytelling explicitly stays per-instance (per user direction).
 SMM_TASKS = [
-    {"id": "smm_collect_materials", "name": "збір матеріалів та інфи для анонсу", "days_before": 30, "condition": None, "is_announcement": False},
-    {"id": "smm_select_media", "name": "відбір фото-відео", "days_before": 30, "condition": None, "is_announcement": False},
-    {"id": "smm_photo_date", "name": "узгодити дату зйомки майстра", "days_before": 29, "condition": None, "is_announcement": False},
-    {"id": "smm_design_announce", "name": "монтаж/дизайн анонсу", "days_before": 25, "condition": None, "is_announcement": False},
-    {"id": "smm_shoot_master", "name": "зйомка майстра", "days_before": 20, "condition": None, "is_announcement": False},
-    {"id": "smm_text_announce", "name": "текст для анонсу", "days_before": 19, "condition": None, "is_announcement": False},
-    {"id": "smm_video_master", "name": "монтаж відео-майстра", "days_before": 18, "condition": None, "is_announcement": False},
-    {"id": "smm_video_feedbacks", "name": "монтаж фідбеків", "days_before": 18, "condition": None, "is_announcement": False},
-    {"id": "smm_storytelling_prep", "name": "підготовка сторітеллінгу", "days_before": 18, "condition": None, "is_announcement": False},
+    {"id": "smm_collect_materials", "name": "збір матеріалів та інфи для анонсу", "days_before": 30, "condition": None, "is_announcement": False, "series_master_only": True},
+    {"id": "smm_select_media", "name": "відбір фото-відео", "days_before": 30, "condition": None, "is_announcement": False, "series_master_only": True},
+    {"id": "smm_photo_date", "name": "узгодити дату зйомки майстра", "days_before": 29, "condition": None, "is_announcement": False, "series_master_only": True},
+    {"id": "smm_design_announce", "name": "монтаж/дизайн анонсу", "days_before": 25, "condition": None, "is_announcement": False, "series_master_only": True},
+    {"id": "smm_shoot_master", "name": "зйомка майстра", "days_before": 20, "condition": None, "is_announcement": False, "series_master_only": True},
+    {"id": "smm_text_announce", "name": "текст для анонсу", "days_before": 19, "condition": None, "is_announcement": False, "series_master_only": True},
+    {"id": "smm_video_master", "name": "монтаж відео-майстра", "days_before": 18, "condition": None, "is_announcement": False, "series_master_only": True},
+    {"id": "smm_video_feedbacks", "name": "монтаж фідбеків", "days_before": 18, "condition": None, "is_announcement": False, "series_master_only": True},
+    {"id": "smm_storytelling_prep", "name": "підготовка сторітеллінгу", "days_before": 18, "condition": None, "is_announcement": False, "series_master_only": True},
     {"id": "smm_content_teamwork", "name": "фіналізація контенту тімворк", "days_before": 17, "condition": None, "is_teamwork": True},
-    {"id": "smm_post_announce", "name": "пост анонсу", "days_before": 14, "condition": None, "is_announcement": True},
-    {"id": "smm_share_tg", "name": "шер анонсу в тг", "days_before": 14, "condition": None, "is_announcement": True},
+    {"id": "smm_post_announce", "name": "пост анонсу", "days_before": 14, "condition": None, "is_announcement": True, "series_master_only": True},
+    {"id": "smm_share_tg", "name": "шер анонсу в тг", "days_before": 14, "condition": None, "is_announcement": True, "series_master_only": True},
     {"id": "smm_storytelling", "name": "сторітеллінг", "days_before": 14, "condition": None, "is_announcement": True},
-    {"id": "smm_threads_warmup", "name": "прогрів теми в threads", "days_before": 14, "condition": None, "is_announcement": True},
+    {"id": "smm_threads_warmup", "name": "прогрів теми в threads", "days_before": 14, "condition": None, "is_announcement": True, "series_master_only": True},
     {"id": "smm_ping_ambassadors", "name": "пінг амбасадорів", "days_before": 14, "condition": None, "is_announcement": False},
     {"id": "smm_start_targeting", "name": "запуск таргетингу", "days_before": 12, "condition": {"type": "booking_below", "threshold": 40}, "is_announcement": False},
     {"id": "smm_master_studio", "name": "звернення майстра зі студії", "days_before": 10, "condition": None, "is_announcement": False},
@@ -513,16 +519,23 @@ def get_tasks_for_column(column):
         tasks = MARKETING_TASKS
     return tasks
 
-def calculate_event_tasks(event_date_str, column):
-    """Calculate task dates for a specific column based on event date."""
+def calculate_event_tasks(event_date_str, column, is_series_child: bool = False):
+    """Calculate task dates for a specific column based on event date.
+
+    is_series_child: when True (event is a non-master instance of a regular
+    series), tasks marked `series_master_only` are skipped — they were
+    already attached to the master and shouldn't repeat per session.
+    """
     try:
         event_dt = datetime.fromisoformat(event_date_str.replace('Z', '+00:00'))
     except:
         event_dt = datetime.strptime(event_date_str[:10], '%Y-%m-%d')
-    
+
     tasks = get_tasks_for_column(column)
     result = {}
     for task in tasks:
+        if is_series_child and task.get("series_master_only"):
+            continue
         task_date = event_dt - timedelta(days=task["days_before"])
         # Apply date corrections
         if task.get("is_teamwork"):
@@ -596,13 +609,13 @@ async def get_settings() -> Settings:
     await db.settings.insert_one(default_settings.model_dump())
     return default_settings
 
-def calculate_reminder_dates(event_date: str, reminder_types: List[ReminderType]) -> Dict[str, str]:
+def calculate_reminder_dates(event_date: str, reminder_types: List[ReminderType], is_series_child: bool = False) -> Dict[str, str]:
     """Calculate management task dates - now uses MANAGEMENT_TASKS"""
-    return calculate_event_tasks(event_date, "management")
+    return calculate_event_tasks(event_date, "management", is_series_child=is_series_child)
 
-def calculate_marketing_dates(event_date: str) -> Dict[str, str]:
+def calculate_marketing_dates(event_date: str, is_series_child: bool = False) -> Dict[str, str]:
     """Calculate marketing task dates"""
-    return calculate_event_tasks(event_date, "marketing")
+    return calculate_event_tasks(event_date, "marketing", is_series_child=is_series_child)
 
 def adjust_for_weekend(date: datetime, is_posting: bool) -> datetime:
     """
@@ -618,9 +631,9 @@ def adjust_for_weekend(date: datetime, is_posting: bool) -> datetime:
         return date + timedelta(days=1)
     return date
 
-def calculate_smm_dates(event_date: str) -> Dict[str, str]:
+def calculate_smm_dates(event_date: str, is_series_child: bool = False) -> Dict[str, str]:
     """Calculate SMM task dates based on event date with date corrections"""
-    return calculate_event_tasks(event_date, "smm")
+    return calculate_event_tasks(event_date, "smm", is_series_child=is_series_child)
 
 # ==================== EVENTS API ====================
 
@@ -636,10 +649,13 @@ async def _persist_event(event_data: EventCreate, settings, source_event_id: str
     """Insert one event into DB; optionally push to Google Calendar + Altegio.
 
     Used by both single-event creation and regular-series expansion.
+    Children of a series (source_event_id present) skip series_master_only
+    tasks — those are attached only to the master.
     """
-    reminders = calculate_reminder_dates(event_data.date, settings.reminder_types)
-    smm_tasks = calculate_smm_dates(event_data.date)
-    marketing_tasks = calculate_marketing_dates(event_data.date)
+    is_series_child = bool(source_event_id)
+    reminders = calculate_reminder_dates(event_data.date, settings.reminder_types, is_series_child=is_series_child)
+    smm_tasks = calculate_smm_dates(event_data.date, is_series_child=is_series_child)
+    marketing_tasks = calculate_marketing_dates(event_data.date, is_series_child=is_series_child)
 
     payload = event_data.model_dump()
     if source_event_id:
