@@ -424,9 +424,16 @@ MANAGEMENT_TASKS = [
     {"id": "mgmt_prepare_studio", "name": "підготовка студії", "days_before": 0, "condition": None},
     {"id": "mgmt_clean_studio", "name": "прибирання студії", "days_before": 0, "condition": None},
     {"id": "mgmt_expenses", "name": "внесення витрат і оплат", "days_before": 0, "condition": None},
-    {"id": "mgmt_pay_master", "name": "оплата майстру", "days_before": 0, "condition": None},
+    # pay_master: for regular series children we skip this entirely; create_event
+    # post-processes the series so it lands once per calendar month (on the last
+    # instance of that month). See create_event regular-series branch.
+    {"id": "mgmt_pay_master", "name": "оплата майстру", "days_before": 0, "condition": None, "series_master_only": True},
     {"id": "mgmt_send_feedback", "name": "розіслати запрошення в чат і форму фідбеку", "days_before": -1, "condition": None, "regular_note": "регулярна → тільки новим"},
     {"id": "mgmt_pay_master_after", "name": "оплата майстру", "days_before": -1, "condition": None, "regular_note": "регулярна → вкінці місяця"},
+    # NEW: replaces smm_master_studio. Manager asks master to record a studio
+    # speech only when booking is poor. Master-only for series so it doesn't
+    # repeat per session.
+    {"id": "mgmt_master_speech", "name": "попросити майстра зняти звернення зі студії", "days_before": 10, "condition": {"type": "booking_below", "threshold": 60}, "series_master_only": True},
 ]
 
 # SMM event tasks (column: kasya)
@@ -443,14 +450,14 @@ SMM_TASKS = [
     {"id": "smm_video_master", "name": "монтаж відео-майстра", "days_before": 18, "condition": None, "is_announcement": False, "series_master_only": True},
     {"id": "smm_video_feedbacks", "name": "монтаж фідбеків", "days_before": 18, "condition": None, "is_announcement": False, "series_master_only": True},
     {"id": "smm_storytelling_prep", "name": "підготовка сторітеллінгу", "days_before": 18, "condition": None, "is_announcement": False, "series_master_only": True},
-    {"id": "smm_content_teamwork", "name": "фіналізація контенту тімворк", "days_before": 17, "condition": None, "is_teamwork": True},
+    # smm_content_teamwork removed — covered by monthly task `monthly_content_plan_tw`
     {"id": "smm_post_announce", "name": "пост анонсу", "days_before": 14, "condition": None, "is_announcement": True, "series_master_only": True},
     {"id": "smm_share_tg", "name": "шер анонсу в тг", "days_before": 14, "condition": None, "is_announcement": True, "series_master_only": True},
     {"id": "smm_storytelling", "name": "сторітеллінг", "days_before": 14, "condition": None, "is_announcement": True},
     {"id": "smm_threads_warmup", "name": "прогрів теми в threads", "days_before": 14, "condition": None, "is_announcement": True, "series_master_only": True},
     {"id": "smm_ping_ambassadors", "name": "пінг амбасадорів", "days_before": 14, "condition": None, "is_announcement": False},
     {"id": "smm_start_targeting", "name": "запуск таргетингу", "days_before": 12, "condition": {"type": "booking_below", "threshold": 40}, "is_announcement": False},
-    {"id": "smm_master_studio", "name": "звернення майстра зі студії", "days_before": 10, "condition": None, "is_announcement": False},
+    # smm_master_studio removed — replaced by mgmt_master_speech (booking_below 60).
     {"id": "smm_past_events_50", "name": "сторіс з минулих подій і фідбеки", "days_before": 10, "condition": {"type": "booking_below", "threshold": 50}, "is_announcement": False},
     {"id": "smm_update_target_50", "name": "апдейт таргетингу", "days_before": 10, "condition": {"type": "booking_below", "threshold": 50}, "is_announcement": False},
     {"id": "smm_master_story", "name": "розмовний сторіс майстра", "days_before": 8, "condition": {"type": "booking_below", "threshold": 60}, "is_announcement": False},
@@ -461,14 +468,16 @@ SMM_TASKS = [
     {"id": "smm_update_target_80", "name": "апдейт таргетингу", "days_before": 5, "condition": {"type": "booking_below", "threshold": 80}, "is_announcement": False},
     {"id": "smm_lucky_ticket", "name": "щасливий квиточок в групу", "days_before": 2, "condition": {"type": "booking_below", "threshold": 80}, "is_announcement": False},
     {"id": "smm_remind_story", "name": "нагадування в сторіс", "days_before": 1, "condition": {"type": "booking_below", "threshold": 90}, "is_announcement": False},
-    {"id": "smm_shoot_content", "name": "знімати контент", "days_before": 0, "condition": None, "is_announcement": False},
-    {"id": "smm_post_stories", "name": "постити сторі відразу з події", "days_before": 0, "condition": None, "is_announcement": False},
+    # Day-of content shoot/post — only when booking is weak (extra material is
+    # the way to push it). Otherwise optional / not mandatory.
+    {"id": "smm_shoot_content", "name": "знімати контент", "days_before": 0, "condition": {"type": "booking_below", "threshold": 70}, "is_announcement": False},
+    {"id": "smm_post_stories", "name": "постити сторі відразу з події", "days_before": 0, "condition": {"type": "booking_below", "threshold": 70}, "is_announcement": False},
     {"id": "smm_upload_google", "name": "оптимізувати фото-відео, видалити невдалі і залити на google photo", "days_before": -1, "condition": None, "is_announcement": False},
 ]
 
 # MARKETING event tasks (column: vo)
 MARKETING_TASKS = [
-    {"id": "mktg_content_teamwork", "name": "фіналізація контенту тімворк", "days_before": 17, "condition": None, "is_teamwork": True, "calendar_event": {"title_template": "Контент {event_title} фіналізація", "start_time": "14:00", "end_time": "16:00"}},
+    # mktg_content_teamwork removed — covered by monthly task `monthly_mktg_content_tw`
     {"id": "mktg_personal_invites", "name": "особисті запрошення", "days_before": 5, "condition": {"type": "booking_below", "threshold": 70}},
 ]
 
@@ -780,7 +789,38 @@ async def create_event(event_data: EventCreate):
         # External sync of children skipped for speed; Phase 8B (cron sync) will fill them in
         await _persist_event(child_payload, settings, source_event_id=master.id, sync_external=False)
 
+    # Post-process: pay_master fires once per calendar month — on the LAST
+    # instance of that month. Master/children otherwise skip mgmt_pay_master
+    # (series_master_only=True). This pass adds it back to the right instance.
+    await _attach_monthly_pay_master(master.id, dates)
+
     return {**master.model_dump(), "series_count": len(dates)}
+
+
+async def _attach_monthly_pay_master(master_id: str, dates: List[date]) -> None:
+    """For a regular series, mark mgmt_pay_master on the last instance of each
+    calendar month. Other instances keep it stripped via series_master_only."""
+    last_per_month: Dict[str, date] = {}
+    for d in dates:
+        ym = d.isoformat()[:7]  # "YYYY-MM"
+        if ym not in last_per_month or d > last_per_month[ym]:
+            last_per_month[ym] = d
+    pay_dates = set(last_per_month.values())
+
+    instances = await db.events.find(
+        {"$or": [{"id": master_id}, {"source_event_id": master_id}]},
+        {"_id": 0, "id": 1, "date": 1},
+    ).to_list(1000)
+    for inst in instances:
+        try:
+            inst_date = datetime.strptime(inst["date"][:10], "%Y-%m-%d").date()
+        except Exception:
+            continue
+        if inst_date in pay_dates:
+            await db.events.update_one(
+                {"id": inst["id"]},
+                {"$set": {"reminders.mgmt_pay_master": inst["date"][:10]}},
+            )
 
 
 # legacy block below preserved as no-op for diff readability
