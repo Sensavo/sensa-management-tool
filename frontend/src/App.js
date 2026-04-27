@@ -2049,10 +2049,13 @@ const EventForm = () => {
                             <div
                               ref={(el) => {
                                 if (!el) return;
-                                // Auto-scroll so the currently selected value sits in the middle
-                                // of the visible window (8-14 visible if value is 10).
+                                // Scroll the LIST (not the page!) so the selected item
+                                // sits in the middle of the visible window. scrollIntoView
+                                // would also scroll the page, which is jarring here.
                                 const sel = el.querySelector('[data-selected="true"]');
-                                if (sel) sel.scrollIntoView({ block: 'center' });
+                                if (sel) {
+                                  el.scrollTop = sel.offsetTop - el.clientHeight / 2 + sel.offsetHeight / 2;
+                                }
                               }}
                               className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto"
                             >

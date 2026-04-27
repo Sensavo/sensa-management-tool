@@ -144,7 +144,7 @@
 .dialog-content .text-sm { font-size: 17px !important; }
 .dialog-content input { font-size: 18px !important; padding: 16px 18px !important; height: 52px !important; }
 .dialog-content textarea { font-size: 18px !important; padding: 16px 18px !important; }
-.dialog-content button { font-size: 17px !important; height: 48px !important; }
+.dialog-content button:not([data-radix-dialog-close]):not([data-radix-alert-dialog-action]):not([data-radix-alert-dialog-cancel]) { font-size: 17px !important; height: 48px !important; }
 .dialog-content label { font-size: 15px !important; }
 
 .date-badge { @apply w-14 h-14 rounded-xl flex flex-col items-center justify-center; background: #1A1717; color: #F5F5F0; }
