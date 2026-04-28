@@ -415,9 +415,9 @@ MANAGEMENT_TASKS = [
     {"id": "mgmt_info_master", "name": "попросити інфу від майстра", "days_before": 35, "condition": None, "series_master_only": True},
     {"id": "mgmt_photo_master", "name": "узгодити зйомки майстра і передати контакт оператору", "days_before": 35, "condition": None, "series_master_only": True},
     {"id": "mgmt_info_to_smm", "name": "інфу від майстра в smm", "days_before": 30, "condition": None, "series_master_only": True},
-    {"id": "mgmt_check_announce", "name": "перевірити чи все готово до анонсу", "days_before": 13, "condition": None, "series_master_only": True},
-    {"id": "mgmt_master_story", "name": "попросити майстра зняти розмовний сторіс", "days_before": 10, "condition": {"type": "booking_below", "threshold": 50}},
-    {"id": "mgmt_direct_discuss", "name": "дірект розсилка і обговорити з маркетологом", "days_before": 10, "condition": {"type": "booking_below", "threshold": 50}},
+    {"id": "mgmt_check_announce", "name": "перевірити чи все готово до анонсу", "days_before": 15, "condition": None, "series_master_only": True},
+    # mgmt_master_story + mgmt_direct_discuss removed; replaced by single
+    # mgmt_master_speech below (унікальна дія коли набір слабкий).
     {"id": "mgmt_cancel_event", "name": "відміна події", "days_before": 3, "condition": {"type": "booking_below", "threshold": 50}},
     {"id": "mgmt_push_marketer", "name": "пиздити маркетолога", "days_before": 2, "condition": {"type": "booking_below", "threshold": 60}},
     {"id": "mgmt_remind_participants", "name": "нагадування учасникам", "days_before": 1, "condition": None},
@@ -433,7 +433,7 @@ MANAGEMENT_TASKS = [
     # NEW: replaces smm_master_studio. Manager asks master to record a studio
     # speech only when booking is poor. Master-only for series so it doesn't
     # repeat per session.
-    {"id": "mgmt_master_speech", "name": "попросити майстра зняти звернення зі студії", "days_before": 10, "condition": {"type": "booking_below", "threshold": 60}, "series_master_only": True},
+    {"id": "mgmt_master_speech", "name": "попросити майстра зняти розмовне сторіс (зі студії або іншого місця)", "days_before": 10, "condition": {"type": "booking_below", "threshold": 60}, "series_master_only": True},
 ]
 
 # SMM event tasks (column: kasya)
@@ -445,7 +445,7 @@ SMM_TASKS = [
     {"id": "smm_select_media", "name": "відбір фото-відео", "days_before": 30, "condition": None, "is_announcement": False, "series_master_only": True},
     {"id": "smm_photo_date", "name": "узгодити дату зйомки майстра", "days_before": 29, "condition": None, "is_announcement": False, "series_master_only": True},
     {"id": "smm_design_announce", "name": "монтаж/дизайн анонсу", "days_before": 25, "condition": None, "is_announcement": False, "series_master_only": True},
-    {"id": "smm_shoot_master", "name": "зйомка майстра", "days_before": 20, "condition": None, "is_announcement": False, "series_master_only": True},
+    # smm_shoot_master removed (зйомка майстра більше не окремий таск).
     {"id": "smm_text_announce", "name": "текст для анонсу", "days_before": 19, "condition": None, "is_announcement": False, "series_master_only": True},
     {"id": "smm_video_master", "name": "монтаж відео-майстра", "days_before": 18, "condition": None, "is_announcement": False, "series_master_only": True},
     {"id": "smm_video_feedbacks", "name": "монтаж фідбеків", "days_before": 18, "condition": None, "is_announcement": False, "series_master_only": True},
