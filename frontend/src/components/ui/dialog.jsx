@@ -37,14 +37,16 @@ const DialogContent = React.forwardRef(({ className, children, hideClose = false
       ref={ref}
       className={cn(
         "fixed left-1/2 top-1/2 z-[151] -translate-x-1/2 -translate-y-1/2",
-        "w-[calc(100%-32px)] max-w-lg max-h-[85vh] overflow-y-auto",
-        "rounded-3xl bg-[#F5F5F0] text-[#1A1717]",
-        "p-7 sm:p-8",
-        "shadow-[0_24px_64px_-12px_rgba(0,0,0,0.25)] ring-1 ring-black/5",
+        "w-[calc(100%-32px)] max-w-lg max-h-[88vh] overflow-y-auto",
+        "rounded-[28px] text-[#1A1717]",
+        // Subtle vertical gradient for depth, ends in app surface tone
+        "bg-gradient-to-b from-[#FAFAF7] to-[#F1F0EA]",
+        "p-8 sm:p-9",
+        // Layered shadow + faint inner highlight at top for "lift"
+        "shadow-[0_30px_80px_-20px_rgba(20,18,16,0.35),0_8px_24px_-8px_rgba(20,18,16,0.15)]",
+        "ring-1 ring-black/[0.06]",
+        "before:absolute before:inset-x-6 before:top-0 before:h-px before:bg-white/60 before:rounded-full before:pointer-events-none",
         "duration-200",
-        "data-[state=open]:animate-in data-[state=closed]:animate-out",
-        "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-        "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
         className
       )}
       {...props}
