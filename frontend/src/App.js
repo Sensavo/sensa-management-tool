@@ -1613,29 +1613,9 @@ const EventForm = () => {
   // AI parsing state
   const [aiInput, setAiInput] = useState("");
   const [aiParsing, setAiParsing] = useState(false);
-  const [parsedEvents, setParsedEvents] = useState([{ title: "", date: formatDateLocal(new Date()), price: 0, spots: 10, description: "", start_time: "12:00", end_time: "14:30", event_type: "new", repeat_days: [0], altegio_service_id: null }]);
-  const [altegioServices, setAltegioServices] = useState([]);
-  useEffect(() => {
-    axios.get(`${API}/altegio/services`).then(r => setAltegioServices(r.data?.services || [])).catch(() => {});
-  }, []);
-  // Fuzzy-match an event title to an Altegio service. Normalises both sides
-  // (lowercase, strip everything but alphanumerics) so "Адхо-йога з Олею"
-  // matches the service "Адхо-йога". Returns the service object or null.
-  const matchAltegioService = useCallback((title) => {
-    if (!title || !altegioServices.length) return null;
-    const norm = (s) => (s || '').toLowerCase().replace(/[^a-zа-яії0-9]/gi, '');
-    const t = norm(title);
-    if (!t) return null;
-    // Prefer the longest service-name match (so "Інь-йога" wins over "йога").
-    let best = null;
-    for (const s of altegioServices) {
-      const sn = norm(s.title);
-      if (sn && (t.includes(sn) || sn.includes(t))) {
-        if (!best || sn.length > norm(best.title).length) best = s;
-      }
-    }
-    return best;
-  }, [altegioServices]);
+  const [parsedEvents, setParsedEvents] = useState([{ title: "", date: formatDateLocal(new Date()), price: 0, spots: 10, description: "", start_time: "12:00", end_time: "14:30", event_type: "new", repeat_days: [0] }]);
+  // Altegio service matching is now done server-side (see backend
+  // _altegio_match_service_by_title) — frontend doesn't need to touch it.
   const [clarificationMessage, setClarificationMessage] = useState("");
   const [showParsedResults, setShowParsedResults] = useState(false);
   const [showAiInput, setShowAiInput] = useState(false);
@@ -1738,7 +1718,6 @@ const EventForm = () => {
         end_time: event.end_time || "",
         event_type: event.event_type || "new",
         repeat_days: isRegular ? (event.repeat_days || []) : [],
-        altegio_service_id: event.altegio_service_id ? parseInt(event.altegio_service_id) : null,
       };
       const result = await api.createEvent(data);
       if (isRegular && result?.series_count > 1) {
@@ -1889,15 +1868,8 @@ const EventForm = () => {
                         <Input
                           value={event.title}
                           onChange={(e) => {
-                            const newTitle = e.target.value;
-                            updateParsedEvent(index, "title", newTitle);
+                            updateParsedEvent(index, "title", e.target.value);
                             updateParsedEvent(index, "_showTitleDropdown", true);
-                            // Auto-link to Altegio service by title (only when user hasn't
-                            // explicitly chosen one — leaves manual override intact).
-                            if (!event._altegioManual) {
-                              const matched = matchAltegioService(newTitle);
-                              updateParsedEvent(index, "altegio_service_id", matched ? matched.id : null);
-                            }
                           }}
                           onFocus={() => {
                             closeAllDropdowns(index, '_showTitleDropdown');
@@ -1940,9 +1912,7 @@ const EventForm = () => {
                               {recentEvents.map((src, i) => (
                                 <button key={i} className="w-full text-left px-3 py-2 text-sm hover:bg-black/5 transition-colors" onMouseDown={() => {
                                   // Auto-fill everything from the past event EXCEPT the date.
-                                  // Carry over altegio_service_id if the past event had one;
-                                  // otherwise fall back to a fuzzy title match.
-                                  const inheritedSvc = src.altegio_service_id || matchAltegioService(src.title)?.id || null;
+                                  // Altegio service mapping is resolved server-side from title.
                                   setParsedEvents(prev => prev.map((ev, idx) => {
                                     if (idx !== index) return ev;
                                     return {
@@ -1953,7 +1923,6 @@ const EventForm = () => {
                                       description: src.description ?? ev.description,
                                       start_time: src.start_time || ev.start_time,
                                       end_time: src.end_time || ev.end_time,
-                                      altegio_service_id: ev._altegioManual ? ev.altegio_service_id : inheritedSvc,
                                       _showTitleDropdown: false,
                                     };
                                   }));
@@ -2186,63 +2155,6 @@ const EventForm = () => {
                       className="form-input"
                       placeholder="опис (необов'язково)"
                     />
-                  </div>
-                  {/* Altegio link: auto-matched chip OR compact picker. Only shows
-                      a full dropdown when no match could be found and the user
-                      wants to override. */}
-                  <div className="form-field">
-                    {(() => {
-                      const matched = altegioServices.find(s => String(s.id) === String(event.altegio_service_id));
-                      if (matched) {
-                        return (
-                          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 ring-1 ring-emerald-200 text-emerald-800 text-sm">
-                            <span className="text-xs">→ Altegio:</span>
-                            <span className="font-medium">{matched.title}</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                updateParsedEvent(index, "altegio_service_id", null);
-                                updateParsedEvent(index, "_altegioManual", true);
-                              }}
-                              className="ml-1 text-emerald-700/70 hover:text-emerald-900"
-                              aria-label="прибрати"
-                            >×</button>
-                          </div>
-                        );
-                      }
-                      // No match — show compact chooser (collapsed by default if user has a title)
-                      if (!event._showAltegioPicker) {
-                        return (
-                          <button
-                            type="button"
-                            onClick={() => updateParsedEvent(index, "_showAltegioPicker", true)}
-                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/5 hover:bg-black/10 text-sm text-secondary transition-colors"
-                          >
-                            не знайдено в Altegio — обрати вручну
-                          </button>
-                        );
-                      }
-                      return (
-                        <select
-                          value={event.altegio_service_id || ""}
-                          onChange={(e) => {
-                            const v = e.target.value || null;
-                            updateParsedEvent(index, "altegio_service_id", v);
-                            updateParsedEvent(index, "_altegioManual", true);
-                            if (!v) updateParsedEvent(index, "_showAltegioPicker", false);
-                          }}
-                          className="form-input w-full bg-white cursor-pointer"
-                          style={{paddingRight: '36px', backgroundPosition: 'right 14px center'}}
-                          autoFocus
-                          data-testid={`altegio-service-${index}`}
-                        >
-                          <option value="">— не пушити в Altegio —</option>
-                          {altegioServices.map(s => (
-                            <option key={s.id} value={s.id}>{s.title}{s.price_min ? ` (${s.price_min}₴)` : ''}</option>
-                          ))}
-                        </select>
-                      );
-                    })()}
                   </div>
                 </div>
 

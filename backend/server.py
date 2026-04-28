@@ -654,6 +654,57 @@ async def root():
 async def get_quote():
     return {"quote": get_daily_quote()}
 
+# --- Altegio service auto-matching (server-side; cache to avoid hammering API) ---
+_altegio_services_cache: Dict[str, object] = {"data": [], "fetched_at": 0.0}
+
+async def _get_altegio_services_cached(ttl_seconds: float = 600.0) -> list:
+    """Return Altegio service catalogue with simple TTL cache (10 min default)."""
+    import time
+    now = time.time()
+    if (now - float(_altegio_services_cache["fetched_at"])) < ttl_seconds and _altegio_services_cache["data"]:
+        return _altegio_services_cache["data"]
+    try:
+        services = await altegio_client.get_services()
+        _altegio_services_cache["data"] = services or []
+        _altegio_services_cache["fetched_at"] = now
+    except Exception as e:
+        logging.error(f"Failed to refresh Altegio services cache: {e}")
+    return _altegio_services_cache["data"]
+
+
+def _normalize_for_match(s: str) -> str:
+    """Lowercase + keep only alphanumerics (any unicode letter/digit)."""
+    if not s:
+        return ""
+    return "".join(ch for ch in s.lower() if ch.isalnum())
+
+
+async def _altegio_match_service_by_title(title: str) -> Optional[int]:
+    """Fuzzy-match an event title to an Altegio service id.
+
+    Strategy: normalise both sides (lowercase, strip non-alphanumerics);
+    pick the service whose normalised title is the longest substring match
+    in either direction. Returns the service id or None.
+    """
+    services = await _get_altegio_services_cached()
+    if not services:
+        return None
+    t_norm = _normalize_for_match(title)
+    if not t_norm:
+        return None
+    best = None
+    best_len = 0
+    for svc in services:
+        s_norm = _normalize_for_match(svc.get("title", ""))
+        if not s_norm:
+            continue
+        if t_norm in s_norm or s_norm in t_norm:
+            if len(s_norm) > best_len:
+                best = svc
+                best_len = len(s_norm)
+    return int(best["id"]) if best else None
+
+
 async def _persist_event(event_data: EventCreate, settings, source_event_id: str = "", sync_external: bool = True) -> Event:
     """Insert one event into DB; optionally push to Google Calendar + Altegio.
 
@@ -727,22 +778,33 @@ async def _sync_event_to_external(event: Event) -> None:
     except Exception as e:
         logging.error(f"Failed to auto-export to Google Calendar: {e}")
 
-    # Altegio (per-event service_id wins, default as fallback)
+    # Altegio: explicit service_id wins; otherwise fuzzy-match the event title
+    # against the Altegio service catalogue. If no match — silently skip push
+    # (Altegio API forbids us from creating services).
     try:
-        effective_service_id = event.altegio_service_id or ALTEGIO_DEFAULT_SERVICE_ID
-        if ALTEGIO_PARTNER_TOKEN and effective_service_id:
-            altegio_id = await altegio_client.create_activity(
-                title=event.title,
-                date=event.date[:10],
-                start_time=event.start_time or "14:00",
-                end_time=event.end_time or "16:00",
-                capacity=event.spots or 10,
-                comment=event.description or "",
-                service_id=event.altegio_service_id,
-            )
-            if altegio_id:
-                await db.events.update_one({"id": event.id}, {"$set": {"altegio_activity_id": str(altegio_id)}})
-                logging.info(f"Auto-pushed event '{event.title}' to Altegio: {altegio_id}")
+        if ALTEGIO_PARTNER_TOKEN:
+            service_id = event.altegio_service_id or ALTEGIO_DEFAULT_SERVICE_ID or None
+            if not service_id:
+                matched = await _altegio_match_service_by_title(event.title)
+                if matched:
+                    service_id = matched
+                    # Persist match so subsequent updates reuse it without re-matching
+                    await db.events.update_one({"id": event.id}, {"$set": {"altegio_service_id": int(service_id)}})
+            if service_id:
+                altegio_id = await altegio_client.create_activity(
+                    title=event.title,
+                    date=event.date[:10],
+                    start_time=event.start_time or "14:00",
+                    end_time=event.end_time or "16:00",
+                    capacity=event.spots or 10,
+                    comment=event.description or "",
+                    service_id=int(service_id),
+                )
+                if altegio_id:
+                    await db.events.update_one({"id": event.id}, {"$set": {"altegio_activity_id": str(altegio_id)}})
+                    logging.info(f"Auto-pushed event '{event.title}' to Altegio: {altegio_id}")
+            else:
+                logging.info(f"Altegio push skipped — no matching service for '{event.title}'")
     except Exception as e:
         logging.error(f"Failed to push event to Altegio: {e}")
 
