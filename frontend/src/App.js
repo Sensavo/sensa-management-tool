@@ -4136,32 +4136,122 @@ const DesktopDashboard = () => {
       
       {/* Dialogs */}
       <Dialog open={showTaskDialog} onOpenChange={setShowTaskDialog}>
-        <DialogContent className="dialog-content sm:max-w-[380px]">
-          <DialogHeader><DialogTitle className="text-xs font-medium">нове завдання для {dialogColumnName}</DialogTitle></DialogHeader>
-          {(() => { const PALETTE = [{c:'karolina',bg:'#1A1717'},{c:'red',bg:'#EF4444'},{c:'purple',bg:'#9333EA'},{c:'kasya',bg:'#059669'},{c:'blue',bg:'#3B82F6'},{c:'orange',bg:'#C4703D'},{c:'pink',bg:'#EC4899'},{c:'teal',bg:'#14B8A6'}]; const COLOR_MAP = {'karolina':'#1A1717','red':'#EF4444','purple':'#9333EA','kasya':'#059669','blue':'#3B82F6','orange':'#C4703D','pink':'#EC4899','teal':'#14B8A6'}; const selectedHex = COLOR_MAP[newTask.color] || '#1A1717'; return (
-          <div className="space-y-4 pt-2">
-            <Input placeholder="що треба зробити?" value={newTask.title} onChange={(e) => setNewTask({ ...newTask, title: e.target.value })} className="form-input text-xs h-8" />
-            <div className="flex items-center gap-3">
-              <Button type="button" variant="outline" className="form-input justify-start w-1/2 h-8 text-xs" onClick={() => setShowTaskCalendar(true)}>
-                {newTask.date === todayStr ? "сьогодні" : formatDateUkrainian(newTask.date)}
-              </Button>
-              <div className="flex items-center gap-1.5 flex-1 justify-end">
-                {PALETTE.map(({c,bg}) => (
-                  <button key={c} type="button" onClick={() => setNewTask({...newTask, color: c})}
-                    className={`color-circle ${(newTask.color === c || (c==='karolina' && (!newTask.color || newTask.color==='standard'))) ? 'selected' : ''}`}
-                    style={{background:bg, '--circle-color': bg}} />
-                ))}
-              </div>
-            </div>
-            <div className="grid grid-cols-7 gap-2 justify-items-center">
-              {CUSTOM_TASK_ICONS.map(opt => (
-                <button key={opt.value} type="button" className={`icon-selector-btn ${newTask.icon === opt.value ? "selected" : ""}`} style={{color: selectedHex}} onClick={() => setNewTask({ ...newTask, icon: opt.value })}>
-                  <opt.Icon className="w-4 h-4" />
-                </button>
-              ))}
-            </div>
-          </div>); })()}
-          <DialogFooter className="mt-4"><button className="btn-dark w-full h-8 text-xs" onClick={handleCreateTask}>створити</button></DialogFooter>
+        <DialogContent className="sm:max-w-md">
+          {(() => {
+            const PALETTE = [
+              {c:'karolina',bg:'#1A1717'},
+              {c:'red',bg:'#EF4444'},
+              {c:'purple',bg:'#9333EA'},
+              {c:'kasya',bg:'#059669'},
+              {c:'blue',bg:'#3B82F6'},
+              {c:'orange',bg:'#C4703D'},
+              {c:'pink',bg:'#EC4899'},
+              {c:'teal',bg:'#14B8A6'},
+            ];
+            const COLOR_MAP = Object.fromEntries(PALETTE.map(p => [p.c, p.bg]));
+            const selectedHex = COLOR_MAP[newTask.color] || '#1A1717';
+            const isToday = newTask.date === todayStr;
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>нове завдання</DialogTitle>
+                  <DialogDescription>для колонки «{dialogColumnName}»</DialogDescription>
+                </DialogHeader>
+
+                <div className="mt-6 space-y-6">
+                  {/* Title input */}
+                  <div>
+                    <Input
+                      autoFocus
+                      placeholder="що треба зробити?"
+                      value={newTask.title}
+                      onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                      onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleCreateTask(); }}
+                      className="w-full h-12 px-4 rounded-xl bg-white border border-black/10 text-base placeholder:text-[#1A1717]/40 focus:outline-none focus:border-[#1A1717] transition-colors"
+                      data-testid="new-task-title"
+                    />
+                  </div>
+
+                  {/* Date */}
+                  <div>
+                    <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-2">коли</div>
+                    <button
+                      type="button"
+                      onClick={() => setShowTaskCalendar(true)}
+                      className="w-full h-12 px-4 rounded-xl bg-white border border-black/10 hover:border-[#1A1717]/30 transition-colors flex items-center gap-3 text-left"
+                      data-testid="new-task-date"
+                    >
+                      <CalendarIcon className="w-4 h-4 text-[#1A1717]/60 flex-shrink-0" />
+                      <span className="text-sm">{isToday ? "сьогодні" : formatDateUkrainian(newTask.date)}</span>
+                    </button>
+                  </div>
+
+                  {/* Color */}
+                  <div>
+                    <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-2.5">колір</div>
+                    <div className="flex items-center gap-2.5">
+                      {PALETTE.map(({c,bg}) => {
+                        const sel = newTask.color === c || (c === 'karolina' && (!newTask.color || newTask.color === 'standard'));
+                        return (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => setNewTask({...newTask, color: c})}
+                            className="rounded-full transition-all hover:scale-110"
+                            style={{
+                              width: 24, height: 24, background: bg,
+                              outline: sel ? `2px solid ${bg}` : 'none',
+                              outlineOffset: sel ? 3 : 0,
+                            }}
+                            aria-label={c}
+                            data-testid={`new-task-color-${c}`}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Icon */}
+                  <div>
+                    <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-2.5">іконка</div>
+                    <div className="grid grid-cols-7 gap-2">
+                      {CUSTOM_TASK_ICONS.map(opt => {
+                        const sel = newTask.icon === opt.value;
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setNewTask({ ...newTask, icon: opt.value })}
+                            className="aspect-square rounded-xl flex items-center justify-center transition-colors"
+                            style={{
+                              background: sel ? selectedHex : '#FFFFFF',
+                              color: sel ? '#FFFFFF' : selectedHex,
+                              border: sel ? 'none' : '1px solid rgba(0,0,0,0.08)',
+                            }}
+                            data-testid={`new-task-icon-${opt.value}`}
+                          >
+                            <opt.Icon className="w-4 h-4" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <DialogFooter>
+                  <button
+                    onClick={handleCreateTask}
+                    disabled={!newTask.title?.trim()}
+                    className="w-full h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-sm transition-colors hover:bg-[#333333] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    data-testid="new-task-create"
+                  >
+                    <Check className="w-4 h-4" />
+                    створити завдання
+                  </button>
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
       
