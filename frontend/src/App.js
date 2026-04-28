@@ -2102,28 +2102,46 @@ const EventForm = () => {
                           onChange={(e) => {
                             const val = e.target.value;
                             updateParsedEvent(index, "start_time", val);
+                            // hide dropdown while typing
+                            if (event._showStartDropdown) updateParsedEvent(index, "_showStartDropdown", false);
                             if (/^\d{2}:\d{2}$/.test(val)) {
                               const [h, m] = val.split(":").map(Number);
                               const endH = (h + 3) % 24;
                               updateParsedEvent(index, "end_time", `${String(endH).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
                             }
                           }}
-                          onClick={() => { closeAllDropdowns(index, '_showStartDropdown'); updateParsedEvent(index, "_showStartDropdown", !event._showStartDropdown); }}
+                          onFocus={() => { closeAllDropdowns(index, '_showStartDropdown'); updateParsedEvent(index, "_showStartDropdown", true); }}
+                          onBlur={() => setTimeout(() => updateParsedEvent(index, "_showStartDropdown", false), 200)}
                           className="form-input w-full cursor-pointer"
                           placeholder="12:00"
                           data-testid={`start-time-${index}`}
                         />
                         {event._showStartDropdown && (
-                          <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto">
-                            {TIME_OPTIONS.map(t => (
-                              <button key={t} className="w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 transition-colors" onClick={() => {
-                                updateParsedEvent(index, "start_time", t);
-                                const [h, m] = t.split(":").map(Number);
-                                const endH = (h + 3) % 24;
-                                updateParsedEvent(index, "end_time", `${String(endH).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
-                                updateParsedEvent(index, "_showStartDropdown", false);
-                              }}>{t}</button>
-                            ))}
+                          <div
+                            ref={(el) => {
+                              if (!el) return;
+                              const sel = el.querySelector('[data-selected="true"]');
+                              if (sel) el.scrollTop = sel.offsetTop - el.clientHeight / 2 + sel.offsetHeight / 2;
+                            }}
+                            className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto"
+                          >
+                            {TIME_OPTIONS.map(t => {
+                              const selected = (event.start_time || "12:00") === t;
+                              return (
+                                <button
+                                  key={t}
+                                  data-selected={selected}
+                                  className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 transition-colors tabular-nums ${selected ? 'bg-black/5 font-medium' : ''}`}
+                                  onMouseDown={() => {
+                                    updateParsedEvent(index, "start_time", t);
+                                    const [h, m] = t.split(":").map(Number);
+                                    const endH = (h + 3) % 24;
+                                    updateParsedEvent(index, "end_time", `${String(endH).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
+                                    updateParsedEvent(index, "_showStartDropdown", false);
+                                  }}
+                                >{t}</button>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -2134,26 +2152,51 @@ const EventForm = () => {
                         <input
                           type="text"
                           value={event.end_time || "14:30"}
-                          onChange={(e) => updateParsedEvent(index, "end_time", e.target.value)}
-                          onClick={() => { closeAllDropdowns(index, '_showEndDropdown'); updateParsedEvent(index, "_showEndDropdown", !event._showEndDropdown); }}
+                          onChange={(e) => {
+                            updateParsedEvent(index, "end_time", e.target.value);
+                            if (event._showEndDropdown) updateParsedEvent(index, "_showEndDropdown", false);
+                          }}
+                          onFocus={() => { closeAllDropdowns(index, '_showEndDropdown'); updateParsedEvent(index, "_showEndDropdown", true); }}
+                          onBlur={() => setTimeout(() => updateParsedEvent(index, "_showEndDropdown", false), 200)}
                           className="form-input w-full cursor-pointer"
                           placeholder="14:30"
                           data-testid={`end-time-${index}`}
                         />
-                        {event._showEndDropdown && (
-                          <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto">
-                            {TIME_OPTIONS.map(t => (
-                              <button key={t} className="w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 transition-colors" onClick={() => {
-                                updateParsedEvent(index, "end_time", t);
-                                updateParsedEvent(index, "_showEndDropdown", false);
-                              }}>{t}</button>
-                            ))}
-                          </div>
-                        )}
+                        {event._showEndDropdown && (() => {
+                          // Filter end-time options: only times AFTER start_time
+                          const start = event.start_time || "00:00";
+                          const validOptions = TIME_OPTIONS.filter(t => t > start);
+                          const list = validOptions.length ? validOptions : TIME_OPTIONS;
+                          return (
+                            <div
+                              ref={(el) => {
+                                if (!el) return;
+                                const sel = el.querySelector('[data-selected="true"]');
+                                if (sel) el.scrollTop = sel.offsetTop - el.clientHeight / 2 + sel.offsetHeight / 2;
+                              }}
+                              className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto"
+                            >
+                              {list.map(t => {
+                                const selected = (event.end_time || "") === t;
+                                return (
+                                  <button
+                                    key={t}
+                                    data-selected={selected}
+                                    className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 transition-colors tabular-nums ${selected ? 'bg-black/5 font-medium' : ''}`}
+                                    onMouseDown={() => {
+                                      updateParsedEvent(index, "end_time", t);
+                                      updateParsedEvent(index, "_showEndDropdown", false);
+                                    }}
+                                  >{t}</button>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
-                    
+
                   <div className="form-field">
                     <Label className="text-sm text-secondary">опис</Label>
                     <Input
