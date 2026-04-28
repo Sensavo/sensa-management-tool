@@ -1981,36 +1981,36 @@ const EventForm = () => {
                     </div>
                   )}
 
-                  {/* Date + Price + Spots row (date hidden for regular — weekdays above replace it) */}
-                  <div className={`grid gap-3 ${event.event_type === "regular" ? "grid-cols-2" : "grid-cols-3"}`}>
-                    {event.event_type !== "regular" && (
-                      <div className="form-field">
-                        <Label className="text-sm text-secondary">дата</Label>
-                        <Popover open={event._showCalendar} onOpenChange={(open) => { closeAllDropdowns(index, '_showCalendar'); updateParsedEvent(index, "_showCalendar", open); }}>
-                          <PopoverTrigger asChild>
-                            <button
-                              type="button"
-                              className={`form-input w-full text-left cursor-pointer ${event._isRepeat && event.date < formatDateLocal(new Date()) ? 'text-red-500 border-red-300' : ''}`}
-                              data-testid={`date-picker-${index}`}
-                            >
-                              {event.date ? `${new Date(event.date).getDate()} ${UK_MONTHS_NOMINATIVE[new Date(event.date).getMonth()]}` : 'обери дату'}
-                            </button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-2" align="start">
-                            <Calendar
-                              mode="single" locale={uk} weekStartsOn={1}
-                              selected={event.date ? new Date(event.date) : undefined}
-                              onSelect={(d) => {
-                                if (d) updateParsedEvent(index, "date", formatDateLocal(d));
-                                updateParsedEvent(index, "_showCalendar", false);
-                              }}
-                              className="calendar-minimal"
-                              modifiersClassNames={{ today: "calendar-today-visible" }}
-                            />
-                          </PopoverContent>
-                        </Popover>
-                      </div>
-                    )}
+                  {/* Date + Price + Spots row. For regular series, date = старт серії. */}
+                  <div className="grid gap-3 grid-cols-3">
+                    <div className="form-field">
+                      <Label className="text-sm text-secondary">
+                        {event.event_type === "regular" ? "початок серії" : "дата"}
+                      </Label>
+                      <Popover open={event._showCalendar} onOpenChange={(open) => { closeAllDropdowns(index, '_showCalendar'); updateParsedEvent(index, "_showCalendar", open); }}>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className={`form-input w-full text-left cursor-pointer ${event._isRepeat && event.date < formatDateLocal(new Date()) ? 'text-red-500 border-red-300' : ''}`}
+                            data-testid={`date-picker-${index}`}
+                          >
+                            {event.date ? `${new Date(event.date).getDate()} ${UK_MONTHS_NOMINATIVE[new Date(event.date).getMonth()]}` : 'обери дату'}
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-2" align="start">
+                          <Calendar
+                            mode="single" locale={uk} weekStartsOn={1}
+                            selected={event.date ? new Date(event.date) : undefined}
+                            onSelect={(d) => {
+                              if (d) updateParsedEvent(index, "date", formatDateLocal(d));
+                              updateParsedEvent(index, "_showCalendar", false);
+                            }}
+                            className="calendar-minimal"
+                            modifiersClassNames={{ today: "calendar-today-visible" }}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
                       <div className="form-field relative">
                         <Label className="text-sm text-secondary">ціна (₴)</Label>
                         <div className="relative">
