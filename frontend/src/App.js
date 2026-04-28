@@ -3530,6 +3530,8 @@ const DesktopDashboard = () => {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [showEventDetail, setShowEventDetail] = useState(false);
   const [cancelSeriesDialogFor, setCancelSeriesDialogFor] = useState(null); // event when series-cancel choice is needed
+  // Series instances list — populated when an event detail opens that's part of a regular series
+  const [seriesData, setSeriesData] = useState(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showTaskDialog, setShowTaskDialog] = useState(false);
   const [showSMMTaskDialog, setShowSMMTaskDialog] = useState(false);
@@ -3773,7 +3775,25 @@ const DesktopDashboard = () => {
     }
   };
   
-  const handleEventClick = async (eventId) => { try { const r = await axios.get(`${API}/events/${eventId}`); setSelectedEvent(r.data); setShowEventDetail(true); } catch { toast.error("помилка"); } };
+  const handleEventClick = async (eventId) => {
+    try {
+      const r = await axios.get(`${API}/events/${eventId}`);
+      setSelectedEvent(r.data);
+      setShowEventDetail(true);
+      // Fetch series instances if this event belongs to a regular series
+      const isSeries = !!r.data?.source_event_id || r.data?.event_type === "regular";
+      if (isSeries) {
+        try {
+          const s = await axios.get(`${API}/events/${eventId}/series`);
+          setSeriesData(s.data);
+        } catch {
+          setSeriesData(null);
+        }
+      } else {
+        setSeriesData(null);
+      }
+    } catch { toast.error("помилка"); }
+  };
   const handleToggleTaskInPopup = async (reminderId, completed) => { try { await api.completeTask({ event_id: selectedEvent.id, reminder_id: reminderId, completed }); refreshEvents(); const r = await axios.get(`${API}/events/${selectedEvent.id}`); setSelectedEvent(r.data); } catch { toast.error("помилка"); } };
   const handleToggleSMMTaskInPopup = async (taskId, completed) => { try { await api.completeSMMTask({ event_id: selectedEvent.id, task_id: taskId, completed }); refreshEvents(); const r = await axios.get(`${API}/events/${selectedEvent.id}`); setSelectedEvent(r.data); } catch { toast.error("помилка"); } };
   
@@ -4365,6 +4385,57 @@ const DesktopDashboard = () => {
                     </div>
                   )}
                 </div>
+
+                {/* Series timeline — appears only for events that are part of a regular series */}
+                {seriesData && seriesData.events && seriesData.events.length > 1 && (
+                  <div className="section-card mt-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#1A1717] text-[#F5F5F0] text-xs font-medium">
+                        <span>↻</span>
+                        <span>регулярна серія</span>
+                      </div>
+                      <span className="text-xs text-secondary">{seriesData.events.length} подій</span>
+                    </div>
+                    <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                      {seriesData.events.map((inst) => {
+                        const d = new Date(inst.date);
+                        const dayLabel = `${d.getDate()} ${UK_MONTHS_NOMINATIVE[d.getMonth()]}`;
+                        const wd = ['нд','пн','вт','ср','чт','пт','сб'][d.getDay()];
+                        const isPast = d < today;
+                        const isCancelled = inst.cancelled;
+                        const isCurrent = inst.is_current;
+                        const isMaster = inst.is_master;
+                        const bookings = inst.altegio_booked_count;
+                        const cap = inst.spots || 10;
+                        return (
+                          <button
+                            key={inst.id}
+                            onClick={() => { if (!isCurrent) handleEventClick(inst.id); }}
+                            disabled={isCurrent}
+                            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-sm transition-colors ${
+                              isCurrent
+                                ? 'bg-[#1A1717] text-[#F5F5F0] cursor-default'
+                                : isCancelled
+                                  ? 'bg-black/3 text-[#1A1717]/40 line-through hover:bg-black/5'
+                                  : isPast
+                                    ? 'bg-black/3 text-[#1A1717]/55 hover:bg-black/5'
+                                    : 'bg-white hover:bg-black/5 ring-1 ring-black/5'
+                            }`}
+                            data-testid={`series-instance-${inst.id}`}
+                          >
+                            <span className="font-medium tabular-nums w-20">{dayLabel}</span>
+                            <span className={`text-xs ${isCurrent ? 'text-[#F5F5F0]/70' : 'text-secondary'}`}>{wd}</span>
+                            {isMaster && <span className="text-[10px] uppercase tracking-wider opacity-60">батько</span>}
+                            <span className="ml-auto text-xs tabular-nums">
+                              {bookings != null ? `${bookings}/${cap}` : `–/${cap}`}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <div className="section-card mt-4">
                   <p className="text-xs text-secondary mb-3">синхронізація</p>
                   <div className="flex gap-2">

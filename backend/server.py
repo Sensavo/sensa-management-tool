@@ -1217,6 +1217,52 @@ async def cancel_event_series(event_id: str):
     return {"cancelled_count": len(cancelled_ids), "cancelled_ids": cancelled_ids, "master_id": master_id}
 
 
+@api_router.get("/events/{event_id}/series")
+async def get_event_series(event_id: str):
+    """Return all events in the same regular series as the supplied event,
+    sorted by date. Useful for showing 'this is part of a series' UI with
+    a clickable list of all instances.
+
+    Series membership: master = the event with source_event_id="" whose
+    own id appears as source_event_id of children. Given any event, we
+    resolve master_id, then collect master + every event linking to it.
+    """
+    existing = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    master_id = existing.get("source_event_id") or event_id
+    cursor = db.events.find(
+        {"$or": [{"id": master_id}, {"source_event_id": master_id}]},
+        {
+            "_id": 0, "id": 1, "title": 1, "date": 1,
+            "start_time": 1, "end_time": 1,
+            "spots": 1, "altegio_booked_count": 1,
+            "cancelled": 1, "archived": 1,
+            "source_event_id": 1,
+        },
+    )
+    instances = await cursor.to_list(1000)
+    instances.sort(key=lambda e: e.get("date", ""))
+
+    enriched = []
+    for inst in instances:
+        is_master = inst["id"] == master_id
+        is_current = inst["id"] == event_id
+        enriched.append({
+            **inst,
+            "is_master": is_master,
+            "is_current": is_current,
+        })
+
+    return {
+        "master_id": master_id,
+        "current_id": event_id,
+        "count": len(enriched),
+        "events": enriched,
+    }
+
+
 @api_router.delete("/events/{event_id}")
 async def delete_event(event_id: str):
     existing = await db.events.find_one({"id": event_id}, {"_id": 0})
