@@ -2397,16 +2397,22 @@ class AltegioClient:
                 return []
     
     async def get_services(self):
-        """Get all services from Altegio"""
+        """Get all services from Altegio.
+
+        Uses the V2 auth header (Bearer Partner, User UserToken). The V1
+        /services endpoint accepts either, but the partner-format header
+        is the only one that returns the full catalog for our company —
+        plain Bearer UserToken silently returned an empty list.
+        """
         url = f"{self.base_url}/company/{self.company_id}/services"
-        
+
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(url, headers=self.get_headers())
+            response = await client.get(url, headers=self.get_v2_headers())
             if response.status_code == 200:
                 data = response.json()
                 return data.get("data", [])
             else:
-                logging.error(f"Altegio services error: {response.status_code}")
+                logging.error(f"Altegio services error: {response.status_code} — {response.text[:200]}")
                 return []
     
     async def create_record(self, service_id: str, staff_id: str, client_name: str, 
