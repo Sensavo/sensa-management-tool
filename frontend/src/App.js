@@ -1618,6 +1618,24 @@ const EventForm = () => {
   useEffect(() => {
     axios.get(`${API}/altegio/services`).then(r => setAltegioServices(r.data?.services || [])).catch(() => {});
   }, []);
+  // Fuzzy-match an event title to an Altegio service. Normalises both sides
+  // (lowercase, strip everything but alphanumerics) so "Адхо-йога з Олею"
+  // matches the service "Адхо-йога". Returns the service object or null.
+  const matchAltegioService = useCallback((title) => {
+    if (!title || !altegioServices.length) return null;
+    const norm = (s) => (s || '').toLowerCase().replace(/[^a-zа-яії0-9]/gi, '');
+    const t = norm(title);
+    if (!t) return null;
+    // Prefer the longest service-name match (so "Інь-йога" wins over "йога").
+    let best = null;
+    for (const s of altegioServices) {
+      const sn = norm(s.title);
+      if (sn && (t.includes(sn) || sn.includes(t))) {
+        if (!best || sn.length > norm(best.title).length) best = s;
+      }
+    }
+    return best;
+  }, [altegioServices]);
   const [clarificationMessage, setClarificationMessage] = useState("");
   const [showParsedResults, setShowParsedResults] = useState(false);
   const [showAiInput, setShowAiInput] = useState(false);
@@ -1871,8 +1889,15 @@ const EventForm = () => {
                         <Input
                           value={event.title}
                           onChange={(e) => {
-                            updateParsedEvent(index, "title", e.target.value);
+                            const newTitle = e.target.value;
+                            updateParsedEvent(index, "title", newTitle);
                             updateParsedEvent(index, "_showTitleDropdown", true);
+                            // Auto-link to Altegio service by title (only when user hasn't
+                            // explicitly chosen one — leaves manual override intact).
+                            if (!event._altegioManual) {
+                              const matched = matchAltegioService(newTitle);
+                              updateParsedEvent(index, "altegio_service_id", matched ? matched.id : null);
+                            }
                           }}
                           onFocus={() => {
                             closeAllDropdowns(index, '_showTitleDropdown');
@@ -1914,7 +1939,10 @@ const EventForm = () => {
                             <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto">
                               {recentEvents.map((src, i) => (
                                 <button key={i} className="w-full text-left px-3 py-2 text-sm hover:bg-black/5 transition-colors" onMouseDown={() => {
-                                  // Auto-fill everything from the past event EXCEPT the date
+                                  // Auto-fill everything from the past event EXCEPT the date.
+                                  // Carry over altegio_service_id if the past event had one;
+                                  // otherwise fall back to a fuzzy title match.
+                                  const inheritedSvc = src.altegio_service_id || matchAltegioService(src.title)?.id || null;
                                   setParsedEvents(prev => prev.map((ev, idx) => {
                                     if (idx !== index) return ev;
                                     return {
@@ -1925,6 +1953,7 @@ const EventForm = () => {
                                       description: src.description ?? ev.description,
                                       start_time: src.start_time || ev.start_time,
                                       end_time: src.end_time || ev.end_time,
+                                      altegio_service_id: ev._altegioManual ? ev.altegio_service_id : inheritedSvc,
                                       _showTitleDropdown: false,
                                     };
                                   }));
@@ -2158,20 +2187,62 @@ const EventForm = () => {
                       placeholder="опис (необов'язково)"
                     />
                   </div>
+                  {/* Altegio link: auto-matched chip OR compact picker. Only shows
+                      a full dropdown when no match could be found and the user
+                      wants to override. */}
                   <div className="form-field">
-                    <Label className="text-sm text-secondary">сервіс в Altegio</Label>
-                    <select
-                      value={event.altegio_service_id || ""}
-                      onChange={(e) => updateParsedEvent(index, "altegio_service_id", e.target.value || null)}
-                      className="form-input w-full bg-white cursor-pointer"
-                      style={{paddingRight: '36px', backgroundPosition: 'right 14px center'}}
-                      data-testid={`altegio-service-${index}`}
-                    >
-                      <option value="">— не пушити в Altegio —</option>
-                      {altegioServices.map(s => (
-                        <option key={s.id} value={s.id}>{s.title}{s.price_min ? ` (${s.price_min}₴)` : ''}</option>
-                      ))}
-                    </select>
+                    {(() => {
+                      const matched = altegioServices.find(s => String(s.id) === String(event.altegio_service_id));
+                      if (matched) {
+                        return (
+                          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 ring-1 ring-emerald-200 text-emerald-800 text-sm">
+                            <span className="text-xs">→ Altegio:</span>
+                            <span className="font-medium">{matched.title}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                updateParsedEvent(index, "altegio_service_id", null);
+                                updateParsedEvent(index, "_altegioManual", true);
+                              }}
+                              className="ml-1 text-emerald-700/70 hover:text-emerald-900"
+                              aria-label="прибрати"
+                            >×</button>
+                          </div>
+                        );
+                      }
+                      // No match — show compact chooser (collapsed by default if user has a title)
+                      if (!event._showAltegioPicker) {
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => updateParsedEvent(index, "_showAltegioPicker", true)}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/5 hover:bg-black/10 text-sm text-secondary transition-colors"
+                          >
+                            не знайдено в Altegio — обрати вручну
+                          </button>
+                        );
+                      }
+                      return (
+                        <select
+                          value={event.altegio_service_id || ""}
+                          onChange={(e) => {
+                            const v = e.target.value || null;
+                            updateParsedEvent(index, "altegio_service_id", v);
+                            updateParsedEvent(index, "_altegioManual", true);
+                            if (!v) updateParsedEvent(index, "_showAltegioPicker", false);
+                          }}
+                          className="form-input w-full bg-white cursor-pointer"
+                          style={{paddingRight: '36px', backgroundPosition: 'right 14px center'}}
+                          autoFocus
+                          data-testid={`altegio-service-${index}`}
+                        >
+                          <option value="">— не пушити в Altegio —</option>
+                          {altegioServices.map(s => (
+                            <option key={s.id} value={s.id}>{s.title}{s.price_min ? ` (${s.price_min}₴)` : ''}</option>
+                          ))}
+                        </select>
+                      );
+                    })()}
                   </div>
                 </div>
 
