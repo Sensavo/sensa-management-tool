@@ -3575,6 +3575,7 @@ const DesktopDashboard = () => {
   const [cancelSeriesDialogFor, setCancelSeriesDialogFor] = useState(null); // event when series-cancel choice is needed
   // Series instances list — populated when an event detail opens that's part of a regular series
   const [seriesData, setSeriesData] = useState(null);
+  const [seriesPickerOpen, setSeriesPickerOpen] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showTaskDialog, setShowTaskDialog] = useState(false);
   const [showSMMTaskDialog, setShowSMMTaskDialog] = useState(false);
@@ -4385,8 +4386,64 @@ const DesktopDashboard = () => {
           <div className="desktop-columns-4">
             {/* Column 1 - Event Info */}
             <div className="desktop-column">
-              <div className="px-4 py-3 border-b border-gray-100">
-                <span className="text-sm font-semibold tracking-wide">ПОДІЯ</span>
+              <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2 relative">
+                {seriesData && seriesData.events && seriesData.events.length > 1 ? (
+                  <>
+                    <span className="text-sm font-semibold tracking-wide">РЕГУЛЯРНА ПОДІЯ</span>
+                    <button
+                      type="button"
+                      onClick={() => setSeriesPickerOpen(o => !o)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/5 hover:bg-black/10 text-xs font-medium transition-colors"
+                      data-testid="series-picker-toggle"
+                    >
+                      <span className="tabular-nums">{seriesData.events.length} подій</span>
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${seriesPickerOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {seriesPickerOpen && (
+                      <div
+                        className="absolute right-2 top-full mt-1 z-30 w-72 rounded-2xl bg-[#FAFAF7] ring-1 ring-black/8 shadow-[0_16px_40px_-8px_rgba(0,0,0,0.18)] p-1.5 max-h-80 overflow-y-auto"
+                      >
+                        {seriesData.events.map((inst) => {
+                          const d = new Date(inst.date);
+                          const dayLabel = `${d.getDate()} ${UK_MONTHS_NOMINATIVE[d.getMonth()]}`;
+                          const wd = ['нд','пн','вт','ср','чт','пт','сб'][d.getDay()];
+                          const isPast = d < today;
+                          const isCancelled = inst.cancelled;
+                          const isCurrent = inst.is_current;
+                          const isMaster = inst.is_master;
+                          const bookings = inst.altegio_booked_count;
+                          const cap = inst.spots || 10;
+                          return (
+                            <button
+                              key={inst.id}
+                              onClick={() => { setSeriesPickerOpen(false); if (!isCurrent) handleEventClick(inst.id); }}
+                              disabled={isCurrent}
+                              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-sm transition-colors ${
+                                isCurrent
+                                  ? 'bg-[#1A1717] text-[#F5F5F0] cursor-default'
+                                  : isCancelled
+                                    ? 'text-[#1A1717]/35 line-through hover:bg-black/5'
+                                    : isPast
+                                      ? 'text-[#1A1717]/55 hover:bg-black/5'
+                                      : 'hover:bg-black/5'
+                              }`}
+                              data-testid={`series-instance-${inst.id}`}
+                            >
+                              <span className="font-medium tabular-nums w-20">{dayLabel}</span>
+                              <span className={`text-[11px] uppercase ${isCurrent ? 'text-[#F5F5F0]/70' : 'text-secondary'}`}>{wd}</span>
+                              {isMaster && <span className="text-[10px] uppercase tracking-wider opacity-60">батько</span>}
+                              <span className="ml-auto text-xs tabular-nums">
+                                {bookings != null ? `${bookings}/${cap}` : `–/${cap}`}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-sm font-semibold tracking-wide">ПОДІЯ</span>
+                )}
               </div>
               <div className="column-content">
                 <div className="section-card">
@@ -4429,55 +4486,7 @@ const DesktopDashboard = () => {
                   )}
                 </div>
 
-                {/* Series timeline — appears only for events that are part of a regular series */}
-                {seriesData && seriesData.events && seriesData.events.length > 1 && (
-                  <div className="section-card mt-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#1A1717] text-[#F5F5F0] text-xs font-medium">
-                        <span>↻</span>
-                        <span>регулярна серія</span>
-                      </div>
-                      <span className="text-xs text-secondary">{seriesData.events.length} подій</span>
-                    </div>
-                    <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                      {seriesData.events.map((inst) => {
-                        const d = new Date(inst.date);
-                        const dayLabel = `${d.getDate()} ${UK_MONTHS_NOMINATIVE[d.getMonth()]}`;
-                        const wd = ['нд','пн','вт','ср','чт','пт','сб'][d.getDay()];
-                        const isPast = d < today;
-                        const isCancelled = inst.cancelled;
-                        const isCurrent = inst.is_current;
-                        const isMaster = inst.is_master;
-                        const bookings = inst.altegio_booked_count;
-                        const cap = inst.spots || 10;
-                        return (
-                          <button
-                            key={inst.id}
-                            onClick={() => { if (!isCurrent) handleEventClick(inst.id); }}
-                            disabled={isCurrent}
-                            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-sm transition-colors ${
-                              isCurrent
-                                ? 'bg-[#1A1717] text-[#F5F5F0] cursor-default'
-                                : isCancelled
-                                  ? 'bg-black/3 text-[#1A1717]/40 line-through hover:bg-black/5'
-                                  : isPast
-                                    ? 'bg-black/3 text-[#1A1717]/55 hover:bg-black/5'
-                                    : 'bg-white hover:bg-black/5 ring-1 ring-black/5'
-                            }`}
-                            data-testid={`series-instance-${inst.id}`}
-                          >
-                            <span className="font-medium tabular-nums w-20">{dayLabel}</span>
-                            <span className={`text-xs ${isCurrent ? 'text-[#F5F5F0]/70' : 'text-secondary'}`}>{wd}</span>
-                            {isMaster && <span className="text-[10px] uppercase tracking-wider opacity-60">батько</span>}
-                            <span className="ml-auto text-xs tabular-nums">
-                              {bookings != null ? `${bookings}/${cap}` : `–/${cap}`}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                {/* Compact series picker — replaces the column header for series events */}
 
                 <div className="section-card mt-4">
                   <p className="text-xs text-secondary mb-3">синхронізація</p>
@@ -4517,11 +4526,11 @@ const DesktopDashboard = () => {
               </div>
               <div className="column-content">
                 <div className="space-y-2">
-                  {settings?.reminder_types?.map(rt => {
+                  {(allTaskDefs.management || []).map(rt => {
                     const reminderDate = selectedEvent.reminders?.[rt.id];
                     const isCompleted = !!selectedEvent.completed_tasks?.[rt.id];
                     if (!reminderDate) return null;
-                    const IconComponent = getIconComponent(rt.icon);
+                    const IconComponent = getIconComponent(rt.icon || "circle");
                     return (
                       <div key={rt.id} className="task-item" onClick={() => handleToggleTaskInPopup(rt.id, !isCompleted)}>
                         <div className="task-icon"><IconComponent /></div>
@@ -4533,13 +4542,13 @@ const DesktopDashboard = () => {
                       </div>
                     );
                   })}
-                  {!settings?.reminder_types?.some(rt => selectedEvent.reminders?.[rt.id]) && (
+                  {!(allTaskDefs.management || []).some(rt => selectedEvent.reminders?.[rt.id]) && (
                     <p className="text-secondary text-sm py-4">немає завдань</p>
                   )}
                 </div>
               </div>
             </div>
-            
+
             {/* Column 3 - SMM */}
             <div className="desktop-column">
               <div className="px-4 py-3 border-b border-gray-100">
