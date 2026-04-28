@@ -187,6 +187,10 @@ const SMM_ICONS = {
   smm_shoot_content: "camera", smm_shoot_content_child: "camera",
   smm_post_stories: "instagram", smm_post_stories_child: "instagram",
   smm_upload_google: "share",
+  smm_extra_storytelling: "message", smm_extra_reel: "video",
+  mktg_check_announce: "circle", mktg_start_targeting: "target",
+  mktg_update_target_50: "target", mktg_update_target_60: "target", mktg_update_target_80: "target",
+  mktg_stop_targeting: "target",
   smm_video_master_subtitles: "video", smm_video_feedbacks: "video",
 };
 
