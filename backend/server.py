@@ -429,11 +429,11 @@ MANAGEMENT_TASKS = [
     # instance of that month). See create_event regular-series branch.
     {"id": "mgmt_pay_master", "name": "оплата майстру", "days_before": 0, "condition": None, "series_master_only": True},
     {"id": "mgmt_send_feedback", "name": "розіслати запрошення в чат і форму фідбеку", "days_before": -1, "condition": None, "regular_note": "регулярна → тільки новим"},
-    {"id": "mgmt_pay_master_after", "name": "оплата майстру", "days_before": -1, "condition": None, "regular_note": "регулярна → вкінці місяця"},
-    # NEW: replaces smm_master_studio. Manager asks master to record a studio
-    # speech only when booking is poor. Master-only for series so it doesn't
-    # repeat per session.
+    # mgmt_pay_master_after removed (no such concept).
+    # Master speech: only when booking is poor; master-only for series.
     {"id": "mgmt_master_speech", "name": "попросити майстра зняти розмовне сторіс (зі студії або іншого місця)", "days_before": 10, "condition": {"type": "booking_below", "threshold": 60}, "series_master_only": True},
+    # Lucky ticket — moved here from SMM (it's a manager task).
+    {"id": "mgmt_lucky_ticket", "name": "щасливий квиточок в групу", "days_before": 2, "condition": {"type": "booking_below", "threshold": 80}},
 ]
 
 # SMM event tasks (column: kasya)
@@ -466,12 +466,15 @@ SMM_TASKS = [
     {"id": "smm_stop_targeting", "name": "зупинити таргетинг", "days_before": 7, "condition": {"type": "booking_above", "threshold": 90}, "is_announcement": False},
     {"id": "smm_past_events_80", "name": "сторіс з минулих подій і фідбеки", "days_before": 5, "condition": {"type": "booking_below", "threshold": 80}, "is_announcement": False},
     {"id": "smm_update_target_80", "name": "апдейт таргетингу", "days_before": 5, "condition": {"type": "booking_below", "threshold": 80}, "is_announcement": False},
-    {"id": "smm_lucky_ticket", "name": "щасливий квиточок в групу", "days_before": 2, "condition": {"type": "booking_below", "threshold": 80}, "is_announcement": False},
+    # smm_lucky_ticket moved to MANAGEMENT_TASKS as mgmt_lucky_ticket.
     {"id": "smm_remind_story", "name": "нагадування в сторіс", "days_before": 1, "condition": {"type": "booking_below", "threshold": 90}, "is_announcement": False},
-    # Day-of content shoot/post — only when booking is weak (extra material is
-    # the way to push it). Otherwise optional / not mandatory.
-    {"id": "smm_shoot_content", "name": "знімати контент", "days_before": 0, "condition": {"type": "booking_below", "threshold": 70}, "is_announcement": False},
-    {"id": "smm_post_stories", "name": "постити сторі відразу з події", "days_before": 0, "condition": {"type": "booking_below", "threshold": 70}, "is_announcement": False},
+    # Day-of content. For one-off events and series masters: ALWAYS create
+    # (no condition). For series children: only show as conditional task if
+    # booking is weak. Hence two definitions distinguished by `_series_only`.
+    {"id": "smm_shoot_content", "name": "знімати контент", "days_before": 0, "condition": None, "is_announcement": False, "_series_only": "non_child"},
+    {"id": "smm_shoot_content_child", "name": "знімати контент", "days_before": 0, "condition": {"type": "booking_below", "threshold": 70}, "is_announcement": False, "_series_only": "child"},
+    {"id": "smm_post_stories", "name": "постити сторі відразу з події", "days_before": 0, "condition": None, "is_announcement": False, "_series_only": "non_child"},
+    {"id": "smm_post_stories_child", "name": "постити сторі відразу з події", "days_before": 0, "condition": {"type": "booking_below", "threshold": 70}, "is_announcement": False, "_series_only": "child"},
     {"id": "smm_upload_google", "name": "оптимізувати фото-відео, видалити невдалі і залити на google photo", "days_before": -1, "condition": None, "is_announcement": False},
 ]
 
@@ -544,6 +547,13 @@ def calculate_event_tasks(event_date_str, column, is_series_child: bool = False)
     result = {}
     for task in tasks:
         if is_series_child and task.get("series_master_only"):
+            continue
+        # _series_only: "child" → only for series children
+        # _series_only: "non_child" → only for one-off / master (skip children)
+        series_only = task.get("_series_only")
+        if series_only == "child" and not is_series_child:
+            continue
+        if series_only == "non_child" and is_series_child:
             continue
         task_date = event_dt - timedelta(days=task["days_before"])
         # Apply date corrections

@@ -182,8 +182,11 @@ const SMM_ICONS = {
   smm_post_insta: "instagram", smm_post_tg: "send", smm_ambassadors: "users",
   smm_influencers: "star", smm_story_reminder: "message", smm_storytelling: "message",
   smm_video_master: "video", smm_past_events: "share", smm_targeting: "target",
-  smm_direct: "send", smm_tg_reminder: "bell", smm_lucky_ticket: "gift",
-  smm_shoot_content: "camera", smm_post_stories: "instagram", smm_upload_google: "share",
+  smm_direct: "send", smm_tg_reminder: "bell",
+  mgmt_lucky_ticket: "gift",
+  smm_shoot_content: "camera", smm_shoot_content_child: "camera",
+  smm_post_stories: "instagram", smm_post_stories_child: "instagram",
+  smm_upload_google: "share",
   smm_video_master_subtitles: "video", smm_video_feedbacks: "video",
 };
 
