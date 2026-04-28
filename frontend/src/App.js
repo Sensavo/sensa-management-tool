@@ -1613,7 +1613,11 @@ const EventForm = () => {
   // AI parsing state
   const [aiInput, setAiInput] = useState("");
   const [aiParsing, setAiParsing] = useState(false);
-  const [parsedEvents, setParsedEvents] = useState([{ title: "", date: formatDateLocal(new Date()), price: 0, spots: 10, description: "", start_time: "12:00", end_time: "14:30", event_type: "new", repeat_days: [0] }]);
+  const [parsedEvents, setParsedEvents] = useState([{ title: "", date: formatDateLocal(new Date()), price: 0, spots: 10, description: "", start_time: "12:00", end_time: "14:30", event_type: "new", repeat_days: [0], altegio_service_id: null }]);
+  const [altegioServices, setAltegioServices] = useState([]);
+  useEffect(() => {
+    axios.get(`${API}/altegio/services`).then(r => setAltegioServices(r.data?.services || [])).catch(() => {});
+  }, []);
   const [clarificationMessage, setClarificationMessage] = useState("");
   const [showParsedResults, setShowParsedResults] = useState(false);
   const [showAiInput, setShowAiInput] = useState(false);
@@ -1716,6 +1720,7 @@ const EventForm = () => {
         end_time: event.end_time || "",
         event_type: event.event_type || "new",
         repeat_days: isRegular ? (event.repeat_days || []) : [],
+        altegio_service_id: event.altegio_service_id ? parseInt(event.altegio_service_id) : null,
       };
       const result = await api.createEvent(data);
       if (isRegular && result?.series_count > 1) {
@@ -2146,15 +2151,30 @@ const EventForm = () => {
                     
                   <div className="form-field">
                     <Label className="text-sm text-secondary">опис</Label>
-                    <Input 
-                      value={event.description || ""} 
+                    <Input
+                      value={event.description || ""}
                       onChange={(e) => updateParsedEvent(index, "description", e.target.value)}
                       className="form-input"
                       placeholder="опис (необов'язково)"
                     />
                   </div>
+                  <div className="form-field">
+                    <Label className="text-sm text-secondary">сервіс в Altegio</Label>
+                    <select
+                      value={event.altegio_service_id || ""}
+                      onChange={(e) => updateParsedEvent(index, "altegio_service_id", e.target.value || null)}
+                      className="form-input w-full bg-white cursor-pointer"
+                      style={{paddingRight: '36px', backgroundPosition: 'right 14px center'}}
+                      data-testid={`altegio-service-${index}`}
+                    >
+                      <option value="">— не пушити в Altegio —</option>
+                      {altegioServices.map(s => (
+                        <option key={s.id} value={s.id}>{s.title}{s.price_min ? ` (${s.price_min}₴)` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-                
+
                 <div className="flex gap-3 pt-2">
                   <button 
                     className="btn-dark flex-1"
