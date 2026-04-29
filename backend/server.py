@@ -321,7 +321,7 @@ class SMMTaskCompletionRequest(BaseModel):
 
 class StandaloneTask(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     title: str
     date: str
@@ -331,6 +331,18 @@ class StandaloneTask(BaseModel):
     assignee: str = "karolina"  # "kasya", "karolina", "vo" - determines column
     completed: bool = False
     completed_at: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class DayOff(BaseModel):
+    """A user-marked day off. When created, system suggests how to redistribute
+    that person's tasks scheduled on that day to neighboring days."""
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    assignee: str  # "karolina" | "kasya" | "vo"
+    date: str  # YYYY-MM-DD
+    note: str = ""
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -1283,6 +1295,171 @@ async def create_standalone_task(task_data: StandaloneTaskCreate):
 async def get_standalone_tasks():
     tasks = await db.standalone_tasks.find({}, {"_id": 0}).to_list(1000)
     return tasks
+
+# ==================== DAY-OFFS ====================
+
+ASSIGNEE_TO_COLUMN = {
+    "karolina": "management",
+    "kasya":    "smm",
+    "vo":       "marketing",
+}
+COLUMN_TO_FIELD = {
+    "management": "reminders",
+    "smm":        "smm_tasks",
+    "marketing":  "marketing_tasks",
+}
+COLUMN_TO_COMPLETED_FIELD = {
+    "management": "completed_tasks",
+    "smm":        "completed_smm_tasks",
+    "marketing":  "completed_marketing_tasks",
+}
+
+
+async def _suggest_redistribution(assignee: str, day_off_date: str) -> Dict:
+    """Build a redistribution plan for a single day off.
+
+    Returns:
+        {
+          "auto_shifts":   safe shifts the system applies on its own
+          "needs_review":  items the user must decide (fixed / chain / no slot)
+        }
+    """
+    column = ASSIGNEE_TO_COLUMN.get(assignee)
+    if not column:
+        return {"auto_shifts": [], "needs_review": []}
+
+    task_defs = {t["id"]: t for t in get_tasks_for_column(column)}
+    field = COLUMN_TO_FIELD[column]
+    completed_field = COLUMN_TO_COMPLETED_FIELD[column]
+
+    try:
+        day_off_dt = datetime.strptime(day_off_date[:10], "%Y-%m-%d").date()
+    except Exception:
+        return {"auto_shifts": [], "needs_review": []}
+
+    # Pre-compute load per day in a wide window so we can pick less-loaded neighbours.
+    window_start = (day_off_dt - timedelta(days=7)).isoformat()
+    window_end   = (day_off_dt + timedelta(days=7)).isoformat()
+
+    cursor = db.events.find({"cancelled": {"$ne": True}}, {"_id": 0})
+    events = await cursor.to_list(2000)
+
+    load_by_day: Dict[str, float] = {}
+    affected: List = []  # (event, task_id, current_date)
+    for event in events:
+        tasks_on_event = event.get(field, {}) or {}
+        completed_map = event.get(completed_field, {}) or {}
+        for task_id, task_date in tasks_on_event.items():
+            if not task_date or task_id not in task_defs:
+                continue
+            td = task_defs[task_id]
+            w = float(td.get("weight", 0.1))
+            if window_start <= task_date <= window_end:
+                load_by_day[task_date] = load_by_day.get(task_date, 0.0) + w
+            if task_date == day_off_date and not completed_map.get(task_id):
+                affected.append((event, task_id, task_date))
+
+    auto_shifts: List[Dict] = []
+    needs_review: List[Dict] = []
+
+    for event, task_id, task_date in affected:
+        td = task_defs[task_id]
+        kind = td.get("shift_kind", "easy")
+        weight = float(td.get("weight", 0.1))
+        name = td.get("name", task_id)
+        base = {
+            "event_id": event["id"],
+            "event_title": event.get("title", ""),
+            "task_id": task_id,
+            "name": name,
+            "original_date": task_date,
+            "weight": weight,
+            "kind": kind,
+            "column": column,
+        }
+
+        if kind == "fixed":
+            needs_review.append({
+                **base,
+                "reason": "прив'язано до дати події — переміщати не можна. делегувати або зробити в інший день вручну.",
+                "suggested_dates": [],
+            })
+            continue
+
+        # Build candidate slots ±1, ±2 (skip the day off itself)
+        candidates = []
+        for delta in [-1, 1, -2, 2]:
+            target_dt = day_off_dt + timedelta(days=delta)
+            target = target_dt.isoformat()
+            target_load = load_by_day.get(target, 0.0)
+            candidates.append((delta, target, target_load))
+        # Sort by absolute distance first, then by lighter load
+        candidates.sort(key=lambda c: (abs(c[0]), c[2]))
+
+        if kind == "chain":
+            needs_review.append({
+                **base,
+                "reason": "частина ланцюжка залежностей. зсув може потягнути за собою інші таски — підтвердь.",
+                "suggested_dates": [c[1] for c in candidates[:2]],
+            })
+            continue
+
+        # easy → take the closest+lightest slot
+        chosen = candidates[0]
+        new_date = chosen[1]
+        # Update virtual load so the next easy task accounts for it
+        load_by_day[new_date] = load_by_day.get(new_date, 0.0) + weight
+        auto_shifts.append({**base, "new_date": new_date})
+
+    return {"auto_shifts": auto_shifts, "needs_review": needs_review}
+
+
+@api_router.post("/days-off")
+async def create_day_off(payload: DayOff):
+    """Create a day off and return the redistribution suggestion in one call."""
+    await db.days_off.insert_one(payload.model_dump())
+    suggestion = await _suggest_redistribution(payload.assignee, payload.date)
+    return {"day_off": payload.model_dump(), **suggestion}
+
+
+@api_router.get("/days-off")
+async def list_days_off():
+    days = await db.days_off.find({}, {"_id": 0}).to_list(500)
+    days.sort(key=lambda d: d.get("date", ""))
+    return days
+
+
+@api_router.delete("/days-off/{day_off_id}")
+async def delete_day_off(day_off_id: str):
+    res = await db.days_off.delete_one({"id": day_off_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Day off not found")
+    return {"deleted": True}
+
+
+@api_router.post("/days-off/{day_off_id}/apply")
+async def apply_day_off_shifts(day_off_id: str, plan: dict):
+    """Apply the user-confirmed redistribution.
+
+    plan = {"shifts": [{event_id, task_id, new_date, column}, ...]}
+    Each shift updates the corresponding event's task date in-place.
+    """
+    shifts = plan.get("shifts", [])
+    applied = []
+    for s in shifts:
+        column = s.get("column")
+        if column not in COLUMN_TO_FIELD:
+            continue
+        field = COLUMN_TO_FIELD[column]
+        await db.events.update_one(
+            {"id": s["event_id"]},
+            {"$set": {f"{field}.{s['task_id']}": s["new_date"]}},
+        )
+        applied.append(s)
+    return {"applied": applied, "count": len(applied)}
+
+
+# ==================== STANDALONE TASKS API ====================
 
 @api_router.put("/tasks/standalone/{task_id}")
 async def update_standalone_task(task_id: str, completed: bool):
