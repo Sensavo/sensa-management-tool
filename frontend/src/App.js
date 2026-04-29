@@ -78,6 +78,10 @@ const api = {
   updateEvent: (id, data) => axios.put(`${API}/events/${id}`, data),
   deleteEvent: (id) => axios.delete(`${API}/events/${id}`),
   cancelEventSeries: (id) => axios.post(`${API}/events/${id}/cancel-series`),
+  createDayOff: (data) => axios.post(`${API}/days-off`, data),
+  applyDayOffShifts: (id, plan) => axios.post(`${API}/days-off/${id}/apply`, plan),
+  listDaysOff: () => axios.get(`${API}/days-off`),
+  deleteDayOff: (id) => axios.delete(`${API}/days-off/${id}`),
   getSettings: () => axios.get(`${API}/settings`),
   updateSettings: (data) => axios.put(`${API}/settings`, data),
   addReminder: (data) => axios.post(`${API}/settings/reminders`, data),
@@ -3584,6 +3588,12 @@ const DesktopDashboard = () => {
   // Series instances list — populated when an event detail opens that's part of a regular series
   const [seriesData, setSeriesData] = useState(null);
   const [seriesPickerOpen, setSeriesPickerOpen] = useState(false);
+  // Day-off creation flow
+  const [showDayOffDialog, setShowDayOffDialog] = useState(false);
+  const [dayOffForm, setDayOffForm] = useState({ assignee: "karolina", date: formatDateLocal(new Date()) });
+  const [dayOffPlan, setDayOffPlan] = useState(null); // {day_off, auto_shifts, needs_review}
+  const [reviewChoices, setReviewChoices] = useState({}); // task_id -> chosen new_date or null=skip
+  const [dayOffSubmitting, setDayOffSubmitting] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showTaskDialog, setShowTaskDialog] = useState(false);
   const [showSMMTaskDialog, setShowSMMTaskDialog] = useState(false);
@@ -4047,6 +4057,7 @@ const DesktopDashboard = () => {
         <div className="desktop-header-right">
           <button className="desktop-header-btn" onClick={() => setShowStats(true)} title="Аналітика" data-testid="analytics-btn"><BarChart3 className="w-5 h-5" /></button>
           <button className="desktop-header-btn" onClick={() => navigate("/content")} title="Контент" data-testid="content-btn"><FileText className="w-5 h-5" /></button>
+          <button className="desktop-header-btn" onClick={() => setShowDayOffDialog(true)} title="Вихідний" data-testid="dayoff-btn"><Coffee className="w-5 h-5" /></button>
           <button className="btn-dark" onClick={() => navigate("/event/new")}><Plus className="w-4 h-4" /><span>подія</span></button>
           <button className="desktop-header-btn" onClick={() => setShowSettings(true)} title="Налаштування"><Settings className="w-5 h-5" /></button>
         </div>
@@ -4788,6 +4799,168 @@ const DesktopDashboard = () => {
       <Dialog open={showEditCalendar} onOpenChange={setShowEditCalendar}>
         <DialogContent className="dialog-content">
           <Calendar mode="single" locale={uk} weekStartsOn={1} selected={editingStandaloneTask ? new Date(editingStandaloneTask.date) : new Date()} onSelect={(d) => { if (d && editingStandaloneTask) { setEditingStandaloneTask({ ...editingStandaloneTask, date: formatDateLocal(d) }); } setShowEditCalendar(false); }} className="w-full" />
+        </DialogContent>
+      </Dialog>
+
+      {/* Day-off creation dialog */}
+      <Dialog open={showDayOffDialog} onOpenChange={(o) => { setShowDayOffDialog(o); if (!o) { setDayOffPlan(null); setReviewChoices({}); } }}>
+        <DialogContent className="sm:max-w-md">
+          {!dayOffPlan ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>додати вихідний</DialogTitle>
+                <DialogDescription>система запропонує перерозподіл задач цього дня</DialogDescription>
+              </DialogHeader>
+              <div className="mt-6 space-y-5">
+                <div>
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-2">хто</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[{v:'karolina',l:'Менеджер'},{v:'kasya',l:'SMM'},{v:'vo',l:'Маркетолог'}].map(opt => (
+                      <button
+                        key={opt.v}
+                        type="button"
+                        onClick={() => setDayOffForm({...dayOffForm, assignee: opt.v})}
+                        className={`h-11 rounded-full text-sm font-medium transition-colors ${dayOffForm.assignee === opt.v ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white ring-1 ring-black/8 hover:bg-black/5'}`}
+                      >{opt.l}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-2">коли</div>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button type="button" className="w-full h-12 px-4 rounded-xl bg-white border border-black/10 hover:border-[#1A1717]/30 transition-colors flex items-center gap-3 text-left">
+                        <CalendarIcon className="w-4 h-4 text-[#1A1717]/60" />
+                        <span className="text-sm">{formatDateUkrainian(dayOffForm.date)}</span>
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-2" align="start">
+                      <Calendar mode="single" locale={uk} weekStartsOn={1}
+                        selected={new Date(dayOffForm.date)}
+                        onSelect={(d) => { if (d) setDayOffForm({...dayOffForm, date: formatDateLocal(d)}); }}
+                        className="calendar-minimal" />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  setDayOffSubmitting(true);
+                  try {
+                    const r = await api.createDayOff(dayOffForm);
+                    setDayOffPlan(r.data);
+                    // Pre-fill review choices with first suggested date for each chain item
+                    const choices = {};
+                    (r.data.needs_review || []).forEach(item => {
+                      choices[`${item.event_id}::${item.task_id}`] = item.suggested_dates?.[0] || null;
+                    });
+                    setReviewChoices(choices);
+                  } catch { toast.error("помилка створення вихідного"); }
+                  finally { setDayOffSubmitting(false); }
+                }}
+                disabled={dayOffSubmitting}
+                className="mt-7 w-full h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-sm hover:bg-[#333333] disabled:opacity-50 transition-colors inline-flex items-center justify-center gap-2"
+              >
+                {dayOffSubmitting ? "рахуємо..." : "далі — побачити перерозподіл"}
+              </button>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>перерозподіл задач</DialogTitle>
+                <DialogDescription>
+                  вихідний {formatDateUkrainian(dayOffPlan.day_off.date)} • {dayOffPlan.day_off.assignee === "karolina" ? "Менеджер" : dayOffPlan.day_off.assignee === "kasya" ? "SMM" : "Маркетолог"}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="mt-5 space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+                {/* Auto-shifts (collapsed) */}
+                {dayOffPlan.auto_shifts && dayOffPlan.auto_shifts.length > 0 && (
+                  <details className="rounded-xl bg-emerald-50 ring-1 ring-emerald-200 p-3">
+                    <summary className="cursor-pointer text-sm font-medium text-emerald-900 select-none">
+                      ✓ автоматично перенесено {dayOffPlan.auto_shifts.length} {dayOffPlan.auto_shifts.length === 1 ? "задачу" : "задач"}
+                    </summary>
+                    <div className="mt-3 space-y-1.5">
+                      {dayOffPlan.auto_shifts.map(s => (
+                        <div key={`${s.event_id}::${s.task_id}`} className="text-xs text-emerald-900/80 flex items-center gap-2">
+                          <span>•</span>
+                          <span className="flex-1 truncate"><b>{s.name}</b> — {s.event_title}</span>
+                          <span className="tabular-nums opacity-70">→ {formatDateUkrainian(s.new_date)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+                {/* Needs review (expanded, highlighted) */}
+                {dayOffPlan.needs_review && dayOffPlan.needs_review.length > 0 && (
+                  <div className="rounded-xl bg-amber-50 ring-1 ring-amber-300 p-4">
+                    <div className="text-sm font-semibold text-amber-900 mb-3">⚠ потребують твого рішення ({dayOffPlan.needs_review.length})</div>
+                    <div className="space-y-3">
+                      {dayOffPlan.needs_review.map(item => {
+                        const key = `${item.event_id}::${item.task_id}`;
+                        const choice = reviewChoices[key];
+                        return (
+                          <div key={key} className="p-3 rounded-lg bg-white">
+                            <div className="text-sm font-medium">{item.name}</div>
+                            <div className="text-xs text-secondary mt-0.5">{item.event_title}</div>
+                            <div className="text-xs text-amber-900/80 mt-1.5 italic">{item.reason}</div>
+                            {item.kind === "fixed" ? (
+                              <div className="mt-2 text-xs text-secondary">залишається на {formatDateUkrainian(item.original_date)} — делегувати або зробити вручну.</div>
+                            ) : (
+                              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                                {item.suggested_dates.map(d => (
+                                  <button key={d} type="button"
+                                    onClick={() => setReviewChoices({...reviewChoices, [key]: d})}
+                                    className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${choice === d ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-black/5 hover:bg-black/10'}`}
+                                  >{formatDateUkrainian(d)}</button>
+                                ))}
+                                <button type="button"
+                                  onClick={() => setReviewChoices({...reviewChoices, [key]: null})}
+                                  className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${choice === null ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-black/5 hover:bg-black/10'}`}
+                                >не зміщати</button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {(!dayOffPlan.auto_shifts || dayOffPlan.auto_shifts.length === 0) &&
+                 (!dayOffPlan.needs_review || dayOffPlan.needs_review.length === 0) && (
+                  <div className="text-sm text-secondary text-center py-6">на цей день не було активних задач — зміщувати нічого</div>
+                )}
+              </div>
+              <button
+                onClick={async () => {
+                  setDayOffSubmitting(true);
+                  try {
+                    const shifts = [
+                      ...((dayOffPlan.auto_shifts || []).map(s => ({event_id: s.event_id, task_id: s.task_id, new_date: s.new_date, column: s.column}))),
+                      ...((dayOffPlan.needs_review || [])
+                        .filter(item => item.kind !== "fixed")
+                        .map(item => {
+                          const key = `${item.event_id}::${item.task_id}`;
+                          const chosen = reviewChoices[key];
+                          if (!chosen) return null;
+                          return {event_id: item.event_id, task_id: item.task_id, new_date: chosen, column: item.column};
+                        }).filter(Boolean)),
+                    ];
+                    const r = await api.applyDayOffShifts(dayOffPlan.day_off.id, {shifts});
+                    toast.success(`перенесено ${r.data.count} задач`);
+                    setShowDayOffDialog(false);
+                    setDayOffPlan(null);
+                    setReviewChoices({});
+                    refreshEvents();
+                  } catch { toast.error("помилка"); }
+                  finally { setDayOffSubmitting(false); }
+                }}
+                disabled={dayOffSubmitting}
+                className="mt-6 w-full h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-sm hover:bg-[#333333] disabled:opacity-50 transition-colors"
+              >
+                {dayOffSubmitting ? "застосовуємо..." : "застосувати перерозподіл"}
+              </button>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 
