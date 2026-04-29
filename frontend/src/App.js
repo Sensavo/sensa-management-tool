@@ -4558,7 +4558,7 @@ const DesktopDashboard = () => {
                           <p className={`text-sm font-medium ${isCompleted ? "opacity-50" : ""}`}>{rt.name}</p>
                           <div className="flex items-center gap-1.5 mt-0.5">
                             <p className="text-xs text-secondary">{formatDateUkrainian(reminderDate)}</p>
-                            {condBadge && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-medium">{condBadge}</span>}
+                            {condBadge && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-black/8 text-[#1A1717]/65 font-medium">{condBadge}</span>}
                           </div>
                         </div>
                         <button className={`task-checkbox ${isCompleted ? "checked" : ""}`}><Check className="w-4 h-4" /></button>
@@ -4594,7 +4594,7 @@ const DesktopDashboard = () => {
                           <p className={`text-sm font-medium ${isCompleted ? "opacity-50" : ""}`}>{t.name}</p>
                           <div className="flex items-center gap-1.5 mt-0.5">
                             <p className="text-xs text-secondary">{formatDateUkrainian(taskDate)}</p>
-                            {condBadge && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-medium">{condBadge}</span>}
+                            {condBadge && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-black/8 text-[#1A1717]/65 font-medium">{condBadge}</span>}
                           </div>
                         </div>
                         <button className={`task-checkbox ${isCompleted ? "checked" : ""}`}><Check className="w-4 h-4" /></button>
@@ -4635,7 +4635,7 @@ const DesktopDashboard = () => {
                           <p className={`text-sm font-medium ${isCompleted ? "opacity-50" : ""}`}>{t.name}</p>
                           <div className="flex items-center gap-1.5 mt-0.5">
                             <p className="text-xs text-secondary">{formatDateUkrainian(taskDate)}</p>
-                            {condBadge && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-medium">{condBadge}</span>}
+                            {condBadge && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-black/8 text-[#1A1717]/65 font-medium">{condBadge}</span>}
                           </div>
                         </div>
                         <button className={`task-checkbox ${isCompleted ? "checked" : ""}`}><Check className="w-4 h-4" /></button>
