@@ -280,6 +280,14 @@ const SMMIcon = ({ className }) => (
 const UK_MONTHS = ["січня", "лютого", "березня", "квітня", "травня", "червня", "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"];
 const UK_MONTHS_SHORT = ["січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"];
 const UK_MONTHS_NOMINATIVE = ["січень", "лютий", "березень", "квітень", "травень", "червень", "липень", "серпень", "вересень", "жовтень", "листопад", "грудень"];
+
+// Render task condition as a short chip text. Returns null when no condition.
+const formatTaskCondition = (cond) => {
+  if (!cond || !cond.type) return null;
+  if (cond.type === 'booking_below') return `<${cond.threshold}%`;
+  if (cond.type === 'booking_above') return `>${cond.threshold}%`;
+  return null;
+};
 const UK_WEEKDAYS = ["неділя", "понеділок", "вівторок", "середа", "четвер", "п'ятниця", "субота"];
 
 const formatDateUkrainian = (dateStr) => {
@@ -4531,12 +4539,16 @@ const DesktopDashboard = () => {
                     const isCompleted = !!selectedEvent.completed_tasks?.[rt.id];
                     if (!reminderDate) return null;
                     const IconComponent = getIconComponent(rt.icon || "circle");
+                    const condBadge = formatTaskCondition(rt.condition);
                     return (
                       <div key={rt.id} className="task-item" onClick={() => handleToggleTaskInPopup(rt.id, !isCompleted)}>
                         <div className="task-icon"><IconComponent /></div>
                         <div className="flex-1 min-w-0">
                           <p className={`text-sm font-medium ${isCompleted ? "opacity-50" : ""}`}>{rt.name}</p>
-                          <p className="text-xs text-secondary">{formatDateUkrainian(reminderDate)}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <p className="text-xs text-secondary">{formatDateUkrainian(reminderDate)}</p>
+                            {condBadge && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-medium">{condBadge}</span>}
+                          </div>
                         </div>
                         <button className={`task-checkbox ${isCompleted ? "checked" : ""}`}><Check className="w-4 h-4" /></button>
                       </div>
@@ -4563,12 +4575,16 @@ const DesktopDashboard = () => {
                     const isTextWork = TEXT_WORK_SMM_TASKS.has(t.id);
                     const iconName = isTextWork ? "file" : (SMM_ICONS[t.id] || "circle");
                     const IconComponent = getIconComponent(iconName);
+                    const condBadge = formatTaskCondition(t.condition);
                     return (
                       <div key={t.id} className="task-item" onClick={() => handleToggleSMMTaskInPopup(t.id, !isCompleted)}>
                         <div className="task-icon"><IconComponent /></div>
                         <div className="flex-1 min-w-0">
                           <p className={`text-sm font-medium ${isCompleted ? "opacity-50" : ""}`}>{t.name}</p>
-                          <p className="text-xs text-secondary">{formatDateUkrainian(taskDate)}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <p className="text-xs text-secondary">{formatDateUkrainian(taskDate)}</p>
+                            {condBadge && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-medium">{condBadge}</span>}
+                          </div>
                         </div>
                         <button className={`task-checkbox ${isCompleted ? "checked" : ""}`}><Check className="w-4 h-4" /></button>
                       </div>
@@ -4593,6 +4609,7 @@ const DesktopDashboard = () => {
                     const isCompleted = !!selectedEvent.completed_marketing_tasks?.[t.id];
                     if (!taskDate) return null;
                     const IconComponent = getIconComponent(t.icon || "circle");
+                    const condBadge = formatTaskCondition(t.condition);
                     return (
                       <div key={t.id} className="task-item" onClick={async () => {
                         try {
@@ -4605,7 +4622,10 @@ const DesktopDashboard = () => {
                         <div className="task-icon"><IconComponent /></div>
                         <div className="flex-1 min-w-0">
                           <p className={`text-sm font-medium ${isCompleted ? "opacity-50" : ""}`}>{t.name}</p>
-                          <p className="text-xs text-secondary">{formatDateUkrainian(taskDate)}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <p className="text-xs text-secondary">{formatDateUkrainian(taskDate)}</p>
+                            {condBadge && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-medium">{condBadge}</span>}
+                          </div>
                         </div>
                         <button className={`task-checkbox ${isCompleted ? "checked" : ""}`}><Check className="w-4 h-4" /></button>
                       </div>
