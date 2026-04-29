@@ -429,25 +429,26 @@ def check_teamwork_conflict(dt, existing_teamwork_dates):
 # series_master_only: True = task created ONLY for the master (first) instance
 # of a recurring series; series children skip it. Used for one-off prep work
 # that doesn't repeat per session (gathering info, designing announcement, etc.)
+# Weight scale: 0.0..1.0, where 1.0 = повний 7-годинний робочий день.
+# shift_kind:
+#   "fixed" — не зсувається (день події/анонсу). При вихідному виконавця
+#             система пропонує користувачу делегувати або скасувати.
+#   "easy"  — вільно зсувається ±2 дні автоматично.
+#   "chain" — частина ланцюжка залежностей (design → text → post тощо).
+#             Зсув потребує перегляду іншими тасками — користувач підтверджує.
 MANAGEMENT_TASKS = [
-    {"id": "mgmt_info_master", "name": "попросити інфу від майстра", "days_before": 35, "condition": None, "series_master_only": True},
-    # mgmt_photo_master removed (зйомки майстра більше не окремий процес).
-    {"id": "mgmt_info_to_smm", "name": "інфу від майстра в smm", "days_before": 30, "condition": None, "series_master_only": True},
-    {"id": "mgmt_check_announce", "name": "перевірити чи все готово до анонсу", "days_before": 15, "condition": None, "series_master_only": True},
-    {"id": "mgmt_cancel_event", "name": "обговорити з маркетологом скасування", "days_before": 3, "condition": {"type": "booking_below", "threshold": 50}},
-    # mgmt_push_marketer removed.
-    {"id": "mgmt_remind_participants", "name": "нагадування учасникам", "days_before": 1, "condition": None},
-    {"id": "mgmt_prepare_studio", "name": "підготовка студії", "days_before": 0, "condition": None},
-    {"id": "mgmt_clean_studio", "name": "прибирання студії", "days_before": 0, "condition": None},
-    {"id": "mgmt_expenses", "name": "внесення витрат і оплат", "days_before": 0, "condition": None},
-    # pay_master: in series the post-process attaches it once per calendar month
-    # (see _attach_monthly_pay_master). For one-off events it appears as normal.
-    {"id": "mgmt_pay_master", "name": "оплата майстру", "days_before": 0, "condition": None, "series_master_only": True},
-    {"id": "mgmt_send_feedback", "name": "розіслати запрошення в чат і форму фідбеку", "days_before": -1, "condition": None, "regular_note": "регулярна → тільки новим"},
-    # Master speech: only when booking is poor; master-only for series.
-    {"id": "mgmt_master_speech", "name": "попросити майстра зняти розмовне сторіс (зі студії або іншого місця)", "days_before": 10, "condition": {"type": "booking_below", "threshold": 60}, "series_master_only": True},
-    # Lucky ticket — moved here from SMM (it's a manager task).
-    {"id": "mgmt_lucky_ticket", "name": "щасливий квиточок в групу", "days_before": 2, "condition": {"type": "booking_below", "threshold": 80}},
+    {"id": "mgmt_info_master", "name": "попросити інфу від майстра", "days_before": 35, "condition": None, "series_master_only": True, "weight": 0.15, "shift_kind": "easy"},
+    {"id": "mgmt_info_to_smm", "name": "інфу від майстра в smm", "days_before": 30, "condition": None, "series_master_only": True, "weight": 0.05, "shift_kind": "easy"},
+    {"id": "mgmt_check_announce", "name": "перевірити чи все готово до анонсу", "days_before": 15, "condition": None, "series_master_only": True, "weight": 0.1, "shift_kind": "easy"},
+    {"id": "mgmt_cancel_event", "name": "обговорити з маркетологом скасування", "days_before": 3, "condition": {"type": "booking_below", "threshold": 50}, "weight": 0.1, "shift_kind": "fixed"},
+    {"id": "mgmt_remind_participants", "name": "нагадування учасникам", "days_before": 1, "condition": None, "weight": 0.1, "shift_kind": "fixed"},
+    {"id": "mgmt_prepare_studio", "name": "підготовка студії", "days_before": 0, "condition": None, "weight": 0.3, "shift_kind": "fixed"},
+    {"id": "mgmt_clean_studio", "name": "прибирання студії", "days_before": 0, "condition": None, "weight": 0.2, "shift_kind": "fixed"},
+    {"id": "mgmt_expenses", "name": "внесення витрат і оплат", "days_before": 0, "condition": None, "weight": 0.05, "shift_kind": "fixed"},
+    {"id": "mgmt_pay_master", "name": "оплата майстру", "days_before": 0, "condition": None, "series_master_only": True, "weight": 0.05, "shift_kind": "easy"},
+    {"id": "mgmt_send_feedback", "name": "розіслати запрошення в чат і форму фідбеку", "days_before": -1, "condition": None, "regular_note": "регулярна → тільки новим", "weight": 0.1, "shift_kind": "fixed"},
+    {"id": "mgmt_master_speech", "name": "попросити майстра зняти розмовне сторіс (зі студії або іншого місця)", "days_before": 10, "condition": {"type": "booking_below", "threshold": 60}, "series_master_only": True, "weight": 0.1, "shift_kind": "easy"},
+    {"id": "mgmt_lucky_ticket", "name": "щасливий квиточок в групу", "days_before": 2, "condition": {"type": "booking_below", "threshold": 80}, "weight": 0.05, "shift_kind": "easy"},
 ]
 
 # SMM event tasks (column: kasya)
@@ -456,53 +457,43 @@ MANAGEMENT_TASKS = [
 #   _series_only: "child"          — only on series children
 #   _series_only: "non_child"      — only on one-off events + series master
 SMM_TASKS = [
-    # Pre-announce — only on series master / fresh event (master_only handles series).
-    {"id": "smm_collect_materials", "name": "збір матеріалів та інфи для анонсу", "days_before": 30, "condition": None, "is_announcement": False, "series_master_only": True},
-    {"id": "smm_select_media", "name": "відбір фото-відео", "days_before": 30, "condition": None, "is_announcement": False, "series_master_only": True},
-    # smm_photo_date removed (зйомка майстра — не окремий процес).
-    {"id": "smm_design_announce", "name": "монтаж/дизайн анонсу", "days_before": 25, "condition": None, "is_announcement": False, "series_master_only": True},
-    {"id": "smm_text_announce", "name": "текст для анонсу", "days_before": 19, "condition": None, "is_announcement": False, "series_master_only": True},
-    # smm_video_master removed.
-    # Editing feedbacks: skipped for one-off (added manually on monthly content plan);
-    # for series — only when booking is weak.
-    {"id": "smm_video_feedbacks", "name": "шукати і монтувати емоційні моменти і фідбеки", "days_before": 18, "condition": {"type": "booking_below", "threshold": 70}, "is_announcement": False, "_skip_for_one_off": True, "series_master_only": True},
-    {"id": "smm_storytelling_prep", "name": "підготовка сторітеллінгу", "days_before": 18, "condition": None, "is_announcement": False, "series_master_only": True},
-    # Announce day (-14)
-    {"id": "smm_post_announce", "name": "пост анонсу", "days_before": 14, "condition": None, "is_announcement": True, "series_master_only": True},
-    {"id": "smm_share_tg", "name": "шер анонсу в тг", "days_before": 14, "condition": None, "is_announcement": True, "series_master_only": True},
-    {"id": "smm_storytelling", "name": "сторітеллінг", "days_before": 14, "condition": None, "is_announcement": True},
-    {"id": "smm_threads_warmup", "name": "прогрів теми в threads", "days_before": 14, "condition": None, "is_announcement": True, "series_master_only": True},
-    # smm_ping_ambassadors removed (handled manually on monthly planning).
-    # smm_start_targeting / smm_update_target_* / smm_stop_targeting moved to MARKETING_TASKS.
-    # Extra contingency for a SERIES CHILD (previous instance had weak booking).
-    {"id": "smm_extra_storytelling", "name": "додатковий сторітеллінг", "days_before": 14, "condition": {"type": "booking_below", "threshold": 80}, "is_announcement": True, "_series_only": "child"},
-    {"id": "smm_extra_reel", "name": "новий рілс на тему події", "days_before": 14, "condition": {"type": "booking_below", "threshold": 70}, "is_announcement": False, "_series_only": "child"},
+    # Pre-announce — chain dependency: design → text → post; series_master_only
+    {"id": "smm_collect_materials", "name": "збір матеріалів та інфи для анонсу", "days_before": 30, "condition": None, "is_announcement": False, "series_master_only": True, "weight": 0.2, "shift_kind": "easy"},
+    {"id": "smm_select_media", "name": "відбір фото-відео", "days_before": 30, "condition": None, "is_announcement": False, "series_master_only": True, "weight": 0.3, "shift_kind": "easy"},
+    {"id": "smm_design_announce", "name": "монтаж/дизайн анонсу", "days_before": 25, "condition": None, "is_announcement": False, "series_master_only": True, "weight": 0.4, "shift_kind": "chain"},
+    {"id": "smm_text_announce", "name": "текст для анонсу", "days_before": 19, "condition": None, "is_announcement": False, "series_master_only": True, "weight": 0.3, "shift_kind": "chain"},
+    {"id": "smm_video_feedbacks", "name": "шукати і монтувати емоційні моменти і фідбеки", "days_before": 18, "condition": {"type": "booking_below", "threshold": 70}, "is_announcement": False, "_skip_for_one_off": True, "series_master_only": True, "weight": 0.5, "shift_kind": "easy"},
+    {"id": "smm_storytelling_prep", "name": "підготовка сторітеллінгу", "days_before": 18, "condition": None, "is_announcement": False, "series_master_only": True, "weight": 0.2, "shift_kind": "easy"},
+    # Announce day (-14) — все на постинговий день, fixed
+    {"id": "smm_post_announce", "name": "пост анонсу", "days_before": 14, "condition": None, "is_announcement": True, "series_master_only": True, "weight": 0.2, "shift_kind": "fixed"},
+    {"id": "smm_share_tg", "name": "шер анонсу в тг", "days_before": 14, "condition": None, "is_announcement": True, "series_master_only": True, "weight": 0.1, "shift_kind": "fixed"},
+    {"id": "smm_storytelling", "name": "сторітеллінг", "days_before": 14, "condition": None, "is_announcement": True, "weight": 0.15, "shift_kind": "fixed"},
+    {"id": "smm_threads_warmup", "name": "прогрів теми в threads", "days_before": 14, "condition": None, "is_announcement": True, "series_master_only": True, "weight": 0.15, "shift_kind": "fixed"},
+    # Extra contingency for a SERIES CHILD
+    {"id": "smm_extra_storytelling", "name": "додатковий сторітеллінг", "days_before": 14, "condition": {"type": "booking_below", "threshold": 80}, "is_announcement": True, "_series_only": "child", "weight": 0.15, "shift_kind": "fixed"},
+    {"id": "smm_extra_reel", "name": "новий рілс на тему події", "days_before": 14, "condition": {"type": "booking_below", "threshold": 70}, "is_announcement": False, "_series_only": "child", "weight": 0.5, "shift_kind": "easy"},
     # Conditional comm/content as event approaches
-    {"id": "smm_past_events_50", "name": "сторіс з минулих подій і фідбеки", "days_before": 10, "condition": {"type": "booking_below", "threshold": 50}, "is_announcement": False},
-    {"id": "smm_master_story", "name": "розмовний сторіс майстра", "days_before": 8, "condition": {"type": "booking_below", "threshold": 60}, "is_announcement": False},
-    {"id": "smm_storytelling_60", "name": "сторітеллінг", "days_before": 7, "condition": {"type": "booking_below", "threshold": 60}, "is_announcement": False},
-    {"id": "smm_past_events_80", "name": "сторіс з минулих подій і фідбеки", "days_before": 5, "condition": {"type": "booking_below", "threshold": 80}, "is_announcement": False},
-    # smm_lucky_ticket moved to MANAGEMENT_TASKS.
-    {"id": "smm_remind_story", "name": "нагадування в сторіс", "days_before": 1, "condition": {"type": "booking_below", "threshold": 90}, "is_announcement": False},
-    # Day-of content. One-off events / series masters: ALWAYS shoot/post.
-    # Series children: shoot/post only when booking is weak.
-    {"id": "smm_shoot_content", "name": "знімати контент", "days_before": 0, "condition": None, "is_announcement": False, "_series_only": "non_child"},
-    {"id": "smm_shoot_content_child", "name": "знімати контент", "days_before": 0, "condition": {"type": "booking_below", "threshold": 70}, "is_announcement": False, "_series_only": "child"},
-    {"id": "smm_post_stories", "name": "постити сторі відразу з події", "days_before": 0, "condition": None, "is_announcement": False, "_series_only": "non_child"},
-    {"id": "smm_post_stories_child", "name": "постити сторі відразу з події", "days_before": 0, "condition": {"type": "booking_below", "threshold": 70}, "is_announcement": False, "_series_only": "child"},
-    {"id": "smm_upload_google", "name": "оптимізувати фото-відео, видалити невдалі і залити на google photo", "days_before": -1, "condition": None, "is_announcement": False},
+    {"id": "smm_past_events_50", "name": "сторіс з минулих подій і фідбеки", "days_before": 10, "condition": {"type": "booking_below", "threshold": 50}, "is_announcement": False, "weight": 0.2, "shift_kind": "easy"},
+    {"id": "smm_master_story", "name": "розмовний сторіс майстра", "days_before": 8, "condition": {"type": "booking_below", "threshold": 60}, "is_announcement": False, "weight": 0.05, "shift_kind": "easy"},
+    {"id": "smm_storytelling_60", "name": "сторітеллінг", "days_before": 7, "condition": {"type": "booking_below", "threshold": 60}, "is_announcement": False, "weight": 0.15, "shift_kind": "easy"},
+    {"id": "smm_past_events_80", "name": "сторіс з минулих подій і фідбеки", "days_before": 5, "condition": {"type": "booking_below", "threshold": 80}, "is_announcement": False, "weight": 0.2, "shift_kind": "easy"},
+    {"id": "smm_remind_story", "name": "нагадування в сторіс", "days_before": 1, "condition": {"type": "booking_below", "threshold": 90}, "is_announcement": False, "weight": 0.1, "shift_kind": "fixed"},
+    # Day-of content
+    {"id": "smm_shoot_content", "name": "знімати контент", "days_before": 0, "condition": None, "is_announcement": False, "_series_only": "non_child", "weight": 0.2, "shift_kind": "fixed"},
+    {"id": "smm_shoot_content_child", "name": "знімати контент", "days_before": 0, "condition": {"type": "booking_below", "threshold": 70}, "is_announcement": False, "_series_only": "child", "weight": 0.2, "shift_kind": "fixed"},
+    {"id": "smm_post_stories", "name": "постити сторі відразу з події", "days_before": 0, "condition": None, "is_announcement": False, "_series_only": "non_child", "weight": 0.15, "shift_kind": "fixed"},
+    {"id": "smm_post_stories_child", "name": "постити сторі відразу з події", "days_before": 0, "condition": {"type": "booking_below", "threshold": 70}, "is_announcement": False, "_series_only": "child", "weight": 0.15, "shift_kind": "fixed"},
+    {"id": "smm_upload_google", "name": "оптимізувати фото-відео, видалити невдалі і залити на google photo", "days_before": -1, "condition": None, "is_announcement": False, "weight": 0.2, "shift_kind": "easy"},
 ]
 
-# MARKETING event tasks (column: vo)
-# All targeting work moved here from SMM (per direction — маркетолог веде таргет).
 MARKETING_TASKS = [
-    {"id": "mktg_check_announce", "name": "перевірити все перед анонсом", "days_before": 15, "condition": None, "series_master_only": True},
-    {"id": "mktg_start_targeting", "name": "запуск таргетингу", "days_before": 12, "condition": {"type": "booking_below", "threshold": 40}},
-    {"id": "mktg_update_target_50", "name": "апдейт таргетингу", "days_before": 10, "condition": {"type": "booking_below", "threshold": 50}},
-    {"id": "mktg_update_target_60", "name": "апдейт таргетингу", "days_before": 8, "condition": {"type": "booking_below", "threshold": 60}},
-    {"id": "mktg_stop_targeting", "name": "зупинити таргетинг", "days_before": 7, "condition": {"type": "booking_above", "threshold": 80}},
-    {"id": "mktg_update_target_80", "name": "апдейт таргетингу", "days_before": 5, "condition": {"type": "booking_below", "threshold": 80}},
-    {"id": "mktg_personal_invites", "name": "особисті запрошення", "days_before": 5, "condition": {"type": "booking_below", "threshold": 70}},
+    {"id": "mktg_check_announce", "name": "перевірити все перед анонсом", "days_before": 15, "condition": None, "series_master_only": True, "weight": 0.1, "shift_kind": "easy"},
+    {"id": "mktg_start_targeting", "name": "запуск таргетингу", "days_before": 12, "condition": {"type": "booking_below", "threshold": 40}, "weight": 0.4, "shift_kind": "easy"},
+    {"id": "mktg_update_target_50", "name": "апдейт таргетингу", "days_before": 10, "condition": {"type": "booking_below", "threshold": 50}, "weight": 0.2, "shift_kind": "easy"},
+    {"id": "mktg_update_target_60", "name": "апдейт таргетингу", "days_before": 8, "condition": {"type": "booking_below", "threshold": 60}, "weight": 0.2, "shift_kind": "easy"},
+    {"id": "mktg_stop_targeting", "name": "зупинити таргетинг", "days_before": 7, "condition": {"type": "booking_above", "threshold": 80}, "weight": 0.1, "shift_kind": "fixed"},
+    {"id": "mktg_update_target_80", "name": "апдейт таргетингу", "days_before": 5, "condition": {"type": "booking_below", "threshold": 80}, "weight": 0.2, "shift_kind": "easy"},
+    {"id": "mktg_personal_invites", "name": "особисті запрошення", "days_before": 5, "condition": {"type": "booking_below", "threshold": 70}, "weight": 0.4, "shift_kind": "easy"},
 ]
 
 # MONTHLY AUTO-TASKS (generated relative to 1st of each month)
