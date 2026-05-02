@@ -331,6 +331,7 @@ class StandaloneTask(BaseModel):
     assignee: str = "karolina"  # "kasya", "karolina", "vo" - determines column
     completed: bool = False
     completed_at: Optional[str] = None
+    event_id: Optional[str] = ""  # optional link to existing event (metadata only)
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -365,6 +366,7 @@ class StandaloneTaskCreate(BaseModel):
     type: str = "regular"
     color: str = "standard"
     assignee: str = "karolina"
+    event_id: Optional[str] = ""  # optional link to an existing event
 
 class SMMTaskUpdate(BaseModel):
     name: Optional[str] = None

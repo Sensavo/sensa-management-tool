@@ -4025,7 +4025,7 @@ const DesktopDashboard = () => {
   
   const handleCreateTask = async () => {
     if (!newTask.title.trim()) return;
-    try { await api.createStandaloneTask({ ...newTask, type: "regular", assignee: dialogColumnName === "SMM" ? "kasya" : dialogColumnName === "Маркетинг" ? "vo" : "karolina" }); toast.success("додано!"); refreshStandaloneTasks(); setShowTaskDialog(false); setNewTask({ title: "", date: todayStr, icon: "coffee", color: "karolina" }); }
+    try { await api.createStandaloneTask({ ...newTask, type: "regular", assignee: dialogColumnName === "SMM" ? "kasya" : dialogColumnName === "Маркетинг" ? "vo" : "karolina", event_id: newTask.event_id || "" }); toast.success("додано!"); refreshStandaloneTasks(); setShowTaskDialog(false); setNewTask({ title: "", date: todayStr, icon: "coffee", color: "karolina", event_id: "" }); }
     catch { toast.error("помилка"); }
   };
   
@@ -4177,7 +4177,7 @@ const DesktopDashboard = () => {
             onEventClick={handleEventClick}
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
-            onAddClick={() => { setNewTask({ title: "", date: todayStr, icon: "coffee", color: "karolina" }); setDialogColumnName("Менеджмент"); setShowTaskDialog(true); }}
+            onAddClick={() => { setNewTask({ title: "", date: todayStr, icon: "coffee", color: "karolina", event_id: "" }); setDialogColumnName("Менеджмент"); setShowTaskDialog(true); }}
             overdueExpanded={karolinaOverdue}
             setOverdueExpanded={setKarolinaOverdue}
             soonExpanded={karolinaSoon}
@@ -4417,6 +4417,31 @@ const DesktopDashboard = () => {
                         );
                       })}
                     </div>
+                  </div>
+
+                  {/* Прикріпити до події (опційно) */}
+                  <div>
+                    <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-[#1A1717]/50 mb-3">подія (необов'язково)</div>
+                    <select
+                      value={newTask.event_id || ""}
+                      onChange={(e) => setNewTask({ ...newTask, event_id: e.target.value })}
+                      className="w-full h-12 px-4 rounded-2xl bg-white border-2 border-transparent text-[14px] focus:outline-none focus:border-[#1A1717] transition-all shadow-[0_1px_3px_rgba(0,0,0,0.04)] cursor-pointer"
+                      data-testid="new-task-event"
+                    >
+                      <option value="">— не прикріплена —</option>
+                      {[...events]
+                        .filter(e => !e.cancelled)
+                        .sort((a, b) => new Date(a.date) - new Date(b.date))
+                        .map(ev => {
+                          const d = new Date(ev.date);
+                          const dayLabel = `${d.getDate()} ${UK_MONTHS_NOMINATIVE[d.getMonth()]}`;
+                          return (
+                            <option key={ev.id} value={ev.id}>
+                              {dayLabel} — {ev.title}
+                            </option>
+                          );
+                        })}
+                    </select>
                   </div>
                 </div>
 
