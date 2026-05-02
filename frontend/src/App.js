@@ -3503,9 +3503,10 @@ const DraggableTask = ({ task, children }) => {
   return (
     <div ref={setNodeRef} {...attributes} {...listeners}
       style={{
-        opacity: isDragging ? 0.4 : 1,
+        opacity: isDragging ? 0.25 : 1,
         cursor: task.is_standalone ? 'default' : 'grab',
         touchAction: 'none',
+        transition: isDragging ? 'none' : 'opacity 120ms ease',
       }}
     >
       {children}
@@ -3545,7 +3546,7 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
   };
 
   return (
-    <div ref={setNodeRef} className={`desktop-column transition-shadow ${isOver ? 'ring-2 ring-[#1A1717]/40 rounded-xl' : ''}`}>
+    <div ref={setNodeRef} className={`desktop-column transition-all duration-150 ${isOver ? 'ring-2 ring-[#1A1717] rounded-xl bg-[#1A1717]/[0.03]' : ''}`}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>{name}</span>
         <button className="add-btn" onClick={onAddClick}><Plus className="w-4 h-4" /></button>
@@ -3922,7 +3923,12 @@ const DesktopDashboard = () => {
   // Drag-and-drop between assignee columns. PointerSensor with 8px activation
   // distance avoids competing with click handlers (toggle/open detail).
   const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const [activeDragTask, setActiveDragTask] = useState(null);
+  const handleTaskDragStart = ({ active }) => {
+    setActiveDragTask(active?.data?.current?.task || null);
+  };
   const handleTaskDragEnd = async ({ active, over }) => {
+    setActiveDragTask(null);
     if (!over) return;
     const newAssignee = over.id; // "karolina" | "kasya" | "vo"
     const task = active?.data?.current?.task;
@@ -4160,8 +4166,7 @@ const DesktopDashboard = () => {
           </div>
           
           {/* МЕНЕДЖМЕНТ + SMM + МАРКЕТИНГ — drag between columns to swap assignee */}
-          {/* eslint-disable-next-line react/jsx-no-undef */}
-          <DndContext sensors={dndSensors} onDragEnd={handleTaskDragEnd}>
+          <DndContext sensors={dndSensors} onDragStart={handleTaskDragStart} onDragEnd={handleTaskDragEnd} onDragCancel={() => setActiveDragTask(null)}>
           <TeamColumn
             name="МЕНЕДЖМЕНТ"
             tasks={tasksByTeam.karolina}
@@ -4224,6 +4229,17 @@ const DesktopDashboard = () => {
             smmTasksDefinition={smmTasksDefinition}
             columnAssignee="vo"
           />
+          <DragOverlay dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }}>
+            {activeDragTask ? (
+              <div className="px-3 py-2 rounded-xl bg-white shadow-[0_16px_40px_-8px_rgba(0,0,0,0.25)] ring-1 ring-black/10 cursor-grabbing select-none max-w-xs"
+                style={{ transform: 'rotate(-2deg)' }}>
+                <p className="text-sm font-medium truncate">{activeDragTask.task_name || activeDragTask.reminder_name || 'задача'}</p>
+                {activeDragTask.event_title && (
+                  <p className="text-xs text-secondary truncate mt-0.5">{activeDragTask.event_title}</p>
+                )}
+              </div>
+            ) : null}
+          </DragOverlay>
           </DndContext>
         </div>
       ) : (
