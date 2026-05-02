@@ -65,6 +65,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { uk } from "date-fns/locale";
+import { DndContext, useDraggable, useDroppable, PointerSensor, useSensor, useSensors, DragOverlay } from "@dnd-kit/core";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -78,6 +79,7 @@ const api = {
   updateEvent: (id, data) => axios.put(`${API}/events/${id}`, data),
   deleteEvent: (id) => axios.delete(`${API}/events/${id}`),
   cancelEventSeries: (id) => axios.post(`${API}/events/${id}/cancel-series`),
+  updateEventTask: (eventId, taskId, data) => axios.patch(`${API}/events/${eventId}/tasks/${taskId}`, data),
   createDayOff: (data) => axios.post(`${API}/days-off`, data),
   applyDayOffShifts: (id, plan) => axios.post(`${API}/days-off/${id}/apply`, plan),
   listDaysOff: () => axios.get(`${API}/days-off`),
@@ -3489,8 +3491,31 @@ const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, sta
 };
 
 // Desktop Dashboard
+// Wraps a task render in a draggable handle. Skips standalone tasks
+// (those need a different endpoint to swap assignee).
+const DraggableTask = ({ task, children }) => {
+  const draggableId = `${task.event_id}::${task.task_id || task.reminder_id}`;
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: draggableId,
+    data: { task },
+    disabled: !!task.is_standalone,
+  });
+  return (
+    <div ref={setNodeRef} {...attributes} {...listeners}
+      style={{
+        opacity: isDragging ? 0.4 : 1,
+        cursor: task.is_standalone ? 'default' : 'grab',
+        touchAction: 'none',
+      }}
+    >
+      {children}
+    </div>
+  );
+};
+
 // Team Column Component - reusable for КАСЯ, КАРОЛІНА, ВО
 const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick, onStandaloneClick, onTaskEdit, onAddClick, overdueExpanded, setOverdueExpanded, soonExpanded, setSoonExpanded, smmTasksDefinition, columnAssignee, announcementOverlaps = {} }) => {
+  const { setNodeRef, isOver } = useDroppable({ id: columnAssignee || 'unknown' });
   const TaskRenderer = ({ task }) => {
     const colAssignee = columnAssignee || (colorClass === 'emerald' ? 'kasya' : colorClass === 'orange' ? 'vo' : 'karolina');
     const taskDate = task.task_date || task.reminder_date;
@@ -3505,20 +3530,22 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
       isOverlapping
     };
     return (
-      <SMMTaskItem 
-        key={`${normalizedTask.event_id}-${normalizedTask.task_id}`} 
-        task={normalizedTask} 
-        onToggle={onToggle} 
-        onEventClick={onEventClick} 
-        onStandaloneClick={onStandaloneClick}
-        onTaskEdit={onTaskEdit}
-        smmTasksDefinition={smmTasksDefinition}
-      />
+      <DraggableTask task={normalizedTask}>
+        <SMMTaskItem
+          key={`${normalizedTask.event_id}-${normalizedTask.task_id}`}
+          task={normalizedTask}
+          onToggle={onToggle}
+          onEventClick={onEventClick}
+          onStandaloneClick={onStandaloneClick}
+          onTaskEdit={onTaskEdit}
+          smmTasksDefinition={smmTasksDefinition}
+        />
+      </DraggableTask>
     );
   };
 
   return (
-    <div className="desktop-column">
+    <div ref={setNodeRef} className={`desktop-column transition-shadow ${isOver ? 'ring-2 ring-[#1A1717]/40 rounded-xl' : ''}`}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>{name}</span>
         <button className="add-btn" onClick={onAddClick}><Plus className="w-4 h-4" /></button>
@@ -3891,6 +3918,25 @@ const DesktopDashboard = () => {
     const fullTask = standaloneTasks.find(t => t.id === task.event_id);
     if (fullTask) { setSelectedStandaloneTask(fullTask); setShowStandaloneTaskPopup(true); }
   };
+
+  // Drag-and-drop between assignee columns. PointerSensor with 8px activation
+  // distance avoids competing with click handlers (toggle/open detail).
+  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const handleTaskDragEnd = async ({ active, over }) => {
+    if (!over) return;
+    const newAssignee = over.id; // "karolina" | "kasya" | "vo"
+    const task = active?.data?.current?.task;
+    if (!task || task.is_standalone) return;
+    const taskId = task.task_id || task.reminder_id;
+    if (!taskId || taskId === "standalone") return;
+    if (task.assignee === newAssignee) return;
+    try {
+      await api.updateEventTask(task.event_id, taskId, { assignee: newAssignee });
+      const labels = { karolina: "Менеджер", kasya: "SMM", vo: "Маркетолог" };
+      toast.success(`перенесено на ${labels[newAssignee] || newAssignee}`);
+      refreshEvents();
+    } catch { toast.error("не вдалось перенести"); }
+  };
   
   const handleTaskEdit = (task) => {
     if (task.is_standalone) {
@@ -4113,8 +4159,10 @@ const DesktopDashboard = () => {
             </div>
           </div>
           
-          {/* МЕНЕДЖМЕНТ Column (black) - First */}
-          <TeamColumn 
+          {/* МЕНЕДЖМЕНТ + SMM + МАРКЕТИНГ — drag between columns to swap assignee */}
+          {/* eslint-disable-next-line react/jsx-no-undef */}
+          <DndContext sensors={dndSensors} onDragEnd={handleTaskDragEnd}>
+          <TeamColumn
             name="МЕНЕДЖМЕНТ"
             tasks={tasksByTeam.karolina}
             colorClass=""
@@ -4176,6 +4224,7 @@ const DesktopDashboard = () => {
             smmTasksDefinition={smmTasksDefinition}
             columnAssignee="vo"
           />
+          </DndContext>
         </div>
       ) : (
         <div className="desktop-columns">
