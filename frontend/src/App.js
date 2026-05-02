@@ -3498,13 +3498,12 @@ const DraggableTask = ({ task, children }) => {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: draggableId,
     data: { task },
-    disabled: !!task.is_standalone,
   });
   return (
     <div ref={setNodeRef} {...attributes} {...listeners}
       style={{
         opacity: isDragging ? 0.25 : 1,
-        cursor: task.is_standalone ? 'default' : 'grab',
+        cursor: 'grab',
         touchAction: 'none',
         transition: isDragging ? 'none' : 'opacity 120ms ease',
       }}
@@ -3932,15 +3931,32 @@ const DesktopDashboard = () => {
     if (!over) return;
     const newAssignee = over.id; // "karolina" | "kasya" | "vo"
     const task = active?.data?.current?.task;
-    if (!task || task.is_standalone) return;
-    const taskId = task.task_id || task.reminder_id;
-    if (!taskId || taskId === "standalone") return;
+    if (!task) return;
     if (task.assignee === newAssignee) return;
+    const labels = { karolina: "Менеджер", kasya: "SMM", vo: "Маркетолог" };
     try {
-      await api.updateEventTask(task.event_id, taskId, { assignee: newAssignee });
-      const labels = { karolina: "Менеджер", kasya: "SMM", vo: "Маркетолог" };
-      toast.success(`перенесено на ${labels[newAssignee] || newAssignee}`);
-      refreshEvents();
+      if (task.is_standalone) {
+        // Find full standalone task and PATCH with new assignee
+        const full = standaloneTasks.find(t => t.id === task.event_id);
+        if (!full) return;
+        await api.updateStandaloneTaskFull(full.id, {
+          title: full.title,
+          date: full.date,
+          icon: full.icon || "coffee",
+          type: full.type || "regular",
+          color: full.color || "standard",
+          assignee: newAssignee,
+          event_id: full.event_id || "",
+        });
+        toast.success(`перенесено на ${labels[newAssignee] || newAssignee}`);
+        refreshStandaloneTasks();
+      } else {
+        const taskId = task.task_id || task.reminder_id;
+        if (!taskId || taskId === "standalone") return;
+        await api.updateEventTask(task.event_id, taskId, { assignee: newAssignee });
+        toast.success(`перенесено на ${labels[newAssignee] || newAssignee}`);
+        refreshEvents();
+      }
     } catch { toast.error("не вдалось перенести"); }
   };
   
