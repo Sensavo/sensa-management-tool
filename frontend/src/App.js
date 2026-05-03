@@ -4515,9 +4515,9 @@ const DesktopDashboard = () => {
                   </button>
                 </div>
 
-                {/* Combined: icon grid (icons inherit selected color) + tiny color dots */}
-                <div className="mt-4 p-3 rounded-2xl bg-white ring-1 ring-black/[0.06]">
-                  <div className="grid grid-cols-7 gap-1.5">
+                {/* Icons (left, big grid) + colors (right, tight vertical strip) */}
+                <div className="mt-4 p-3 rounded-2xl bg-white ring-1 ring-black/[0.06] flex gap-3">
+                  <div className="flex-1 grid grid-cols-7 gap-1.5">
                     {CUSTOM_TASK_ICONS.map(opt => {
                       const sel = newTask.icon === opt.value;
                       return (
@@ -4536,8 +4536,7 @@ const DesktopDashboard = () => {
                       );
                     })}
                   </div>
-                  {/* Color dots — thin row */}
-                  <div className="mt-2.5 pt-2.5 border-t border-black/[0.06] flex items-center justify-center gap-2">
+                  <div className="grid grid-cols-2 gap-1.5 self-center pl-3 border-l border-black/[0.06]">
                     {PALETTE.map(({c,bg}) => {
                       const sel = newTask.color === c || (c === 'karolina' && (!newTask.color || newTask.color === 'standard'));
                       return (
@@ -4545,14 +4544,17 @@ const DesktopDashboard = () => {
                           key={c}
                           type="button"
                           onClick={() => setNewTask({...newTask, color: c})}
-                          className="rounded-full transition-transform hover:scale-110 active:scale-95"
-                          style={{
-                            width: sel ? 18 : 14, height: sel ? 18 : 14, background: bg,
-                            boxShadow: sel ? `0 0 0 2px #FAFAF7, 0 0 0 4px ${bg}` : 'none',
-                          }}
+                          className="rounded-full transition-transform hover:scale-110 active:scale-95 flex items-center justify-center"
+                          style={{ width: 18, height: 18 }}
                           aria-label={c}
                           data-testid={`new-task-color-${c}`}
-                        />
+                        >
+                          <span className="rounded-full block"
+                            style={{
+                              width: sel ? 12 : 14, height: sel ? 12 : 14, background: bg,
+                              boxShadow: sel ? `0 0 0 2px #FFFFFF, 0 0 0 3.5px ${bg}` : 'none',
+                            }} />
+                        </button>
                       );
                     })}
                   </div>
