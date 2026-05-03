@@ -4286,7 +4286,7 @@ const DesktopDashboard = () => {
   
   const handleCreateTask = async () => {
     if (!newTask.title.trim()) return;
-    try { await api.createStandaloneTask({ ...newTask, type: "regular", assignee: dialogColumnName === "SMM" ? "kasya" : dialogColumnName === "Маркетинг" ? "vo" : "karolina", event_id: newTask.event_id || "" }); toast.success("додано!"); refreshStandaloneTasks(); setShowTaskDialog(false); setNewTask({ title: "", date: todayStr, icon: "coffee", color: "karolina", event_id: "" }); }
+    try { await api.createStandaloneTask({ ...newTask, type: "regular", assignee: newTask.assignee || (dialogColumnName === "SMM" ? "kasya" : dialogColumnName === "Маркетинг" ? "vo" : "karolina"), event_id: newTask.event_id || "" }); toast.success("додано!"); refreshStandaloneTasks(); setShowTaskDialog(false); setNewTask({ title: "", date: todayStr, icon: "coffee", color: "karolina", event_id: "", assignee: "karolina" }); }
     catch { toast.error("помилка"); }
   };
   
@@ -4296,13 +4296,13 @@ const DesktopDashboard = () => {
       await api.createStandaloneTask({
         ...newSMMTask,
         type: "smm",
-        assignee: dialogColumnName === "SMM" ? "kasya" : dialogColumnName === "Маркетинг" ? "vo" : "karolina",
+        assignee: newSMMTask.assignee || (dialogColumnName === "SMM" ? "kasya" : dialogColumnName === "Маркетинг" ? "vo" : "karolina"),
         event_id: newSMMTask.event_id || "",
       });
       toast.success("додано!");
       refreshStandaloneTasks();
       setShowSMMTaskDialog(false);
-      setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "karolina", event_id: "" });
+      setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "karolina", event_id: "", assignee: "kasya" });
     }
     catch { toast.error("помилка"); }
   };
@@ -4442,7 +4442,7 @@ const DesktopDashboard = () => {
             onEventClick={handleEventClick}
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
-            onAddClick={() => { setNewTask({ title: "", date: todayStr, icon: "coffee", color: "karolina", event_id: "" }); setDialogColumnName("Менеджмент"); setShowTaskDialog(true); }}
+            onAddClick={() => { setNewTask({ title: "", date: todayStr, icon: "coffee", color: "karolina", event_id: "", assignee: "karolina" }); setDialogColumnName("Менеджмент"); setShowTaskDialog(true); }}
             overdueExpanded={karolinaOverdue}
             setOverdueExpanded={setKarolinaOverdue}
             soonExpanded={karolinaSoon}
@@ -4461,7 +4461,7 @@ const DesktopDashboard = () => {
             onEventClick={handleEventClick}
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
-            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "kasya", event_id: "" }); setDialogColumnName("SMM"); setShowSMMTaskDialog(true); }}
+            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "kasya", event_id: "", assignee: "kasya" }); setDialogColumnName("SMM"); setShowSMMTaskDialog(true); }}
             overdueExpanded={kasyaOverdue}
             setOverdueExpanded={setKasyaOverdue}
             soonExpanded={kasyaSoon}
@@ -4481,7 +4481,7 @@ const DesktopDashboard = () => {
             onEventClick={handleEventClick}
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
-            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "karolina", event_id: "" }); setDialogColumnName("Маркетинг"); setShowSMMTaskDialog(true); }}
+            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "karolina", event_id: "", assignee: "vo" }); setDialogColumnName("Маркетинг"); setShowSMMTaskDialog(true); }}
             overdueExpanded={voOverdue}
             setOverdueExpanded={setVoOverdue}
             soonExpanded={voSoon}
@@ -4574,12 +4574,25 @@ const DesktopDashboard = () => {
             const isCustomDate = !dateChips.some(c => c.value === newTask.date);
             return (
               <>
-                {/* Header inline: column chip + title */}
-                <div className="flex items-baseline gap-3 mb-4 pr-8">
+                {/* Header inline: title + interactive assignee chip-select */}
+                <div className="flex items-baseline gap-3 mb-4 pr-10">
                   <DialogTitle className="text-[20px] font-semibold tracking-tight">нове завдання</DialogTitle>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#1A1717]/55">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: selectedHex }} />
-                    {dialogColumnName}
+                  <span className="relative inline-flex items-center text-[11px] font-medium text-[#1A1717]/55">
+                    <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: selectedHex }} />
+                    <select
+                      value={newTask.assignee || "karolina"}
+                      onChange={(e) => {
+                        const a = e.target.value;
+                        setNewTask({ ...newTask, assignee: a });
+                        setDialogColumnName(a === "kasya" ? "SMM" : a === "vo" ? "Маркетинг" : "Менеджмент");
+                      }}
+                      className="appearance-none bg-transparent cursor-pointer outline-none border-none pr-3.5 text-[11px] uppercase tracking-wider"
+                    >
+                      <option value="karolina">Менеджер</option>
+                      <option value="kasya">SMM</option>
+                      <option value="vo">Маркетолог</option>
+                    </select>
+                    <ChevronDown className="w-3 h-3 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </span>
                 </div>
 
@@ -4987,11 +5000,24 @@ const DesktopDashboard = () => {
             const isCustomDate = !dateChips.some(c => c.value === newSMMTask.date);
             return (
               <>
-                <div className="flex items-baseline gap-3 mb-4 pr-8">
+                <div className="flex items-baseline gap-3 mb-4 pr-10">
                   <DialogTitle className="text-[20px] font-semibold tracking-tight">нове завдання</DialogTitle>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#1A1717]/55">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: selectedHex }} />
-                    {dialogColumnName}
+                  <span className="relative inline-flex items-center text-[11px] font-medium text-[#1A1717]/55">
+                    <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: selectedHex }} />
+                    <select
+                      value={newSMMTask.assignee || "kasya"}
+                      onChange={(e) => {
+                        const a = e.target.value;
+                        setNewSMMTask({ ...newSMMTask, assignee: a });
+                        setDialogColumnName(a === "kasya" ? "SMM" : a === "vo" ? "Маркетинг" : "Менеджмент");
+                      }}
+                      className="appearance-none bg-transparent cursor-pointer outline-none border-none pr-3.5 text-[11px] uppercase tracking-wider"
+                    >
+                      <option value="karolina">Менеджер</option>
+                      <option value="kasya">SMM</option>
+                      <option value="vo">Маркетолог</option>
+                    </select>
+                    <ChevronDown className="w-3 h-3 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </span>
                 </div>
 
@@ -5160,29 +5186,24 @@ const DesktopDashboard = () => {
             const isCustomDate = !dateChips.some(c => c.value === editingStandaloneTask.date);
             return (
               <>
-                {/* Header inline: title + assignee chip selector */}
-                <div className="flex items-baseline gap-3 mb-1 pr-8">
+                {/* Header inline: title + interactive assignee chip-select */}
+                <div className="flex items-baseline gap-3 mb-4 pr-10">
                   <DialogTitle className="text-[20px] font-semibold tracking-tight" data-testid="edit-task-title">завдання</DialogTitle>
                   <span className="relative inline-flex items-center text-[11px] font-medium text-[#1A1717]/55">
                     <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: selectedHex }} />
-                    <select data-testid="assignee-dropdown" value={assigneeName}
-                      onChange={(e) => {
-                        const name = e.target.value;
-                        if (name === 'SMM') setEditingStandaloneTask({...editingStandaloneTask, assignee: 'kasya'});
-                        else if (name === 'Менеджмент') setEditingStandaloneTask({...editingStandaloneTask, assignee: 'karolina'});
-                        else setEditingStandaloneTask({...editingStandaloneTask, assignee: 'vo'});
-                      }}
-                      className="appearance-none bg-transparent cursor-pointer outline-none border-none pr-3 text-[11px] uppercase tracking-wider"
+                    <select data-testid="assignee-dropdown" value={editingStandaloneTask.assignee || "karolina"}
+                      onChange={(e) => setEditingStandaloneTask({...editingStandaloneTask, assignee: e.target.value})}
+                      className="appearance-none bg-transparent cursor-pointer outline-none border-none pr-3.5 text-[11px] uppercase tracking-wider"
                     >
-                      <option value="SMM">SMM</option>
-                      <option value="Менеджмент">Менеджмент</option>
-                      <option value="Маркетинг">Маркетинг</option>
+                      <option value="karolina">Менеджер</option>
+                      <option value="kasya">SMM</option>
+                      <option value="vo">Маркетолог</option>
                     </select>
                     <ChevronDown className="w-3 h-3 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </span>
                 </div>
                 {!isStandalone && editingStandaloneTask.eventTitle && (
-                  <p className="text-xs text-secondary mb-3 truncate">{editingStandaloneTask.eventTitle}</p>
+                  <p className="-mt-2 mb-3 text-[11px] text-[#1A1717]/55 uppercase tracking-wider truncate">{editingStandaloneTask.eventTitle}</p>
                 )}
 
                 <Input
