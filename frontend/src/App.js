@@ -80,6 +80,11 @@ const api = {
   deleteEvent: (id) => axios.delete(`${API}/events/${id}`),
   cancelEventSeries: (id) => axios.post(`${API}/events/${id}/cancel-series`),
   updateEventTask: (eventId, taskId, data) => axios.patch(`${API}/events/${eventId}/tasks/${taskId}`, data),
+  editTaskDef:   (taskId, data) => axios.patch(`${API}/task-definitions/${taskId}`, data),
+  deleteTaskDef: (taskId) => axios.delete(`${API}/task-definitions/${taskId}`),
+  createTaskDef: (data) => axios.post(`${API}/task-definitions`, data),
+  revertTaskDef: (taskId) => axios.post(`${API}/task-definitions/${taskId}/revert`),
+  listTaskDefOverrides: () => axios.get(`${API}/task-definitions/overrides`),
   createDayOff: (data) => axios.post(`${API}/days-off`, data),
   applyDayOffShifts: (id, plan) => axios.post(`${API}/days-off/${id}/apply`, plan),
   listDaysOff: () => axios.get(`${API}/days-off`),
@@ -3069,8 +3074,64 @@ const ContentPage = () => {
 };
 
 
+// Reusable editor block for a task definition: name + days + column + flags.
+// Shared between management edit dialog and SMM/marketing edit dialog.
+const TaskDefEditor = ({ draft, setDraft }) => {
+  if (!draft) return null;
+  const COLS = [
+    { v: "management", l: "Менеджер" },
+    { v: "smm",        l: "SMM" },
+    { v: "marketing",  l: "Маркетолог" },
+  ];
+  return (
+    <div className="mt-5 space-y-5">
+      <div>
+        <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-1.5">назва</div>
+        <Input value={draft.name || ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="form-input" />
+      </div>
+      <div>
+        <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-1.5">за скільки днів до події</div>
+        <Input type="number" value={draft.days_before ?? 0} onChange={(e) => setDraft({ ...draft, days_before: parseInt(e.target.value) || 0 })} className="form-input" />
+      </div>
+      <div>
+        <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-1.5">виконавець</div>
+        <div className="grid grid-cols-3 gap-2">
+          {COLS.map(c => (
+            <button
+              key={c.v}
+              type="button"
+              onClick={() => setDraft({ ...draft, column: c.v })}
+              className={`h-11 rounded-full text-sm font-medium transition-colors ${draft.column === c.v ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white ring-1 ring-black/8 hover:bg-black/5'}`}
+            >{c.l}</button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-2">прапорці</div>
+        <div className="space-y-1.5">
+          {[
+            { f: "is_announcement",    l: "анонс (зсув на постинговий день)" },
+            { f: "is_teamwork",        l: "тімворк (тільки на студійні дні)" },
+            { f: "series_master_only", l: "лише на батьківській події серії" },
+          ].map(({f,l}) => (
+            <label key={f} className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-black/[0.03] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!draft[f]}
+                onChange={(e) => setDraft({ ...draft, [f]: e.target.checked })}
+                className="w-4 h-4 accent-[#1A1717]"
+              />
+              <span className="text-sm">{l}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const SettingsPage = () => {
-  const { settings, refreshSettings, smmTasksDefinition, allTaskDefs, googleCalendarStatus, refreshGoogleStatus } = useApp();
+  const { settings, refreshSettings, refreshSMMTasksDefinition, refreshEvents, smmTasksDefinition, allTaskDefs, googleCalendarStatus, refreshGoogleStatus } = useApp();
   const [reminderTypes, setReminderTypes] = useState([]);
   const [activeTab, setActiveTab] = useState("management");
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -3092,9 +3153,24 @@ const SettingsPage = () => {
     return Object.entries(groups).sort(([a], [b]) => parseInt(b) - parseInt(a));
   }, [smmTasksDefinition]);
   
-  const handleAddReminder = async () => { if (!newReminder.name.trim()) return; try { await api.addReminder(newReminder); toast.success("додано!"); refreshSettings(); setShowAddDialog(false); setNewReminder({ name: "", days_before: 7, icon: "bell" }); } catch { toast.error("помилка"); } };
-  const handleEditReminder = async () => { if (!editingReminder.name.trim()) return; try { await api.updateReminder(editingReminder.id, editingReminder); toast.success("збережено!"); refreshSettings(); setShowEditDialog(false); } catch { toast.error("помилка"); } };
-  const handleDeleteReminder = async () => { try { await api.deleteReminder(reminderToDelete.id); toast.success("видалено!"); refreshSettings(); setDeleteDialogOpen(false); } catch { toast.error("помилка"); } };
+  const handleAddReminder = async () => { if (!newReminder.name.trim()) return; try { await api.createTaskDef({ ...newReminder, column: "management", days_before: newReminder.days_before || 7 }); toast.success("додано!"); refreshSMMTasksDefinition(); refreshEvents(); setShowAddDialog(false); setNewReminder({ name: "", days_before: 7, icon: "bell" }); } catch { toast.error("помилка"); } };
+  const handleSaveTaskDef = async () => {
+    if (!editingReminder?.name?.trim()) return;
+    const payload = {
+      name: editingReminder.name,
+      days_before: parseInt(editingReminder.days_before) || 0,
+      column: editingReminder.column,
+      is_announcement: !!editingReminder.is_announcement,
+      is_teamwork: !!editingReminder.is_teamwork,
+      series_master_only: !!editingReminder.series_master_only,
+    };
+    try { await api.editTaskDef(editingReminder.id, payload); toast.success("збережено!"); refreshSMMTasksDefinition(); refreshEvents(); setShowEditDialog(false); }
+    catch { toast.error("помилка"); }
+  };
+  const handleDeleteReminder = async () => {
+    try { await api.deleteTaskDef(reminderToDelete.id); toast.success("видалено!"); refreshSMMTasksDefinition(); refreshEvents(); setDeleteDialogOpen(false); }
+    catch { toast.error("помилка"); }
+  };
 
   const iconOptions = TASK_ICONS;
   
@@ -3193,7 +3269,7 @@ const SettingsPage = () => {
             {(allTaskDefs.management || []).sort((a, b) => b.days_before - a.days_before).map((task) => {
               const IconComponent = getIconComponent(task.icon || "circle");
               return (
-                <div key={task.id} className="reminder-item" onClick={() => { setEditingReminder({ ...task }); setShowEditDialog(true); }}>
+                <div key={task.id} className="reminder-item" onClick={() => { setEditingReminder({ ...task, column: task.column || "management" }); setShowEditDialog(true); }}>
                   <div className="flex items-center gap-3">
                     <div className="task-icon"><IconComponent /></div>
                     <div><p className="text-sm font-medium">{task.name}</p><p className="text-xs text-secondary">за {task.days_before} днів</p></div>
@@ -3202,28 +3278,36 @@ const SettingsPage = () => {
                 </div>
               );
             })}
+            <button className="mt-3 w-full h-11 rounded-full bg-white ring-1 ring-black/8 hover:bg-black/5 transition-colors text-sm font-medium inline-flex items-center justify-center gap-1.5"
+              onClick={() => { setNewReminder({ name: "", days_before: 7, column: "management", is_announcement: false, is_teamwork: false, series_master_only: false }); setShowAddDialog(true); }}>
+              <Plus className="w-4 h-4" />новий таск
+            </button>
           </div>
         )}
-        
+
         {activeTab === "smm" && (
           <div className="section-card">
             <p className="text-xs text-secondary mb-4">автоматичні завдання для SMM команди</p>
             {(allTaskDefs.smm || []).sort((a, b) => b.days_before - a.days_before).map(task => {
               const IconComponent = getIconComponent(SMM_ICONS[task.id] || "instagram");
               return (
-                <div key={task.id} className="reminder-item" onClick={() => { setEditingSMM({ ...task, icon: SMM_ICONS[task.id] || "instagram" }); setShowEditSMMDialog(true); }}>
+                <div key={task.id} className="reminder-item" onClick={() => { setEditingSMM({ ...task, column: task.column || "smm", icon: SMM_ICONS[task.id] || "instagram" }); setShowEditSMMDialog(true); }}>
                   <div className="flex items-center gap-3">
                     <div className="task-icon"><IconComponent /></div>
                     <div><p className="text-sm font-medium">{task.name}</p><p className="text-xs text-secondary">за {task.days_before} днів</p></div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {task.is_announcement && <span className="text-xs text-yellow-600">анонс</span>}
-                    {task.is_teamwork && <span className="text-xs text-blue-600">тімворк</span>}
+                    {task.is_announcement && <span className="text-xs text-secondary">анонс</span>}
+                    {task.is_teamwork && <span className="text-xs text-secondary">тімворк</span>}
                     <Edit className="w-4 h-4 text-secondary" />
                   </div>
                 </div>
               );
             })}
+            <button className="mt-3 w-full h-11 rounded-full bg-white ring-1 ring-black/8 hover:bg-black/5 transition-colors text-sm font-medium inline-flex items-center justify-center gap-1.5"
+              onClick={() => { setNewReminder({ name: "", days_before: 7, column: "smm", is_announcement: false, is_teamwork: false, series_master_only: false }); setShowAddDialog(true); }}>
+              <Plus className="w-4 h-4" />новий таск
+            </button>
           </div>
         )}
 
@@ -3233,7 +3317,7 @@ const SettingsPage = () => {
             {(allTaskDefs.marketing || []).sort((a, b) => b.days_before - a.days_before).map(task => {
               const IconComponent = getIconComponent(task.icon || "circle");
               return (
-                <div key={task.id} className="reminder-item" onClick={() => { setEditingSMM({ ...task, icon: task.icon || "circle" }); setShowEditSMMDialog(true); }}>
+                <div key={task.id} className="reminder-item" onClick={() => { setEditingSMM({ ...task, column: task.column || "marketing", icon: task.icon || "circle" }); setShowEditSMMDialog(true); }}>
                   <div className="flex items-center gap-3">
                     <div className="task-icon"><IconComponent /></div>
                     <div><p className="text-sm font-medium">{task.name}</p><p className="text-xs text-secondary">за {task.days_before} днів</p></div>
@@ -3243,37 +3327,66 @@ const SettingsPage = () => {
               );
             })}
             {(allTaskDefs.marketing || []).length === 0 && <p className="text-center text-secondary text-sm py-4">немає завдань</p>}
+            <button className="mt-3 w-full h-11 rounded-full bg-white ring-1 ring-black/8 hover:bg-black/5 transition-colors text-sm font-medium inline-flex items-center justify-center gap-1.5"
+              onClick={() => { setNewReminder({ name: "", days_before: 7, column: "marketing", is_announcement: false, is_teamwork: false, series_master_only: false }); setShowAddDialog(true); }}>
+              <Plus className="w-4 h-4" />новий таск
+            </button>
           </div>
         )}
       </div>
       
       {/* Add Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="dialog-content sm:max-w-[380px]">
-          <DialogHeader><DialogTitle className="text-xs font-medium">нове нагадування</DialogTitle></DialogHeader>
-          <div className="space-y-4 pt-2">
-            <Input placeholder="що треба зробити?" value={newReminder.name} onChange={(e) => setNewReminder({ ...newReminder, name: e.target.value })} className="form-input text-xs h-8" />
-            <Input type="number" placeholder="днів до події" value={newReminder.days_before} onFocus={(e) => { if (e.target.value === "7") e.target.value = ""; }} onChange={(e) => setNewReminder({ ...newReminder, days_before: parseInt(e.target.value) || 7 })} className="form-input text-xs h-8" />
-            <div className="grid grid-cols-7 gap-2 justify-items-center">{iconOptions.map(opt => <button key={opt.value} type="button" className={`icon-selector-btn ${newReminder.icon === opt.value ? "selected" : ""}`} onClick={() => setNewReminder({ ...newReminder, icon: opt.value })}><opt.Icon className="w-4 h-4" /></button>)}</div>
-          </div>
-          <DialogFooter className="mt-4"><button className="btn-dark w-full h-8 text-xs" onClick={handleAddReminder}>створити</button></DialogFooter>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>новий таск</DialogTitle>
+            <DialogDescription>система буде створювати його автоматично для кожної події</DialogDescription>
+          </DialogHeader>
+          <TaskDefEditor
+            draft={newReminder}
+            setDraft={setNewReminder}
+          />
+          <DialogFooter className="mt-6">
+            <button className="btn-dark w-full h-11" onClick={async () => {
+              if (!newReminder.name?.trim()) return;
+              try {
+                await api.createTaskDef({
+                  name: newReminder.name,
+                  days_before: parseInt(newReminder.days_before) || 7,
+                  column: newReminder.column || activeTab,
+                  is_announcement: !!newReminder.is_announcement,
+                  is_teamwork: !!newReminder.is_teamwork,
+                  series_master_only: !!newReminder.series_master_only,
+                });
+                toast.success("додано!");
+                refreshSMMTasksDefinition();
+                refreshEvents();
+                setShowAddDialog(false);
+                setNewReminder({ name: "", days_before: 7, column: activeTab, is_announcement: false, is_teamwork: false, series_master_only: false });
+              } catch { toast.error("помилка"); }
+            }}>створити</button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       
-      {/* Edit Dialog */}
+      {/* Edit Dialog (management) — full editor with column / flags / delete */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="dialog-content sm:max-w-[380px]">
-          <DialogHeader><DialogTitle className="text-xs font-medium">редагувати</DialogTitle></DialogHeader>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>редагувати таск</DialogTitle>
+            <DialogDescription>зміни записуються в історію — можна відкотити</DialogDescription>
+          </DialogHeader>
           {editingReminder && (
-            <div className="space-y-4 pt-2">
-              <Input value={editingReminder.name} onChange={(e) => setEditingReminder({ ...editingReminder, name: e.target.value })} className="form-input text-xs h-8" />
-              <Input type="number" value={editingReminder.days_before} onChange={(e) => setEditingReminder({ ...editingReminder, days_before: parseInt(e.target.value) || 7 })} className="form-input text-xs h-8" />
-              <div className="grid grid-cols-7 gap-2 justify-items-center">{iconOptions.map(opt => <button key={opt.value} type="button" className={`icon-selector-btn ${editingReminder.icon === opt.value ? "selected" : ""}`} onClick={() => setEditingReminder({ ...editingReminder, icon: opt.value })}><opt.Icon className="w-4 h-4" /></button>)}</div>
-            </div>
+            <TaskDefEditor
+              draft={editingReminder}
+              setDraft={setEditingReminder}
+            />
           )}
-          <DialogFooter className="mt-4 flex gap-2">
-            <button className="flex-1 h-8 text-xs rounded-full border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-1" onClick={() => { setReminderToDelete(editingReminder); setShowEditDialog(false); setDeleteDialogOpen(true); }}><Trash2 className="w-3 h-3" />видалити</button>
-            <button className="btn-dark flex-1 h-8 text-xs" onClick={handleEditReminder}>зберегти</button>
+          <DialogFooter className="mt-6 flex gap-2">
+            <button className="flex-1 h-11 rounded-full border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5 text-sm font-medium" onClick={() => { setReminderToDelete(editingReminder); setShowEditDialog(false); setDeleteDialogOpen(true); }}>
+              <Trash2 className="w-4 h-4" />видалити
+            </button>
+            <button className="btn-dark flex-1 h-11" onClick={handleSaveTaskDef}>зберегти</button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3284,18 +3397,41 @@ const SettingsPage = () => {
         </AlertDialogContent>
       </AlertDialog>
       
-      {/* SMM Edit Dialog */}
+      {/* SMM/Marketing Edit Dialog — full editor */}
       <Dialog open={showEditSMMDialog} onOpenChange={setShowEditSMMDialog}>
-        <DialogContent className="dialog-content sm:max-w-[380px]">
-          <DialogHeader><DialogTitle className="text-xs font-medium">редагувати завдання</DialogTitle></DialogHeader>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>редагувати таск</DialogTitle>
+            <DialogDescription>зміни записуються в історію — можна відкотити</DialogDescription>
+          </DialogHeader>
           {editingSMM && (
-            <div className="space-y-4 pt-2">
-              <Input value={editingSMM.name} onChange={(e) => setEditingSMM({ ...editingSMM, name: e.target.value })} className="form-input text-xs h-8" placeholder="назва завдання" />
-              <Input type="number" value={editingSMM.days_before} onChange={(e) => setEditingSMM({ ...editingSMM, days_before: parseInt(e.target.value) || 0 })} className="form-input text-xs h-8" placeholder="днів до події" />
-              <div className="grid grid-cols-7 gap-2 justify-items-center">{iconOptions.map(opt => <button key={opt.value} type="button" className={`icon-selector-btn ${editingSMM.icon === opt.value ? "selected" : ""}`} onClick={() => setEditingSMM({ ...editingSMM, icon: opt.value })}><opt.Icon className="w-4 h-4" /></button>)}</div>
-            </div>
+            <TaskDefEditor
+              draft={editingSMM}
+              setDraft={setEditingSMM}
+            />
           )}
-          <DialogFooter className="mt-4"><button className="btn-dark w-full h-8 text-xs" onClick={() => { toast.success("збережено!"); setShowEditSMMDialog(false); }}>зберегти</button></DialogFooter>
+          <DialogFooter className="mt-6 flex gap-2">
+            <button className="flex-1 h-11 rounded-full border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5 text-sm font-medium" onClick={async () => {
+              if (!editingSMM) return;
+              try { await api.deleteTaskDef(editingSMM.id); toast.success("видалено!"); refreshSMMTasksDefinition(); refreshEvents(); setShowEditSMMDialog(false); }
+              catch { toast.error("помилка"); }
+            }}>
+              <Trash2 className="w-4 h-4" />видалити
+            </button>
+            <button className="btn-dark flex-1 h-11" onClick={async () => {
+              if (!editingSMM) return;
+              const payload = {
+                name: editingSMM.name,
+                days_before: parseInt(editingSMM.days_before) || 0,
+                column: editingSMM.column,
+                is_announcement: !!editingSMM.is_announcement,
+                is_teamwork: !!editingSMM.is_teamwork,
+                series_master_only: !!editingSMM.series_master_only,
+              };
+              try { await api.editTaskDef(editingSMM.id, payload); toast.success("збережено!"); refreshSMMTasksDefinition(); refreshEvents(); setShowEditSMMDialog(false); }
+              catch { toast.error("помилка"); }
+            }}>зберегти</button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       
@@ -5995,7 +6131,7 @@ function App() {
   if (loading) return <div className="app-container flex items-center justify-center min-h-screen"><div className="text-center"><h1 className="logo mb-2">sensa</h1><p className="text-secondary text-sm">завантажую...</p></div></div>;
   
   return (
-      <AppContext.Provider value={{ events, settings, standaloneTasks, smmTasksDefinition, allTaskDefs, googleCalendarStatus, refreshEvents, refreshSettings, refreshStandaloneTasks, refreshGoogleStatus }}>
+      <AppContext.Provider value={{ events, settings, standaloneTasks, smmTasksDefinition, allTaskDefs, googleCalendarStatus, refreshEvents, refreshSettings, refreshStandaloneTasks, refreshGoogleStatus, refreshSMMTasksDefinition }}>
         <BrowserRouter>
           <div className="app-container">
             <Toaster position="top-center" richColors />

@@ -98,6 +98,12 @@ async def altegio_auto_sync():
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
     global altegio_sync_task
+    # Load any task-definition overrides from DB into in-memory cache
+    try:
+        await _refresh_task_overrides_cache()
+        logging.info(f"Loaded {len(_task_overrides)} task definition overrides")
+    except Exception as e:
+        logging.error(f"Failed to load task overrides on startup: {e}")
     # Startup: Start background sync task
     altegio_sync_task = asyncio.create_task(altegio_auto_sync())
     logging.info("Altegio auto-sync started (every 60 minutes)")
@@ -553,16 +559,63 @@ UK_MONTHS_NOMINATIVE_PY = {
     9: "вересень", 10: "жовтень", 11: "листопад", 12: "грудень",
 }
 
-# Helper: get all tasks for a column
-def get_tasks_for_column(column):
-    tasks = []
+# ==================== TASK DEFINITION OVERRIDES ====================
+#
+# User can edit / delete / add task definitions via Settings UI. We don't mutate
+# the hardcoded lists above. Instead all manual changes live in the
+# `task_definition_overrides` MongoDB collection, structured as DIFFs against
+# the hardcoded defaults. This means:
+#   • Every manual change is recorded — trivially read with
+#     db.task_definition_overrides.find()
+#   • Each override carries a `history` list of previous patches → easy revert
+#   • Brand-new tasks (no hardcoded counterpart) live in the same collection
+#     with is_new=True + full_definition
+#
+# The cache `_task_overrides` is kept in-memory and refreshed after each write
+# so that get_tasks_for_column() stays synchronous.
+
+_task_overrides: Dict[str, dict] = {}  # task_id -> override doc
+
+async def _refresh_task_overrides_cache():
+    global _task_overrides
+    docs = await db.task_definition_overrides.find({}, {"_id": 0}).to_list(2000)
+    _task_overrides = {d["task_id"]: d for d in docs if d.get("task_id")}
+
+def _apply_overrides_to_list(column: str, base_list: list) -> list:
+    """Merge base hardcoded tasks with per-task overrides + brand-new tasks."""
+    result = []
+    seen_ids = set()
+    for t in base_list:
+        ov = _task_overrides.get(t["id"])
+        if ov:
+            if ov.get("is_deleted"):
+                continue
+            patch = ov.get("patch") or {}
+            t = {**t, **patch}
+        result.append(t)
+        seen_ids.add(t["id"])
+    # Brand-new tasks created via "+ новий таск"
+    for tid, ov in _task_overrides.items():
+        if tid in seen_ids:
+            continue
+        if not ov.get("is_new"):
+            continue
+        full = ov.get("full_definition") or {}
+        if full.get("column") == column:
+            result.append({**full, "id": tid})
+    return result
+
+def get_tasks_for_column(column: str) -> list:
+    """Get full task list for a column = hardcoded defaults + applied overrides."""
     if column == "management":
-        tasks = MANAGEMENT_TASKS
-    elif column == "smm":
-        tasks = SMM_TASKS
-    elif column == "marketing":
-        tasks = MARKETING_TASKS
-    return tasks
+        return _apply_overrides_to_list(column, MANAGEMENT_TASKS)
+    if column == "smm":
+        return _apply_overrides_to_list(column, SMM_TASKS)
+    if column == "marketing":
+        return _apply_overrides_to_list(column, MARKETING_TASKS)
+    if column == "monthly":
+        return _apply_overrides_to_list(column, MONTHLY_TASKS)
+    return []
 
 def calculate_event_tasks(event_date_str, column, is_series_child: bool = False, is_series: bool = False):
     """Calculate task dates for a specific column based on event date.
@@ -1769,15 +1822,246 @@ async def parse_events_with_ai(request: ParseEventRequest):
 
 @api_router.get("/smm/tasks-definition")
 async def get_smm_tasks_definition():
-    """Return the SMM tasks definition for frontend use"""
-    # Return all task definitions organized by column
+    """Return all task definitions (with overrides applied) for frontend use."""
     return {
-        "management": MANAGEMENT_TASKS,
-        "smm": SMM_TASKS,
-        "marketing": MARKETING_TASKS,
-        "monthly": MONTHLY_TASKS,
-        "daily": DAILY_TASKS,
+        "management": get_tasks_for_column("management"),
+        "smm":        get_tasks_for_column("smm"),
+        "marketing":  get_tasks_for_column("marketing"),
+        "monthly":    get_tasks_for_column("monthly"),
+        "daily":      DAILY_TASKS,
     }
+
+
+# ==================== TASK DEFINITIONS — manual edits ====================
+
+EDITABLE_FIELDS = {"name", "days_before", "column", "is_announcement", "is_teamwork", "series_master_only"}
+
+def _find_base_task(task_id: str):
+    """Locate a hardcoded task by id; return (task_dict, column_name) or (None, None)."""
+    for col, lst in (("management", MANAGEMENT_TASKS), ("smm", SMM_TASKS),
+                      ("marketing", MARKETING_TASKS), ("monthly", MONTHLY_TASKS)):
+        for t in lst:
+            if t["id"] == task_id:
+                return t, col
+    return None, None
+
+
+async def _adapt_events_to_definition_change(task_id: str, before: dict, after: dict, was_deleted: bool):
+    """Propagate a task-definition change to all existing events.
+
+    Cases:
+      - was_deleted=True → strip task_id from every event's reminders/smm_tasks/marketing_tasks
+      - column changed → move task entry from old column field to new
+      - days_before changed → recompute date for FUTURE events only
+    """
+    fields_by_col = {"management": "reminders", "smm": "smm_tasks", "marketing": "marketing_tasks"}
+    today_str = datetime.now(timezone.utc).date().isoformat()
+
+    if was_deleted:
+        for fld in fields_by_col.values():
+            await db.events.update_many({}, {"$unset": {f"{fld}.{task_id}": ""}})
+        return
+
+    old_col = (before or {}).get("column")
+    new_col = (after or {}).get("column", old_col)
+    old_days = (before or {}).get("days_before")
+    new_days = (after or {}).get("days_before", old_days)
+
+    # If column changed: move the entry from the old field to the new one
+    if old_col and new_col and old_col != new_col:
+        old_field = fields_by_col.get(old_col)
+        new_field = fields_by_col.get(new_col)
+        if old_field and new_field:
+            cursor = db.events.find({f"{old_field}.{task_id}": {"$exists": True}}, {"_id": 0})
+            async for ev in cursor:
+                date_val = (ev.get(old_field) or {}).get(task_id)
+                if not date_val:
+                    continue
+                await db.events.update_one(
+                    {"id": ev["id"]},
+                    {"$set":   {f"{new_field}.{task_id}": date_val},
+                     "$unset": {f"{old_field}.{task_id}": ""}},
+                )
+
+    # If days_before changed: recompute date for future events
+    if old_days != new_days and new_days is not None:
+        target_col = new_col or old_col
+        target_field = fields_by_col.get(target_col)
+        if not target_field:
+            return
+        cursor = db.events.find({f"{target_field}.{task_id}": {"$exists": True}, "date": {"$gte": today_str}}, {"_id": 0})
+        async for ev in cursor:
+            try:
+                ev_dt = datetime.strptime(ev["date"][:10], "%Y-%m-%d").date()
+            except Exception:
+                continue
+            new_date = (ev_dt - timedelta(days=int(new_days))).isoformat()
+            await db.events.update_one(
+                {"id": ev["id"]},
+                {"$set": {f"{target_field}.{task_id}": new_date}},
+            )
+
+
+@api_router.patch("/task-definitions/{task_id}")
+async def edit_task_definition(task_id: str, payload: dict):
+    """Edit a task definition. Stores diff vs hardcoded default. Each call
+    appends previous patch to history (so we can revert)."""
+    base, base_col = _find_base_task(task_id)
+    existing = await db.task_definition_overrides.find_one({"task_id": task_id}, {"_id": 0})
+
+    # If brand-new task — just merge fields into full_definition
+    if not base:
+        if not existing or not existing.get("is_new"):
+            raise HTTPException(status_code=404, detail="Unknown task id")
+        full = existing.get("full_definition") or {}
+        new_full = {**full, **{k: v for k, v in payload.items() if k in EDITABLE_FIELDS}}
+        history = list(existing.get("history") or [])
+        history.append({"changed_at": datetime.now(timezone.utc).isoformat(), "previous_full": full})
+        await db.task_definition_overrides.update_one(
+            {"task_id": task_id},
+            {"$set": {"full_definition": new_full, "history": history,
+                       "updated_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        await _refresh_task_overrides_cache()
+        await _adapt_events_to_definition_change(task_id, full, new_full, False)
+        return {"task_id": task_id, "applied": new_full}
+
+    # Hardcoded task — apply diff
+    fields = {k: v for k, v in payload.items() if k in EDITABLE_FIELDS}
+    if not fields:
+        raise HTTPException(status_code=400, detail="No editable fields supplied")
+    prior_patch = (existing or {}).get("patch") or {}
+    new_patch = {**prior_patch, **fields}
+
+    # Compute before/after for adaptation
+    before_eff = {**base, **prior_patch}
+    after_eff = {**base, **new_patch}
+
+    history = list((existing or {}).get("history") or [])
+    history.append({"changed_at": datetime.now(timezone.utc).isoformat(), "previous_patch": prior_patch})
+
+    doc = {
+        "task_id": task_id,
+        "column": base_col,
+        "patch": new_patch,
+        "is_deleted": False,
+        "is_new": False,
+        "history": history,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.task_definition_overrides.update_one(
+        {"task_id": task_id}, {"$set": doc, "$setOnInsert": {"id": str(uuid.uuid4()), "created_at": doc["updated_at"]}}, upsert=True,
+    )
+    await _refresh_task_overrides_cache()
+    await _adapt_events_to_definition_change(task_id, before_eff, after_eff, False)
+    return {"task_id": task_id, "patch": new_patch}
+
+
+@api_router.delete("/task-definitions/{task_id}")
+async def delete_task_definition(task_id: str):
+    """Soft-delete a hardcoded task (override flag) or hard-delete a brand-new task."""
+    base, base_col = _find_base_task(task_id)
+    existing = await db.task_definition_overrides.find_one({"task_id": task_id}, {"_id": 0})
+
+    if not base:
+        # Brand-new task — actually remove the row
+        if not existing:
+            raise HTTPException(status_code=404, detail="Task not found")
+        await db.task_definition_overrides.delete_one({"task_id": task_id})
+        await _refresh_task_overrides_cache()
+        await _adapt_events_to_definition_change(task_id, None, None, True)
+        return {"task_id": task_id, "deleted": True}
+
+    # Hardcoded task — set is_deleted=True
+    history = list((existing or {}).get("history") or [])
+    history.append({"changed_at": datetime.now(timezone.utc).isoformat(),
+                     "previous_patch": (existing or {}).get("patch") or {},
+                     "previously_deleted": (existing or {}).get("is_deleted", False)})
+    doc = {
+        "task_id": task_id,
+        "column": base_col,
+        "patch": (existing or {}).get("patch") or {},
+        "is_deleted": True,
+        "is_new": False,
+        "history": history,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.task_definition_overrides.update_one(
+        {"task_id": task_id}, {"$set": doc, "$setOnInsert": {"id": str(uuid.uuid4()), "created_at": doc["updated_at"]}}, upsert=True,
+    )
+    await _refresh_task_overrides_cache()
+    await _adapt_events_to_definition_change(task_id, None, None, True)
+    return {"task_id": task_id, "deleted": True}
+
+
+@api_router.post("/task-definitions")
+async def create_task_definition(payload: dict):
+    """Create a brand-new task definition (no hardcoded counterpart)."""
+    column = payload.get("column")
+    name = payload.get("name")
+    if not column or not name:
+        raise HTTPException(status_code=400, detail="column + name required")
+    if column not in ("management", "smm", "marketing", "monthly"):
+        raise HTTPException(status_code=400, detail="invalid column")
+    new_id = payload.get("id") or f"custom_{uuid.uuid4().hex[:10]}"
+    full = {
+        "id": new_id,
+        "name": name,
+        "days_before": int(payload.get("days_before", 7)),
+        "column": column,
+        "condition": None,
+        "is_announcement": bool(payload.get("is_announcement", False)),
+        "is_teamwork": bool(payload.get("is_teamwork", False)),
+        "series_master_only": bool(payload.get("series_master_only", False)),
+        "weight": float(payload.get("weight", 0.1)),
+        "shift_kind": payload.get("shift_kind", "easy"),
+    }
+    doc = {
+        "id": str(uuid.uuid4()),
+        "task_id": new_id,
+        "column": column,
+        "patch": {},
+        "is_deleted": False,
+        "is_new": True,
+        "full_definition": full,
+        "history": [],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.task_definition_overrides.insert_one(doc)
+    await _refresh_task_overrides_cache()
+    return {"task_id": new_id, "definition": full}
+
+
+@api_router.post("/task-definitions/{task_id}/revert")
+async def revert_task_definition(task_id: str):
+    """Pop the last history entry → restore previous patch (or undelete)."""
+    existing = await db.task_definition_overrides.find_one({"task_id": task_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="No override to revert")
+    history = list(existing.get("history") or [])
+    if not history:
+        # Nothing to revert to — remove override entirely (back to hardcoded default)
+        await db.task_definition_overrides.delete_one({"task_id": task_id})
+        await _refresh_task_overrides_cache()
+        return {"task_id": task_id, "reverted_to": "hardcoded_default"}
+    last = history.pop()
+    update = {"history": history, "updated_at": datetime.now(timezone.utc).isoformat()}
+    if "previous_patch" in last:
+        update["patch"] = last["previous_patch"]
+        update["is_deleted"] = last.get("previously_deleted", False)
+    if "previous_full" in last:
+        update["full_definition"] = last["previous_full"]
+    await db.task_definition_overrides.update_one({"task_id": task_id}, {"$set": update})
+    await _refresh_task_overrides_cache()
+    return {"task_id": task_id, "reverted": True}
+
+
+@api_router.get("/task-definitions/overrides")
+async def list_task_definition_overrides():
+    """Inspect all manual overrides (debug / audit)."""
+    docs = await db.task_definition_overrides.find({}, {"_id": 0}).to_list(2000)
+    return {"count": len(docs), "overrides": docs}
 
 
 @api_router.get("/monthly-tasks")
