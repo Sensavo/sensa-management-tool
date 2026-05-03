@@ -5206,7 +5206,7 @@ const DesktopDashboard = () => {
 
 // Settings Content for modals - with 4 columns layout
 const SettingsContent = () => {
-  const { settings, refreshSettings, allTaskDefs, googleCalendarStatus, refreshGoogleStatus } = useApp();
+  const { settings, refreshSettings, refreshSMMTasksDefinition, refreshEvents, allTaskDefs, googleCalendarStatus, refreshGoogleStatus } = useApp();
   const [exportingAll, setExportingAll] = useState(false);
   const [altegioConnected, setAltegioConnected] = useState(false);
 
@@ -5229,18 +5229,56 @@ const SettingsContent = () => {
     finally { setExportingAll(false); }
   };
 
-  const [editTask, setEditTask] = useState(null);
-  const [editName, setEditName] = useState('');
-  const [editDays, setEditDays] = useState('');
+  const [editTask, setEditTask] = useState(null); // full draft of task being edited
+  const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
+  const [newTaskDraft, setNewTaskDraft] = useState({ name: "", days_before: 7, column: "management", is_announcement: false, is_teamwork: false, series_master_only: false });
 
   const handleSaveTask = async () => {
+    if (!editTask?.name?.trim()) return;
+    try {
+      await api.editTaskDef(editTask.id, {
+        name: editTask.name,
+        days_before: parseInt(editTask.days_before) || 0,
+        column: editTask.column,
+        is_announcement: !!editTask.is_announcement,
+        is_teamwork: !!editTask.is_teamwork,
+        series_master_only: !!editTask.series_master_only,
+      });
+      toast.success("збережено!");
+      refreshSMMTasksDefinition();
+      refreshEvents();
+      setEditTask(null);
+    } catch { toast.error("помилка"); }
+  };
+
+  const handleDeleteTask = async () => {
     if (!editTask) return;
     try {
-      await axios.patch(`${API}/settings/task/${editTask.id}`, { name: editName, days_before: parseInt(editDays) });
-      refreshSettings();
+      await api.deleteTaskDef(editTask.id);
+      toast.success("видалено!");
+      refreshSMMTasksDefinition();
+      refreshEvents();
       setEditTask(null);
-      toast.success("завдання оновлено");
-    } catch { toast.error("помилка збереження"); }
+    } catch { toast.error("помилка"); }
+  };
+
+  const handleAddTask = async () => {
+    if (!newTaskDraft?.name?.trim()) return;
+    try {
+      await api.createTaskDef({
+        name: newTaskDraft.name,
+        days_before: parseInt(newTaskDraft.days_before) || 7,
+        column: newTaskDraft.column,
+        is_announcement: !!newTaskDraft.is_announcement,
+        is_teamwork: !!newTaskDraft.is_teamwork,
+        series_master_only: !!newTaskDraft.series_master_only,
+      });
+      toast.success("додано!");
+      refreshSMMTasksDefinition();
+      refreshEvents();
+      setShowAddTaskDialog(false);
+      setNewTaskDraft({ name: "", days_before: 7, column: "management", is_announcement: false, is_teamwork: false, series_master_only: false });
+    } catch { toast.error("помилка"); }
   };
 
   const allTasks = useMemo(() => {
@@ -5268,7 +5306,10 @@ const SettingsContent = () => {
     if (task.condition) badges.push(task.condition.type === "booking_below" ? `<${task.condition.threshold}%` : `>${task.condition.threshold}%`);
     if (task._colTarget && task._col !== 'щомісяця') badges.push(task._colTarget);
     return (
-      <div className="reminder-item cursor-pointer hover:bg-black/3 transition-colors" data-testid={`settings-task-${task.id}`} onClick={() => { setEditTask(task); setEditName(task.name); setEditDays(String(task.days_before)); }}>
+      <div className="reminder-item cursor-pointer hover:bg-black/3 transition-colors" data-testid={`settings-task-${task.id}`} onClick={() => setEditTask({
+        ...task,
+        column: task.column || (task._col === 'smm' ? 'smm' : task._col === 'маркетинг' ? 'marketing' : 'management'),
+      })}>
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <div className="task-icon"><IconComponent /></div>
           <div className="flex-1 min-w-0">
@@ -5326,9 +5367,14 @@ const SettingsContent = () => {
 
       {/* Column 2: МЕНЕДЖМЕНТ + daily + monthly */}
       <div className="desktop-column">
-        <div className="px-4 py-3 border-b border-gray-100">
-          <span className="text-sm font-semibold tracking-wide">МЕНЕДЖМЕНТ</span>
-          <span className="text-xs text-secondary ml-2">({allTasks.mgmt.length})</span>
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <span className="text-sm font-semibold tracking-wide">МЕНЕДЖМЕНТ</span>
+            <span className="text-xs text-secondary ml-2">({allTasks.mgmt.length})</span>
+          </div>
+          <button className="add-btn" title="новий таск" onClick={() => { setNewTaskDraft({ name: "", days_before: 7, column: "management", is_announcement: false, is_teamwork: false, series_master_only: false }); setShowAddTaskDialog(true); }}>
+            <Plus className="w-4 h-4" />
+          </button>
         </div>
         <div className="column-content space-y-4">
           {allTasks.dailyMgmt.length > 0 && (
@@ -5352,9 +5398,14 @@ const SettingsContent = () => {
 
       {/* Column 3: SMM + daily + monthly */}
       <div className="desktop-column">
-        <div className="px-4 py-3 border-b border-gray-100">
-          <span className="text-sm font-semibold tracking-wide">SMM</span>
-          <span className="text-xs text-secondary ml-2">({allTasks.smm.length})</span>
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <span className="text-sm font-semibold tracking-wide">SMM</span>
+            <span className="text-xs text-secondary ml-2">({allTasks.smm.length})</span>
+          </div>
+          <button className="add-btn" title="новий таск" onClick={() => { setNewTaskDraft({ name: "", days_before: 7, column: "smm", is_announcement: false, is_teamwork: false, series_master_only: false }); setShowAddTaskDialog(true); }}>
+            <Plus className="w-4 h-4" />
+          </button>
         </div>
         <div className="column-content space-y-4">
           {allTasks.dailySMM.length > 0 && (
@@ -5378,9 +5429,14 @@ const SettingsContent = () => {
 
       {/* Column 4: МАРКЕТИНГ + daily + monthly */}
       <div className="desktop-column">
-        <div className="px-4 py-3 border-b border-gray-100">
-          <span className="text-sm font-semibold tracking-wide">МАРКЕТИНГ</span>
-          <span className="text-xs text-secondary ml-2">({allTasks.mktg.length})</span>
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <span className="text-sm font-semibold tracking-wide">МАРКЕТИНГ</span>
+            <span className="text-xs text-secondary ml-2">({allTasks.mktg.length})</span>
+          </div>
+          <button className="add-btn" title="новий таск" onClick={() => { setNewTaskDraft({ name: "", days_before: 7, column: "marketing", is_announcement: false, is_teamwork: false, series_master_only: false }); setShowAddTaskDialog(true); }}>
+            <Plus className="w-4 h-4" />
+          </button>
         </div>
         <div className="column-content space-y-4">
           {allTasks.dailyMktg.length > 0 && (
@@ -5405,25 +5461,34 @@ const SettingsContent = () => {
     </div>
     {editTask && (
       <Dialog open={!!editTask} onOpenChange={() => setEditTask(null)}>
-        <DialogContent className="dialog-content">
-          <DialogHeader><DialogTitle>редагувати завдання</DialogTitle></DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div>
-              <Label className="text-sm text-secondary">назва</Label>
-              <Input value={editName} onChange={(e) => setEditName(e.target.value)} className="form-input mt-1" />
-            </div>
-            <div>
-              <Label className="text-sm text-secondary">за скільки днів до</Label>
-              <Input type="number" value={editDays} onChange={(e) => setEditDays(e.target.value)} className="form-input mt-1" />
-            </div>
-            <div className="flex gap-2 pt-2">
-              <Button className="flex-1 btn-dark" onClick={handleSaveTask}>зберегти</Button>
-              <Button variant="outline" className="flex-1" onClick={() => setEditTask(null)}>скасувати</Button>
-            </div>
-          </div>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>редагувати таск</DialogTitle>
+            <DialogDescription>зміни записуються в історію — можна відкотити</DialogDescription>
+          </DialogHeader>
+          <TaskDefEditor draft={editTask} setDraft={setEditTask} />
+          <DialogFooter className="mt-6 flex gap-2">
+            <button className="flex-1 h-11 rounded-full border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5 text-sm font-medium" onClick={handleDeleteTask}>
+              <Trash2 className="w-4 h-4" />видалити
+            </button>
+            <button className="btn-dark flex-1 h-11" onClick={handleSaveTask}>зберегти</button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     )}
+
+    <Dialog open={showAddTaskDialog} onOpenChange={setShowAddTaskDialog}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>новий таск</DialogTitle>
+          <DialogDescription>система буде створювати його автоматично для кожної події</DialogDescription>
+        </DialogHeader>
+        <TaskDefEditor draft={newTaskDraft} setDraft={setNewTaskDraft} />
+        <DialogFooter className="mt-6">
+          <button className="btn-dark w-full h-11" onClick={handleAddTask}>створити</button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     </>
   );
 };
