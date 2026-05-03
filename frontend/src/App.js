@@ -4590,7 +4590,7 @@ const DesktopDashboard = () => {
                   value={newTask.title}
                   onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
                   onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && newTask.title?.trim()) handleCreateTask(); }}
-                  className="w-full h-12 px-4 rounded-xl bg-white border-2 border-transparent text-[15px] placeholder:text-[#1A1717]/35 focus:outline-none focus:border-[#1A1717] transition-all"
+                  className="w-full h-12 px-4 rounded-xl bg-white border-2 border-transparent text-[15px] placeholder:text-[#1A1717]/35 focus:outline-none focus:border-[#1A1717] transition-colors"
                   data-testid="new-task-title"
                 />
 
@@ -4603,7 +4603,7 @@ const DesktopDashboard = () => {
                         key={chip.value}
                         type="button"
                         onClick={() => setNewTask({ ...newTask, date: chip.value })}
-                        className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-all ${
+                        className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-colors ${
                           sel ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
                         }`}
                         data-testid={`new-task-date-${chip.label}`}
@@ -4613,7 +4613,7 @@ const DesktopDashboard = () => {
                   <button
                     type="button"
                     onClick={() => setShowTaskCalendar(true)}
-                    className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-all inline-flex items-center gap-1.5 ${
+                    className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-colors inline-flex items-center gap-1.5 ${
                       isCustomDate ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
                     }`}
                     data-testid="new-task-date-custom"
@@ -4633,7 +4633,7 @@ const DesktopDashboard = () => {
                           key={opt.value}
                           type="button"
                           onClick={() => setNewTask({ ...newTask, icon: opt.value })}
-                          className="aspect-square rounded-xl flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                          className="aspect-square rounded-xl flex items-center justify-center transition-colors active:scale-95"
                           style={{
                             background: sel ? selectedHex : 'transparent',
                             color: sel ? '#FFFFFF' : selectedHex,
@@ -4652,7 +4652,7 @@ const DesktopDashboard = () => {
                           key={c}
                           type="button"
                           onClick={() => setNewTask({...newTask, color: c})}
-                          className="rounded-full transition-transform hover:scale-110 active:scale-95 flex items-center justify-center"
+                          className="rounded-full transition-colors active:scale-95 flex items-center justify-center"
                           style={{ width: 18, height: 18 }}
                           aria-label={c}
                           data-testid={`new-task-color-${c}`}
@@ -4672,7 +4672,7 @@ const DesktopDashboard = () => {
                 <select
                   value={newTask.event_id || ""}
                   onChange={(e) => setNewTask({ ...newTask, event_id: e.target.value })}
-                  className="mt-3 w-full h-10 px-3 rounded-xl bg-white border-2 border-transparent text-[13px] text-[#1A1717]/70 focus:outline-none focus:border-[#1A1717] transition-all cursor-pointer"
+                  className="mt-3 w-full h-10 px-3 rounded-xl bg-white border-2 border-transparent text-[13px] text-[#1A1717]/70 focus:outline-none focus:border-[#1A1717] transition-colors cursor-pointer"
                   data-testid="new-task-event"
                 >
                   <option value="">— не прикріплена до події —</option>
@@ -4690,7 +4690,7 @@ const DesktopDashboard = () => {
                 <button
                   onClick={handleCreateTask}
                   disabled={!newTask.title?.trim()}
-                  className="mt-4 w-full h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-[14px] transition-all hover:bg-[#2a2424] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 active:scale-[0.98]"
+                  className="mt-4 w-full h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-[14px] transition-colors hover:bg-[#2a2424] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 active:scale-[0.98]"
                   data-testid="new-task-create"
                 >
                   створити <ChevronRight className="w-4 h-4" />
@@ -5001,7 +5001,7 @@ const DesktopDashboard = () => {
                   value={newSMMTask.title}
                   onChange={(e) => setNewSMMTask({ ...newSMMTask, title: e.target.value })}
                   onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && newSMMTask.title?.trim()) handleCreateSMMTask(); }}
-                  className="w-full h-12 px-4 rounded-xl bg-white border-2 border-transparent text-[15px] placeholder:text-[#1A1717]/35 focus:outline-none focus:border-[#1A1717] transition-all"
+                  className="w-full h-12 px-4 rounded-xl bg-white border-2 border-transparent text-[15px] placeholder:text-[#1A1717]/35 focus:outline-none focus:border-[#1A1717] transition-colors"
                 />
 
                 <div className="mt-3 flex gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1 scrollbar-hide">
@@ -5010,7 +5010,7 @@ const DesktopDashboard = () => {
                     return (
                       <button key={chip.value} type="button"
                         onClick={() => setNewSMMTask({ ...newSMMTask, date: chip.value })}
-                        className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-all ${
+                        className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-colors ${
                           sel ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
                         }`}
                       >{chip.label}</button>
@@ -5018,7 +5018,7 @@ const DesktopDashboard = () => {
                   })}
                   <button type="button"
                     onClick={() => setShowSMMCalendar(true)}
-                    className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-all inline-flex items-center gap-1.5 ${
+                    className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-colors inline-flex items-center gap-1.5 ${
                       isCustomDate ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
                     }`}
                   >
@@ -5034,7 +5034,7 @@ const DesktopDashboard = () => {
                       return (
                         <button key={opt.value} type="button"
                           onClick={() => setNewSMMTask({ ...newSMMTask, icon: opt.value })}
-                          className="aspect-square rounded-xl flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                          className="aspect-square rounded-xl flex items-center justify-center transition-colors active:scale-95"
                           style={{
                             background: sel ? selectedHex : 'transparent',
                             color: sel ? '#FFFFFF' : selectedHex,
@@ -5050,7 +5050,7 @@ const DesktopDashboard = () => {
                       return (
                         <button key={c} type="button"
                           onClick={() => setNewSMMTask({...newSMMTask, color: c})}
-                          className="rounded-full transition-transform hover:scale-110 active:scale-95 flex items-center justify-center"
+                          className="rounded-full transition-colors active:scale-95 flex items-center justify-center"
                           style={{ width: 18, height: 18 }}
                           aria-label={c}
                         >
@@ -5068,7 +5068,7 @@ const DesktopDashboard = () => {
                 <select
                   value={newSMMTask.event_id || ""}
                   onChange={(e) => setNewSMMTask({ ...newSMMTask, event_id: e.target.value })}
-                  className="mt-3 w-full h-10 px-3 rounded-xl bg-white border-2 border-transparent text-[13px] text-[#1A1717]/70 focus:outline-none focus:border-[#1A1717] transition-all cursor-pointer"
+                  className="mt-3 w-full h-10 px-3 rounded-xl bg-white border-2 border-transparent text-[13px] text-[#1A1717]/70 focus:outline-none focus:border-[#1A1717] transition-colors cursor-pointer"
                 >
                   <option value="">— не прикріплена до події —</option>
                   {[...events]
@@ -5084,7 +5084,7 @@ const DesktopDashboard = () => {
                 <button
                   onClick={handleCreateSMMTask}
                   disabled={!newSMMTask.title?.trim()}
-                  className="mt-4 w-full h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-[14px] transition-all hover:bg-[#2a2424] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 active:scale-[0.98]"
+                  className="mt-4 w-full h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-[14px] transition-colors hover:bg-[#2a2424] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 active:scale-[0.98]"
                 >
                   створити <ChevronRight className="w-4 h-4" />
                 </button>
@@ -5190,7 +5190,7 @@ const DesktopDashboard = () => {
                   placeholder="що треба зробити?"
                   value={editingStandaloneTask.title}
                   onChange={(e) => setEditingStandaloneTask({ ...editingStandaloneTask, title: e.target.value })}
-                  className="mt-3 w-full h-12 px-4 rounded-xl bg-white border-2 border-transparent text-[15px] placeholder:text-[#1A1717]/35 focus:outline-none focus:border-[#1A1717] transition-all"
+                  className="mt-3 w-full h-12 px-4 rounded-xl bg-white border-2 border-transparent text-[15px] placeholder:text-[#1A1717]/35 focus:outline-none focus:border-[#1A1717] transition-colors"
                   data-testid="edit-task-input"
                 />
 
@@ -5200,7 +5200,7 @@ const DesktopDashboard = () => {
                     return (
                       <button key={chip.value} type="button"
                         onClick={() => setEditingStandaloneTask({ ...editingStandaloneTask, date: chip.value })}
-                        className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-all ${
+                        className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-colors ${
                           sel ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
                         }`}
                       >{chip.label}</button>
@@ -5208,7 +5208,7 @@ const DesktopDashboard = () => {
                   })}
                   <button type="button"
                     onClick={() => setShowEditCalendar(true)}
-                    className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-all inline-flex items-center gap-1.5 ${
+                    className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-colors inline-flex items-center gap-1.5 ${
                       isCustomDate ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
                     }`}
                   >
@@ -5224,7 +5224,7 @@ const DesktopDashboard = () => {
                       return (
                         <button key={opt.value} type="button"
                           onClick={() => setEditingStandaloneTask({ ...editingStandaloneTask, icon: opt.value })}
-                          className="aspect-square rounded-xl flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                          className="aspect-square rounded-xl flex items-center justify-center transition-colors active:scale-95"
                           style={{
                             background: sel ? selectedHex : 'transparent',
                             color: sel ? '#FFFFFF' : selectedHex,
@@ -5240,7 +5240,7 @@ const DesktopDashboard = () => {
                       return (
                         <button key={c} type="button"
                           onClick={() => setEditingStandaloneTask({...editingStandaloneTask, color: c})}
-                          className="rounded-full transition-transform hover:scale-110 active:scale-95 flex items-center justify-center"
+                          className="rounded-full transition-colors active:scale-95 flex items-center justify-center"
                           style={{ width: 18, height: 18 }}
                           aria-label={c}
                         >
@@ -5261,7 +5261,7 @@ const DesktopDashboard = () => {
                       <Trash2 className="w-4 h-4" />видалити
                     </button>
                   )}
-                  <button className="flex-1 h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-[14px] transition-all hover:bg-[#2a2424] active:scale-[0.98]" data-testid="edit-task-save" onClick={handleSaveStandaloneTask}>зберегти</button>
+                  <button className="flex-1 h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-[14px] transition-colors hover:bg-[#2a2424] active:scale-[0.98]" data-testid="edit-task-save" onClick={handleSaveStandaloneTask}>зберегти</button>
                 </div>
               </>
             );
