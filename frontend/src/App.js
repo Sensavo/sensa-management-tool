@@ -3074,58 +3074,145 @@ const ContentPage = () => {
 };
 
 
-// Reusable editor block for a task definition: name + days + column + flags.
-// Shared between management edit dialog and SMM/marketing edit dialog.
+// Reusable editor block for a task definition.
+// Two task types: "event" (tied to event date) and "regular" (monthly/daily).
 const TaskDefEditor = ({ draft, setDraft }) => {
+  const [showDetails, setShowDetails] = useState(false);
   if (!draft) return null;
   const COLS = [
     { v: "management", l: "Менеджер" },
     { v: "smm",        l: "SMM" },
     { v: "marketing",  l: "Маркетолог" },
   ];
+  // Backwards-compat: treat missing frequency as "event" (legacy hardcoded tasks)
+  const freq = draft.frequency || "event";
+  const setFreq = (f) => {
+    const upd = { ...draft, frequency: f };
+    if (f === "daily") upd.days_before = 0;
+    if (f !== "event") {
+      // Strip event-specific fields for regular tasks
+      upd.condition = null;
+      upd.is_announcement = false;
+      upd.series_master_only = false;
+    }
+    setDraft(upd);
+  };
+  const cond = draft.condition || null;
+  const condType = cond ? cond.type : "none";
+  const condThreshold = cond ? cond.threshold : 70;
+  const setCondition = (type, threshold) => {
+    if (type === "none") setDraft({ ...draft, condition: null });
+    else setDraft({ ...draft, condition: { type, threshold: parseInt(threshold) || 70 } });
+  };
+
+  const FREQS = [
+    { v: "event",   l: "на подію",  hint: "за N днів до кожної події" },
+    { v: "monthly", l: "щомісяця", hint: "за N днів від початку місяця" },
+    { v: "daily",   l: "щоденно",  hint: "автоматично кожен день" },
+  ];
+
   return (
-    <div className="mt-5 space-y-5">
-      <div>
-        <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-1.5">назва</div>
-        <Input value={draft.name || ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="form-input" />
+    <div className="mt-4 space-y-4">
+      {/* Type selector */}
+      <div className="grid grid-cols-3 gap-1.5 p-1 rounded-full bg-black/5">
+        {FREQS.map(f => (
+          <button
+            key={f.v}
+            type="button"
+            onClick={() => setFreq(f.v)}
+            className={`h-9 rounded-full text-[12.5px] font-medium transition-all ${freq === f.v ? 'bg-white text-[#1A1717] shadow-sm' : 'text-[#1A1717]/55 hover:text-[#1A1717]'}`}
+          >{f.l}</button>
+        ))}
       </div>
-      <div>
-        <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-1.5">за скільки днів до події</div>
-        <Input type="number" value={draft.days_before ?? 0} onChange={(e) => setDraft({ ...draft, days_before: parseInt(e.target.value) || 0 })} className="form-input" />
-      </div>
+
+      <Input
+        value={draft.name || ""}
+        onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+        placeholder="назва"
+        className="form-input"
+      />
+
       <div>
         <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-1.5">виконавець</div>
         <div className="grid grid-cols-3 gap-2">
           {COLS.map(c => (
-            <button
-              key={c.v}
-              type="button"
+            <button key={c.v} type="button"
               onClick={() => setDraft({ ...draft, column: c.v })}
-              className={`h-11 rounded-full text-sm font-medium transition-colors ${draft.column === c.v ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white ring-1 ring-black/8 hover:bg-black/5'}`}
+              className={`h-10 rounded-full text-sm font-medium transition-colors ${draft.column === c.v ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white ring-1 ring-black/8 hover:bg-black/5'}`}
             >{c.l}</button>
           ))}
         </div>
       </div>
-      <div>
-        <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-2">прапорці</div>
-        <div className="space-y-1.5">
-          {[
-            { f: "is_announcement",    l: "анонс (зсув на постинговий день)" },
-            { f: "is_teamwork",        l: "тімворк (тільки на студійні дні)" },
+
+      {freq !== "daily" && (
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-1.5">
+            {freq === "event" ? "за скільки днів до події" : "за скільки днів від початку місяця"}
+          </div>
+          <Input type="number" value={draft.days_before ?? 0}
+            onChange={(e) => setDraft({ ...draft, days_before: parseInt(e.target.value) || 0 })}
+            className="form-input" />
+        </div>
+      )}
+
+      {/* Collapsible details */}
+      <button type="button"
+        onClick={() => setShowDetails(s => !s)}
+        className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-black/[0.03] text-[12.5px] font-medium text-[#1A1717]/65 transition-colors"
+      >
+        <span>деталі (умови, прапорці)</span>
+        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDetails ? 'rotate-180' : ''}`} />
+      </button>
+
+      {showDetails && (
+        <div className="pl-3 space-y-3 border-l-2 border-black/10">
+          {freq === "event" && (
+            <div>
+              <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-1.5">умова показу</div>
+              <div className="grid grid-cols-3 gap-1.5 mb-2">
+                {[
+                  { v: "none", l: "завжди" },
+                  { v: "booking_below", l: "бронювань <" },
+                  { v: "booking_above", l: "бронювань >" },
+                ].map(o => (
+                  <button key={o.v} type="button"
+                    onClick={() => setCondition(o.v, condThreshold)}
+                    className={`h-9 rounded-full text-[12px] font-medium transition-colors ${condType === o.v ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white ring-1 ring-black/8 hover:bg-black/5'}`}
+                  >{o.l}</button>
+                ))}
+              </div>
+              {condType !== "none" && (
+                <div className="flex items-center gap-2">
+                  <Input type="number" value={condThreshold}
+                    onChange={(e) => setCondition(condType, e.target.value)}
+                    className="form-input" />
+                  <span className="text-sm text-secondary">%</span>
+                </div>
+              )}
+            </div>
+          )}
+          {freq === "event" && [
+            { f: "is_announcement",    l: "анонс — зсув на постинговий день" },
+            { f: "is_teamwork",        l: "тімворк — тільки студійні дні" },
             { f: "series_master_only", l: "лише на батьківській події серії" },
           ].map(({f,l}) => (
-            <label key={f} className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-black/[0.03] cursor-pointer">
-              <input
-                type="checkbox"
-                checked={!!draft[f]}
+            <label key={f} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-black/[0.03] cursor-pointer">
+              <input type="checkbox" checked={!!draft[f]}
                 onChange={(e) => setDraft({ ...draft, [f]: e.target.checked })}
-                className="w-4 h-4 accent-[#1A1717]"
-              />
-              <span className="text-sm">{l}</span>
+                className="w-4 h-4 accent-[#1A1717]" />
+              <span className="text-[13px]">{l}</span>
             </label>
           ))}
+          {freq !== "event" && (
+            <label className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-black/[0.03] cursor-pointer">
+              <input type="checkbox" checked={!!draft.is_teamwork}
+                onChange={(e) => setDraft({ ...draft, is_teamwork: e.target.checked })}
+                className="w-4 h-4 accent-[#1A1717]" />
+              <span className="text-[13px]">тімворк — тільки студійні дні</span>
+            </label>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 };
@@ -3156,14 +3243,19 @@ const SettingsPage = () => {
   const handleAddReminder = async () => { if (!newReminder.name.trim()) return; try { await api.createTaskDef({ ...newReminder, column: "management", days_before: newReminder.days_before || 7 }); toast.success("додано!"); refreshSMMTasksDefinition(); refreshEvents(); setShowAddDialog(false); setNewReminder({ name: "", days_before: 7, icon: "bell" }); } catch { toast.error("помилка"); } };
   const handleSaveTaskDef = async () => {
     if (!editingReminder?.name?.trim()) return;
+    const freq = editingReminder.frequency || "event";
     const payload = {
       name: editingReminder.name,
       days_before: parseInt(editingReminder.days_before) || 0,
       column: editingReminder.column,
-      is_announcement: !!editingReminder.is_announcement,
+      frequency: freq,
       is_teamwork: !!editingReminder.is_teamwork,
-      series_master_only: !!editingReminder.series_master_only,
     };
+    if (freq === "event") {
+      payload.is_announcement = !!editingReminder.is_announcement;
+      payload.series_master_only = !!editingReminder.series_master_only;
+      payload.condition = editingReminder.condition || null;
+    }
     try { await api.editTaskDef(editingReminder.id, payload); toast.success("збережено!"); refreshSMMTasksDefinition(); refreshEvents(); setShowEditDialog(false); }
     catch { toast.error("помилка"); }
   };
@@ -3279,7 +3371,7 @@ const SettingsPage = () => {
               );
             })}
             <button className="mt-3 w-full h-11 rounded-full bg-white ring-1 ring-black/8 hover:bg-black/5 transition-colors text-sm font-medium inline-flex items-center justify-center gap-1.5"
-              onClick={() => { setNewReminder({ name: "", days_before: 7, column: "management", is_announcement: false, is_teamwork: false, series_master_only: false }); setShowAddDialog(true); }}>
+              onClick={() => { setNewReminder({ name: "", days_before: 7, column: "management", frequency: "event", is_announcement: false, is_teamwork: false, series_master_only: false, condition: null }); setShowAddDialog(true); }}>
               <Plus className="w-4 h-4" />новий таск
             </button>
           </div>
@@ -3305,7 +3397,7 @@ const SettingsPage = () => {
               );
             })}
             <button className="mt-3 w-full h-11 rounded-full bg-white ring-1 ring-black/8 hover:bg-black/5 transition-colors text-sm font-medium inline-flex items-center justify-center gap-1.5"
-              onClick={() => { setNewReminder({ name: "", days_before: 7, column: "smm", is_announcement: false, is_teamwork: false, series_master_only: false }); setShowAddDialog(true); }}>
+              onClick={() => { setNewReminder({ name: "", days_before: 7, column: "smm", frequency: "event", is_announcement: false, is_teamwork: false, series_master_only: false, condition: null }); setShowAddDialog(true); }}>
               <Plus className="w-4 h-4" />новий таск
             </button>
           </div>
@@ -3328,7 +3420,7 @@ const SettingsPage = () => {
             })}
             {(allTaskDefs.marketing || []).length === 0 && <p className="text-center text-secondary text-sm py-4">немає завдань</p>}
             <button className="mt-3 w-full h-11 rounded-full bg-white ring-1 ring-black/8 hover:bg-black/5 transition-colors text-sm font-medium inline-flex items-center justify-center gap-1.5"
-              onClick={() => { setNewReminder({ name: "", days_before: 7, column: "marketing", is_announcement: false, is_teamwork: false, series_master_only: false }); setShowAddDialog(true); }}>
+              onClick={() => { setNewReminder({ name: "", days_before: 7, column: "marketing", frequency: "event", is_announcement: false, is_teamwork: false, series_master_only: false, condition: null }); setShowAddDialog(true); }}>
               <Plus className="w-4 h-4" />новий таск
             </button>
           </div>
@@ -3350,19 +3442,25 @@ const SettingsPage = () => {
             <button className="btn-dark w-full h-11" onClick={async () => {
               if (!newReminder.name?.trim()) return;
               try {
-                await api.createTaskDef({
+                const freq = newReminder.frequency || "event";
+                const payload = {
                   name: newReminder.name,
-                  days_before: parseInt(newReminder.days_before) || 7,
+                  days_before: parseInt(newReminder.days_before) || 0,
                   column: newReminder.column || activeTab,
-                  is_announcement: !!newReminder.is_announcement,
+                  frequency: freq,
                   is_teamwork: !!newReminder.is_teamwork,
-                  series_master_only: !!newReminder.series_master_only,
-                });
+                };
+                if (freq === "event") {
+                  payload.is_announcement = !!newReminder.is_announcement;
+                  payload.series_master_only = !!newReminder.series_master_only;
+                  payload.condition = newReminder.condition || null;
+                }
+                await api.createTaskDef(payload);
                 toast.success("додано!");
                 refreshSMMTasksDefinition();
                 refreshEvents();
                 setShowAddDialog(false);
-                setNewReminder({ name: "", days_before: 7, column: activeTab, is_announcement: false, is_teamwork: false, series_master_only: false });
+                setNewReminder({ name: "", days_before: 7, column: activeTab, frequency: "event", is_announcement: false, is_teamwork: false, series_master_only: false, condition: null });
               } catch { toast.error("помилка"); }
             }}>створити</button>
           </DialogFooter>
@@ -3420,14 +3518,19 @@ const SettingsPage = () => {
             </button>
             <button className="btn-dark flex-1 h-11" onClick={async () => {
               if (!editingSMM) return;
+              const freq = editingSMM.frequency || "event";
               const payload = {
                 name: editingSMM.name,
                 days_before: parseInt(editingSMM.days_before) || 0,
                 column: editingSMM.column,
-                is_announcement: !!editingSMM.is_announcement,
+                frequency: freq,
                 is_teamwork: !!editingSMM.is_teamwork,
-                series_master_only: !!editingSMM.series_master_only,
               };
+              if (freq === "event") {
+                payload.is_announcement = !!editingSMM.is_announcement;
+                payload.series_master_only = !!editingSMM.series_master_only;
+                payload.condition = editingSMM.condition || null;
+              }
               try { await api.editTaskDef(editingSMM.id, payload); toast.success("збережено!"); refreshSMMTasksDefinition(); refreshEvents(); setShowEditSMMDialog(false); }
               catch { toast.error("помилка"); }
             }}>зберегти</button>
@@ -5236,14 +5339,20 @@ const SettingsContent = () => {
   const handleSaveTask = async () => {
     if (!editTask?.name?.trim()) return;
     try {
-      await api.editTaskDef(editTask.id, {
+      const freq = editTask.frequency || "event";
+      const payload = {
         name: editTask.name,
         days_before: parseInt(editTask.days_before) || 0,
         column: editTask.column,
-        is_announcement: !!editTask.is_announcement,
+        frequency: freq,
         is_teamwork: !!editTask.is_teamwork,
-        series_master_only: !!editTask.series_master_only,
-      });
+      };
+      if (freq === "event") {
+        payload.is_announcement = !!editTask.is_announcement;
+        payload.series_master_only = !!editTask.series_master_only;
+        payload.condition = editTask.condition || null;
+      }
+      await api.editTaskDef(editTask.id, payload);
       toast.success("збережено!");
       refreshSMMTasksDefinition();
       refreshEvents();
@@ -5265,19 +5374,25 @@ const SettingsContent = () => {
   const handleAddTask = async () => {
     if (!newTaskDraft?.name?.trim()) return;
     try {
-      await api.createTaskDef({
+      const freq = newTaskDraft.frequency || "event";
+      const payload = {
         name: newTaskDraft.name,
-        days_before: parseInt(newTaskDraft.days_before) || 7,
+        days_before: parseInt(newTaskDraft.days_before) || 0,
         column: newTaskDraft.column,
-        is_announcement: !!newTaskDraft.is_announcement,
+        frequency: freq,
         is_teamwork: !!newTaskDraft.is_teamwork,
-        series_master_only: !!newTaskDraft.series_master_only,
-      });
+      };
+      if (freq === "event") {
+        payload.is_announcement = !!newTaskDraft.is_announcement;
+        payload.series_master_only = !!newTaskDraft.series_master_only;
+        payload.condition = newTaskDraft.condition || null;
+      }
+      await api.createTaskDef(payload);
       toast.success("додано!");
       refreshSMMTasksDefinition();
       refreshEvents();
       setShowAddTaskDialog(false);
-      setNewTaskDraft({ name: "", days_before: 7, column: "management", is_announcement: false, is_teamwork: false, series_master_only: false });
+      setNewTaskDraft({ name: "", days_before: 7, column: "management", frequency: "event", is_announcement: false, is_teamwork: false, series_master_only: false, condition: null });
     } catch { toast.error("помилка"); }
   };
 

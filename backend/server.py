@@ -581,8 +581,13 @@ async def _refresh_task_overrides_cache():
     docs = await db.task_definition_overrides.find({}, {"_id": 0}).to_list(2000)
     _task_overrides = {d["task_id"]: d for d in docs if d.get("task_id")}
 
-def _apply_overrides_to_list(column: str, base_list: list) -> list:
-    """Merge base hardcoded tasks with per-task overrides + brand-new tasks."""
+def _apply_overrides_to_list(target: str, base_list: list) -> list:
+    """Merge base hardcoded tasks with per-task overrides + brand-new tasks.
+
+    target = "management" | "smm" | "marketing" → event tasks for that assignee
+             "monthly"  → monthly tasks (all assignees in one bucket)
+             "daily"    → daily tasks
+    """
     result = []
     seen_ids = set()
     for t in base_list:
@@ -601,7 +606,14 @@ def _apply_overrides_to_list(column: str, base_list: list) -> list:
         if not ov.get("is_new"):
             continue
         full = ov.get("full_definition") or {}
-        if full.get("column") == column:
+        freq = full.get("frequency", "event")
+        col = full.get("column")
+        if target in ("management", "smm", "marketing"):
+            if freq == "event" and col == target:
+                result.append({**full, "id": tid})
+        elif target == "monthly" and freq == "monthly":
+            result.append({**full, "id": tid})
+        elif target == "daily" and freq == "daily":
             result.append({**full, "id": tid})
     return result
 
@@ -1834,7 +1846,7 @@ async def get_smm_tasks_definition():
 
 # ==================== TASK DEFINITIONS — manual edits ====================
 
-EDITABLE_FIELDS = {"name", "days_before", "column", "is_announcement", "is_teamwork", "series_master_only"}
+EDITABLE_FIELDS = {"name", "days_before", "column", "is_announcement", "is_teamwork", "series_master_only", "condition", "frequency"}
 
 def _find_base_task(task_id: str):
     """Locate a hardcoded task by id; return (task_dict, column_name) or (None, None)."""
@@ -1996,23 +2008,34 @@ async def delete_task_definition(task_id: str):
 
 @api_router.post("/task-definitions")
 async def create_task_definition(payload: dict):
-    """Create a brand-new task definition (no hardcoded counterpart)."""
-    column = payload.get("column")
+    """Create a brand-new task definition (no hardcoded counterpart).
+
+    payload accepts:
+      frequency: "event" (default) | "monthly" | "daily"
+      column:    "management" | "smm" | "marketing" — assignee
+      name, days_before, condition, is_announcement, is_teamwork, series_master_only
+    """
     name = payload.get("name")
-    if not column or not name:
-        raise HTTPException(status_code=400, detail="column + name required")
-    if column not in ("management", "smm", "marketing", "monthly"):
-        raise HTTPException(status_code=400, detail="invalid column")
+    column = payload.get("column")  # assignee
+    frequency = payload.get("frequency", "event")
+    if not name or not column:
+        raise HTTPException(status_code=400, detail="name + column (assignee) required")
+    if column not in ("management", "smm", "marketing"):
+        raise HTTPException(status_code=400, detail="invalid column (must be management/smm/marketing)")
+    if frequency not in ("event", "monthly", "daily"):
+        raise HTTPException(status_code=400, detail="invalid frequency")
+
     new_id = payload.get("id") or f"custom_{uuid.uuid4().hex[:10]}"
     full = {
         "id": new_id,
         "name": name,
-        "days_before": int(payload.get("days_before", 7)),
+        "days_before": int(payload.get("days_before", 0)) if frequency != "daily" else 0,
         "column": column,
-        "condition": None,
-        "is_announcement": bool(payload.get("is_announcement", False)),
+        "frequency": frequency,
+        "condition": payload.get("condition") if frequency == "event" else None,
+        "is_announcement": bool(payload.get("is_announcement", False)) if frequency == "event" else False,
         "is_teamwork": bool(payload.get("is_teamwork", False)),
-        "series_master_only": bool(payload.get("series_master_only", False)),
+        "series_master_only": bool(payload.get("series_master_only", False)) if frequency == "event" else False,
         "weight": float(payload.get("weight", 0.1)),
         "shift_kind": payload.get("shift_kind", "easy"),
     }
@@ -2020,6 +2043,7 @@ async def create_task_definition(payload: dict):
         "id": str(uuid.uuid4()),
         "task_id": new_id,
         "column": column,
+        "frequency": frequency,
         "patch": {},
         "is_deleted": False,
         "is_new": True,
