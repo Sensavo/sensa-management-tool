@@ -151,7 +151,7 @@
 .task-icon { @apply w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0; background: rgba(230, 229, 225, 0.5); color: #1A1717; }
 .task-icon svg { width: 12px; height: 12px; }
 .task-icon.completed { background: transparent; border: 1.5px solid #9CA3AF; color: #9CA3AF; }
-.task-icon.emerald, .task-icon.kasya { background: rgba(230, 229, 225, 0.5); color: #059669; }
+/* .task-icon.emerald / .task-icon.kasya emerald color removed — kasya inherits default neutral icon style */
 .task-icon.red { background: rgba(230, 229, 225, 0.5); color: #DC2626; }
 .task-icon.orange { background: rgba(230, 229, 225, 0.5); color: #C4703D; }
 .task-icon.purple { background: rgba(230, 229, 225, 0.5); color: #9333EA; }
@@ -265,11 +265,7 @@
 .task-checkbox.checked svg { color: #9CA3AF; display: block; }
 .task-checkbox svg { display: none; width: 12px; height: 12px; }
 
-/* Emerald checkbox for special SMM tasks */
-.task-checkbox.emerald { border-color: #059669; }
-.task-checkbox.emerald.checked { background: transparent; border-color: #9CA3AF; }
-.task-checkbox.emerald.checked svg { color: #9CA3AF; }
-.task-checkbox.emerald:hover { background: rgba(5, 150, 105, 0.1); }
+/* (emerald checkbox styling removed — kasya checkbox inherits default neutral) */
 
 /* Red checkbox for red SMM tasks */
 .task-checkbox.red { border-color: #DC2626; }
