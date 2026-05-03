@@ -4292,12 +4292,17 @@ const DesktopDashboard = () => {
   
   const handleCreateSMMTask = async () => {
     if (!newSMMTask.title.trim()) return;
-    try { 
-      await api.createStandaloneTask({ ...newSMMTask, type: "smm", assignee: dialogColumnName === "SMM" ? "kasya" : dialogColumnName === "Маркетинг" ? "vo" : "karolina" }); 
-      toast.success("додано!"); 
-      refreshStandaloneTasks(); 
-      setShowSMMTaskDialog(false); 
-      setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "karolina" }); 
+    try {
+      await api.createStandaloneTask({
+        ...newSMMTask,
+        type: "smm",
+        assignee: dialogColumnName === "SMM" ? "kasya" : dialogColumnName === "Маркетинг" ? "vo" : "karolina",
+        event_id: newSMMTask.event_id || "",
+      });
+      toast.success("додано!");
+      refreshStandaloneTasks();
+      setShowSMMTaskDialog(false);
+      setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "karolina", event_id: "" });
     }
     catch { toast.error("помилка"); }
   };
@@ -4456,7 +4461,7 @@ const DesktopDashboard = () => {
             onEventClick={handleEventClick}
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
-            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "kasya" }); setDialogColumnName("SMM"); setShowSMMTaskDialog(true); }}
+            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "kasya", event_id: "" }); setDialogColumnName("SMM"); setShowSMMTaskDialog(true); }}
             overdueExpanded={kasyaOverdue}
             setOverdueExpanded={setKasyaOverdue}
             soonExpanded={kasyaSoon}
@@ -4476,7 +4481,7 @@ const DesktopDashboard = () => {
             onEventClick={handleEventClick}
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
-            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "karolina" }); setDialogColumnName("Маркетинг"); setShowSMMTaskDialog(true); }}
+            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "karolina", event_id: "" }); setDialogColumnName("Маркетинг"); setShowSMMTaskDialog(true); }}
             overdueExpanded={voOverdue}
             setOverdueExpanded={setVoOverdue}
             soonExpanded={voSoon}
@@ -4962,32 +4967,130 @@ const DesktopDashboard = () => {
       </FullscreenModal>
       
       <Dialog open={showSMMTaskDialog} onOpenChange={setShowSMMTaskDialog}>
-        <DialogContent className="dialog-content sm:max-w-[380px]">
-          <DialogHeader><DialogTitle className="text-xs font-medium">нове завдання для {dialogColumnName}</DialogTitle></DialogHeader>
-          {(() => { const PALETTE = [{c:'karolina',bg:'#1A1717'},{c:'red',bg:'#EF4444'},{c:'purple',bg:'#9333EA'},{c:'kasya',bg:'#059669'},{c:'blue',bg:'#3B82F6'},{c:'orange',bg:'#C4703D'},{c:'pink',bg:'#EC4899'},{c:'teal',bg:'#14B8A6'}]; const COLOR_MAP = {'karolina':'#1A1717','red':'#EF4444','purple':'#9333EA','kasya':'#059669','blue':'#3B82F6','orange':'#C4703D','pink':'#EC4899','teal':'#14B8A6'}; const selectedHex = COLOR_MAP[newSMMTask.color] || '#1A1717'; return (
-          <div className="space-y-4 pt-2">
-            <Input placeholder="що треба зробити?" value={newSMMTask.title} onChange={(e) => setNewSMMTask({ ...newSMMTask, title: e.target.value })} className="form-input text-xs h-8" />
-            <div className="flex items-center gap-3">
-              <Button type="button" variant="outline" className="form-input justify-start w-1/2 h-8 text-xs" onClick={() => setShowSMMCalendar(true)}>
-                {newSMMTask.date === todayStr ? "сьогодні" : formatDateUkrainian(newSMMTask.date)}
-              </Button>
-              <div className="flex items-center gap-1.5 flex-1 justify-end">
-                {PALETTE.map(({c,bg}) => (
-                  <button key={c} type="button" onClick={() => setNewSMMTask({...newSMMTask, color: c})}
-                    className={`color-circle ${(newSMMTask.color === c || (c==='karolina' && (!newSMMTask.color || newSMMTask.color==='standard'))) ? 'selected' : ''}`}
-                    style={{background:bg, '--circle-color': bg}} />
-                ))}
-              </div>
-            </div>
-            <div className="grid grid-cols-7 gap-2 justify-items-center">
-              {SMM_TASK_ICONS.map(opt => (
-                <button key={opt.value} type="button" className={`icon-selector-btn ${newSMMTask.icon === opt.value ? "selected" : ""}`} style={{color: selectedHex}} onClick={() => setNewSMMTask({ ...newSMMTask, icon: opt.value })}>
-                  <opt.Icon className="w-4 h-4" />
+        <DialogContent className="sm:max-w-[420px] !p-5 sm:!p-6">
+          {(() => {
+            const PALETTE = [
+              {c:'karolina',bg:'#1A1717'}, {c:'red',bg:'#EF4444'}, {c:'purple',bg:'#9333EA'},
+              {c:'kasya',bg:'#059669'}, {c:'blue',bg:'#3B82F6'}, {c:'orange',bg:'#C4703D'},
+              {c:'pink',bg:'#EC4899'}, {c:'teal',bg:'#14B8A6'},
+            ];
+            const COLOR_MAP = Object.fromEntries(PALETTE.map(p => [p.c, p.bg]));
+            const selectedHex = COLOR_MAP[newSMMTask.color] || '#1A1717';
+            const today = new Date();
+            const dt = (offset) => { const d = new Date(today); d.setDate(d.getDate() + offset); return formatDateLocal(d); };
+            const dateChips = [
+              { label: "сьогодні", value: dt(0) },
+              { label: "завтра",  value: dt(1) },
+              { label: "+3д",     value: dt(3) },
+              { label: "+1 тиж",  value: dt(7) },
+            ];
+            const isCustomDate = !dateChips.some(c => c.value === newSMMTask.date);
+            return (
+              <>
+                <div className="flex items-baseline gap-3 mb-4 pr-8">
+                  <DialogTitle className="text-[20px] font-semibold tracking-tight">нове завдання</DialogTitle>
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#1A1717]/55">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: selectedHex }} />
+                    {dialogColumnName}
+                  </span>
+                </div>
+
+                <Input
+                  autoFocus
+                  placeholder="що треба зробити?"
+                  value={newSMMTask.title}
+                  onChange={(e) => setNewSMMTask({ ...newSMMTask, title: e.target.value })}
+                  onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && newSMMTask.title?.trim()) handleCreateSMMTask(); }}
+                  className="w-full h-12 px-4 rounded-xl bg-white border-2 border-transparent text-[15px] placeholder:text-[#1A1717]/35 focus:outline-none focus:border-[#1A1717] transition-all"
+                />
+
+                <div className="mt-3 flex gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1 scrollbar-hide">
+                  {dateChips.map(chip => {
+                    const sel = newSMMTask.date === chip.value;
+                    return (
+                      <button key={chip.value} type="button"
+                        onClick={() => setNewSMMTask({ ...newSMMTask, date: chip.value })}
+                        className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-all ${
+                          sel ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
+                        }`}
+                      >{chip.label}</button>
+                    );
+                  })}
+                  <button type="button"
+                    onClick={() => setShowSMMCalendar(true)}
+                    className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-all inline-flex items-center gap-1.5 ${
+                      isCustomDate ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
+                    }`}
+                  >
+                    <CalendarIcon className="w-3 h-3" />
+                    {isCustomDate ? formatDateUkrainian(newSMMTask.date) : 'інша'}
+                  </button>
+                </div>
+
+                <div className="mt-4 p-3 rounded-2xl bg-white ring-1 ring-black/[0.06] flex gap-3">
+                  <div className="flex-1 grid grid-cols-7 gap-1.5">
+                    {SMM_TASK_ICONS.map(opt => {
+                      const sel = newSMMTask.icon === opt.value;
+                      return (
+                        <button key={opt.value} type="button"
+                          onClick={() => setNewSMMTask({ ...newSMMTask, icon: opt.value })}
+                          className="aspect-square rounded-xl flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                          style={{
+                            background: sel ? selectedHex : 'transparent',
+                            color: sel ? '#FFFFFF' : selectedHex,
+                            boxShadow: sel ? `0 4px 10px ${selectedHex}40` : 'none',
+                          }}
+                        ><opt.Icon className="w-4 h-4" /></button>
+                      );
+                    })}
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 self-center pl-3 border-l border-black/[0.06]">
+                    {PALETTE.map(({c,bg}) => {
+                      const sel = newSMMTask.color === c || (c === 'karolina' && (!newSMMTask.color || newSMMTask.color === 'standard'));
+                      return (
+                        <button key={c} type="button"
+                          onClick={() => setNewSMMTask({...newSMMTask, color: c})}
+                          className="rounded-full transition-transform hover:scale-110 active:scale-95 flex items-center justify-center"
+                          style={{ width: 18, height: 18 }}
+                          aria-label={c}
+                        >
+                          <span className="rounded-full block"
+                            style={{
+                              width: sel ? 12 : 14, height: sel ? 12 : 14, background: bg,
+                              boxShadow: sel ? `0 0 0 2px #FFFFFF, 0 0 0 3.5px ${bg}` : 'none',
+                            }} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <select
+                  value={newSMMTask.event_id || ""}
+                  onChange={(e) => setNewSMMTask({ ...newSMMTask, event_id: e.target.value })}
+                  className="mt-3 w-full h-10 px-3 rounded-xl bg-white border-2 border-transparent text-[13px] text-[#1A1717]/70 focus:outline-none focus:border-[#1A1717] transition-all cursor-pointer"
+                >
+                  <option value="">— не прикріплена до події —</option>
+                  {[...events]
+                    .filter(e => !e.cancelled)
+                    .sort((a, b) => new Date(a.date) - new Date(b.date))
+                    .map(ev => {
+                      const d = new Date(ev.date);
+                      const dayLabel = `${d.getDate()} ${UK_MONTHS_NOMINATIVE[d.getMonth()]}`;
+                      return <option key={ev.id} value={ev.id}>{dayLabel} — {ev.title}</option>;
+                    })}
+                </select>
+
+                <button
+                  onClick={handleCreateSMMTask}
+                  disabled={!newSMMTask.title?.trim()}
+                  className="mt-4 w-full h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-[14px] transition-all hover:bg-[#2a2424] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 active:scale-[0.98]"
+                >
+                  створити <ChevronRight className="w-4 h-4" />
                 </button>
-              ))}
-            </div>
-          </div>); })()}
-          <DialogFooter className="mt-4"><button className="btn-dark w-full h-8 text-xs" onClick={handleCreateSMMTask}>створити</button></DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
       
