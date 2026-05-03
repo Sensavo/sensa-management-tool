@@ -5131,7 +5131,7 @@ const DesktopDashboard = () => {
       
       {/* Edit Task Dialog (both standalone and event-based) */}
       <Dialog open={showEditStandaloneDialog} onOpenChange={setShowEditStandaloneDialog}>
-        <DialogContent className="dialog-content sm:max-w-[380px]">
+        <DialogContent className="sm:max-w-[420px] !p-5 sm:!p-6">
           {editingStandaloneTask && (() => {
             const getAssigneeName = () => {
               const a = editingStandaloneTask.assignee;
@@ -5142,65 +5142,127 @@ const DesktopDashboard = () => {
             const assigneeName = getAssigneeName();
             const isStandalone = editingStandaloneTask._isStandalone !== false;
             const iconSet = TASK_ICONS;
-            const COLOR_MAP = {'karolina':'#1A1717','red':'#EF4444','purple':'#9333EA','kasya':'#059669','blue':'#3B82F6','orange':'#C4703D','pink':'#EC4899','teal':'#14B8A6'};
+            const PALETTE = [
+              {c:'karolina',bg:'#1A1717'}, {c:'red',bg:'#EF4444'}, {c:'purple',bg:'#9333EA'},
+              {c:'kasya',bg:'#059669'}, {c:'blue',bg:'#3B82F6'}, {c:'orange',bg:'#C4703D'},
+              {c:'pink',bg:'#EC4899'}, {c:'teal',bg:'#14B8A6'},
+            ];
+            const COLOR_MAP = Object.fromEntries(PALETTE.map(p => [p.c, p.bg]));
             const selectedHex = COLOR_MAP[editingStandaloneTask.color] || '#1A1717';
-            const PALETTE = [{c:'karolina',bg:'#1A1717'},{c:'red',bg:'#EF4444'},{c:'purple',bg:'#9333EA'},{c:'kasya',bg:'#059669'},{c:'blue',bg:'#3B82F6'},{c:'orange',bg:'#C4703D'},{c:'pink',bg:'#EC4899'},{c:'teal',bg:'#14B8A6'}];
+            const today = new Date();
+            const dt = (offset) => { const d = new Date(today); d.setDate(d.getDate() + offset); return formatDateLocal(d); };
+            const dateChips = [
+              { label: "сьогодні", value: dt(0) },
+              { label: "завтра",  value: dt(1) },
+              { label: "+3д",     value: dt(3) },
+              { label: "+1 тиж",  value: dt(7) },
+            ];
+            const isCustomDate = !dateChips.some(c => c.value === editingStandaloneTask.date);
             return (
               <>
-                <DialogHeader className="pb-1">
-                  <DialogTitle className="text-xs font-medium flex items-center justify-between" data-testid="edit-task-title">
-                    <span>завдання</span>
-                    <span className="relative inline-flex items-center">
-                      <select data-testid="assignee-dropdown" value={assigneeName}
-                        onChange={(e) => {
-                          const name = e.target.value;
-                          if (name === 'SMM') setEditingStandaloneTask({...editingStandaloneTask, assignee: 'kasya'});
-                          else if (name === 'Менеджмент') setEditingStandaloneTask({...editingStandaloneTask, assignee: 'karolina'});
-                          else setEditingStandaloneTask({...editingStandaloneTask, assignee: 'vo'});
-                        }}
-                        className="appearance-none bg-transparent font-medium cursor-pointer pr-4 outline-none border-none text-right" style={{fontSize: 'inherit'}}>
-                        <option value="SMM">SMM</option>
-                        <option value="Менеджмент">Менеджмент</option>
-                        <option value="Маркетинг">Маркетинг</option>
-                      </select>
-                      <ChevronRight className="w-3 h-3 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-secondary" />
-                    </span>
-                  </DialogTitle>
-                  {!isStandalone && editingStandaloneTask.eventTitle && (
-                    <p className="text-xs text-secondary mt-0.5">{editingStandaloneTask.eventTitle}</p>
-                  )}
-                </DialogHeader>
-                <div className="space-y-4 pt-2">
-                  <Input placeholder="що треба зробити?" value={editingStandaloneTask.title} onChange={(e) => setEditingStandaloneTask({ ...editingStandaloneTask, title: e.target.value })} className="form-input text-xs h-8" data-testid="edit-task-input" />
-                  <div className="flex items-center gap-3">
-                    <Button type="button" variant="outline" className="form-input justify-start w-1/2 h-8 text-xs" onClick={() => setShowEditCalendar(true)}>
-                      {editingStandaloneTask.date === todayStr ? "сьогодні" : formatDateUkrainian(editingStandaloneTask.date)}
-                    </Button>
-                    <div className="flex items-center gap-1.5 flex-1 justify-end">
-                      {PALETTE.map(({c,bg}) => (
-                        <button key={c} type="button" onClick={() => setEditingStandaloneTask({...editingStandaloneTask, color: c})}
-                          className={`color-circle ${(editingStandaloneTask.color === c || (c==='karolina' && (!editingStandaloneTask.color || editingStandaloneTask.color==='standard'))) ? 'selected' : ''}`}
-                          style={{background:bg, '--circle-color': bg}} />
-                      ))}
-                    </div>
+                {/* Header inline: title + assignee chip selector */}
+                <div className="flex items-baseline gap-3 mb-1 pr-8">
+                  <DialogTitle className="text-[20px] font-semibold tracking-tight" data-testid="edit-task-title">завдання</DialogTitle>
+                  <span className="relative inline-flex items-center text-[11px] font-medium text-[#1A1717]/55">
+                    <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: selectedHex }} />
+                    <select data-testid="assignee-dropdown" value={assigneeName}
+                      onChange={(e) => {
+                        const name = e.target.value;
+                        if (name === 'SMM') setEditingStandaloneTask({...editingStandaloneTask, assignee: 'kasya'});
+                        else if (name === 'Менеджмент') setEditingStandaloneTask({...editingStandaloneTask, assignee: 'karolina'});
+                        else setEditingStandaloneTask({...editingStandaloneTask, assignee: 'vo'});
+                      }}
+                      className="appearance-none bg-transparent cursor-pointer outline-none border-none pr-3 text-[11px] uppercase tracking-wider"
+                    >
+                      <option value="SMM">SMM</option>
+                      <option value="Менеджмент">Менеджмент</option>
+                      <option value="Маркетинг">Маркетинг</option>
+                    </select>
+                    <ChevronDown className="w-3 h-3 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </span>
+                </div>
+                {!isStandalone && editingStandaloneTask.eventTitle && (
+                  <p className="text-xs text-secondary mb-3 truncate">{editingStandaloneTask.eventTitle}</p>
+                )}
+
+                <Input
+                  autoFocus
+                  placeholder="що треба зробити?"
+                  value={editingStandaloneTask.title}
+                  onChange={(e) => setEditingStandaloneTask({ ...editingStandaloneTask, title: e.target.value })}
+                  className="mt-3 w-full h-12 px-4 rounded-xl bg-white border-2 border-transparent text-[15px] placeholder:text-[#1A1717]/35 focus:outline-none focus:border-[#1A1717] transition-all"
+                  data-testid="edit-task-input"
+                />
+
+                <div className="mt-3 flex gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1 scrollbar-hide">
+                  {dateChips.map(chip => {
+                    const sel = editingStandaloneTask.date === chip.value;
+                    return (
+                      <button key={chip.value} type="button"
+                        onClick={() => setEditingStandaloneTask({ ...editingStandaloneTask, date: chip.value })}
+                        className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-all ${
+                          sel ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
+                        }`}
+                      >{chip.label}</button>
+                    );
+                  })}
+                  <button type="button"
+                    onClick={() => setShowEditCalendar(true)}
+                    className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-all inline-flex items-center gap-1.5 ${
+                      isCustomDate ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
+                    }`}
+                  >
+                    <CalendarIcon className="w-3 h-3" />
+                    {isCustomDate ? formatDateUkrainian(editingStandaloneTask.date) : 'інша'}
+                  </button>
+                </div>
+
+                <div className="mt-4 p-3 rounded-2xl bg-white ring-1 ring-black/[0.06] flex gap-3">
+                  <div className="flex-1 grid grid-cols-7 gap-1.5">
+                    {iconSet.map(opt => {
+                      const sel = editingStandaloneTask.icon === opt.value;
+                      return (
+                        <button key={opt.value} type="button"
+                          onClick={() => setEditingStandaloneTask({ ...editingStandaloneTask, icon: opt.value })}
+                          className="aspect-square rounded-xl flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                          style={{
+                            background: sel ? selectedHex : 'transparent',
+                            color: sel ? '#FFFFFF' : selectedHex,
+                            boxShadow: sel ? `0 4px 10px ${selectedHex}40` : 'none',
+                          }}
+                        ><opt.Icon className="w-4 h-4" /></button>
+                      );
+                    })}
                   </div>
-                  <div className="grid grid-cols-7 gap-2 justify-items-center">
-                    {iconSet.map(opt => (
-                      <button key={opt.value} type="button"
-                        className={`icon-selector-btn ${editingStandaloneTask.icon === opt.value ? "selected" : ""}`}
-                        style={{color: selectedHex}}
-                        onClick={() => setEditingStandaloneTask({ ...editingStandaloneTask, icon: opt.value })}>
-                        <opt.Icon className="w-4 h-4" />
-                      </button>
-                    ))}
+                  <div className="grid grid-cols-2 gap-1.5 self-center pl-3 border-l border-black/[0.06]">
+                    {PALETTE.map(({c,bg}) => {
+                      const sel = editingStandaloneTask.color === c || (c === 'karolina' && (!editingStandaloneTask.color || editingStandaloneTask.color === 'standard'));
+                      return (
+                        <button key={c} type="button"
+                          onClick={() => setEditingStandaloneTask({...editingStandaloneTask, color: c})}
+                          className="rounded-full transition-transform hover:scale-110 active:scale-95 flex items-center justify-center"
+                          style={{ width: 18, height: 18 }}
+                          aria-label={c}
+                        >
+                          <span className="rounded-full block"
+                            style={{
+                              width: sel ? 12 : 14, height: sel ? 12 : 14, background: bg,
+                              boxShadow: sel ? `0 0 0 2px #FFFFFF, 0 0 0 3.5px ${bg}` : 'none',
+                            }} />
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-                <DialogFooter className="mt-4 flex gap-2">
+
+                <div className="mt-4 flex gap-2">
                   {isStandalone && (
-                    <button className="flex-1 h-8 text-xs rounded-full border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-1" data-testid="edit-task-delete" onClick={async () => { try { await api.deleteStandaloneTask(editingStandaloneTask.id); toast.success("видалено!"); refreshStandaloneTasks(); setShowEditStandaloneDialog(false); setEditingStandaloneTask(null); } catch { toast.error("помилка"); } }}><Trash2 className="w-3 h-3" />видалити</button>
+                    <button className="flex-1 h-12 rounded-full border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5 text-sm font-medium" data-testid="edit-task-delete" onClick={async () => { try { await api.deleteStandaloneTask(editingStandaloneTask.id); toast.success("видалено!"); refreshStandaloneTasks(); setShowEditStandaloneDialog(false); setEditingStandaloneTask(null); } catch { toast.error("помилка"); } }}>
+                      <Trash2 className="w-4 h-4" />видалити
+                    </button>
                   )}
-                  <button className="btn-dark flex-1 h-8 text-xs" data-testid="edit-task-save" onClick={handleSaveStandaloneTask}>зберегти</button>
-                </DialogFooter>
+                  <button className="flex-1 h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-[14px] transition-all hover:bg-[#2a2424] active:scale-[0.98]" data-testid="edit-task-save" onClick={handleSaveStandaloneTask}>зберегти</button>
+                </div>
               </>
             );
           })()}
