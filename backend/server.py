@@ -1165,21 +1165,69 @@ async def update_event(event_id: str, event_data: EventUpdate):
     
     return updated
 
+async def _create_cancellation_tasks(event: dict, series_count: int = 0) -> None:
+    """Generate the manual follow-up tasks that fire when an event is cancelled.
+
+    External cleanup (Altegio activity delete + Google Calendar event delete)
+    happens automatically in the cancellation handlers, so no task is created
+    for that. We only create the human-loop work:
+
+    1. Notify the master that their event is off.
+    2. Refund participants or move payments to deposit.
+
+    Both go to Karolina (management column), dated today, linked to the
+    cancelled event so the popup can show context.
+    """
+    title = event.get("title") or "подія"
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    suffix = f" (та ще {series_count - 1} в серії)" if series_count > 1 else ""
+
+    tasks = [
+        {
+            "title": f"повідомити майстра про скасування «{title}»{suffix}",
+            "icon": "bell",
+        },
+        {
+            "title": f"повідомити учасників «{title}» — повернути кошти або занести на депозит",
+            "icon": "wallet",
+        },
+    ]
+
+    for spec in tasks:
+        standalone = StandaloneTask(
+            title=spec["title"],
+            date=today_str,
+            icon=spec["icon"],
+            type="regular",
+            color="karolina",
+            assignee="karolina",
+            event_id=event.get("id") or "",
+        )
+        await db.standalone_tasks.insert_one(standalone.model_dump())
+
+
 @api_router.patch("/events/{event_id}", response_model=Event)
 async def patch_event(event_id: str, event_data: dict):
     """Patch event - used for cancel/restore functionality"""
     existing = await db.events.find_one({"id": event_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Event not found")
-    
+
     update_dict = {}
-    
+
     # Handle cancellation
     if event_data.get("cancelled") == True:
         update_dict["cancelled"] = True
         # Clear all reminders and tasks when cancelling
         update_dict["reminders"] = {}
         update_dict["smm_tasks"] = {}
+
+        # Spawn manual follow-up tasks (notify master, handle refunds).
+        # External cleanup (Altegio + Google Calendar) is automated below.
+        try:
+            await _create_cancellation_tasks(existing)
+        except Exception as e:
+            logging.error(f"Failed to create cancellation tasks for {event_id}: {e}")
         
         # Delete from Google Calendar if exists
         google_calendar_event_id = existing.get("google_calendar_event_id")
@@ -1283,6 +1331,15 @@ async def cancel_event_series(event_id: str):
                 await db.events.update_one({"id": tid}, {"$set": {"altegio_activity_id": None}})
             except Exception as e:
                 logging.error(f"Failed to delete series instance {tid} from Altegio: {e}")
+
+    # One set of follow-up tasks for the whole series (master event used as
+    # the anchor; suffix indicates additional instances).
+    if cancelled_ids:
+        anchor = next((t for t in targets if t["id"] == cancelled_ids[0]), targets[0])
+        try:
+            await _create_cancellation_tasks(anchor, series_count=len(cancelled_ids))
+        except Exception as e:
+            logging.error(f"Failed to create cancellation tasks for series {master_id}: {e}")
 
     return {"cancelled_count": len(cancelled_ids), "cancelled_ids": cancelled_ids, "master_id": master_id}
 
