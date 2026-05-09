@@ -1396,7 +1396,7 @@ async def delete_event(event_id: str):
     result = await db.events.delete_one({"id": event_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Event not found")
-    
+
     # Delete from Altegio if linked
     try:
         altegio_id = existing.get("altegio_activity_id") if existing else None
@@ -1404,7 +1404,26 @@ async def delete_event(event_id: str):
             await altegio_client.delete_activity(altegio_id)
     except Exception as e:
         logging.error(f"Failed to delete event from Altegio: {e}")
-    
+
+    # Delete from Google Calendar if linked
+    try:
+        gcal_id = existing.get("google_calendar_event_id") if existing else None
+        if gcal_id:
+            service = await get_google_calendar_service()
+            if service:
+                service.events().delete(calendarId='primary', eventId=gcal_id).execute()
+    except Exception as e:
+        logging.error(f"Failed to delete event from Google Calendar: {e}")
+
+    # Spawn the same manual follow-up tasks as a soft cancel — deleting a
+    # future event does not relieve the obligation to notify the master and
+    # handle participant refunds.
+    if existing:
+        try:
+            await _create_cancellation_tasks(existing)
+        except Exception as e:
+            logging.error(f"Failed to create cancellation tasks for deleted {event_id}: {e}")
+
     return {"message": "Event deleted"}
 
 # ==================== STANDALONE TASKS API ====================
