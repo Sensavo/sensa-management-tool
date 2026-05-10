@@ -436,12 +436,16 @@ const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, 
   };
   
   return (
-    <div className={`task-item cursor-pointer ${localCompleted ? "opacity-40" : ""} ${task.isOverlapping ? "ring-1 ring-red-400 bg-red-50/50" : ""}`} onClick={handleClick} data-testid={`task-item-${task.task_id || task.event_id}`}>
+    <div className={`task-item cursor-pointer ${localCompleted ? "opacity-40" : ""}`} onClick={handleClick} data-testid={`task-item-${task.task_id || task.event_id}`}>
       <div className={`task-icon ${colorClass}`}><IconComponent /></div>
       <div className="flex-1 min-w-0 pr-2">
-        <p className={`text-sm font-medium truncate ${task.isOverlapping ? "text-red-600" : ""}`}>{task.task_name}</p>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <p className="text-sm font-medium truncate">{task.task_name}</p>
+          {task.isOverlapping && (
+            <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full whitespace-nowrap" title="на цей день є інший анонс">перетин</span>
+          )}
+        </div>
         {!task.is_standalone && task.event_title && <p className="text-xs text-secondary lowercase truncate">{task.event_title}</p>}
-        {task.isOverlapping && <p className="text-[10px] text-red-500 font-medium">перетин анонсів!</p>}
         {task.target_month && <p className="text-xs text-gray-400">{UK_MONTHS[parseInt(task.target_month.split('-')[1]) - 1]}</p>}
       </div>
       {showDate && <span className="text-secondary text-xs whitespace-nowrap ml-1">{formatDateUkrainian(task.task_date)}</span>}
