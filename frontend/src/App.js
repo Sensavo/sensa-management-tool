@@ -407,7 +407,7 @@ const TaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, showDate = 
 
 // SMM Task Item
 // SMM Task Item with color support
-const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, onTaskEdit, showDate = false, smmTasksDefinition = [] }) => {
+const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, onTaskEdit, onOverlapClick, showDate = false, smmTasksDefinition = [] }) => {
   // Determine icon - text work tasks get file icon
   const isTextWork = TEXT_WORK_SMM_TASKS.has(task.task_id);
   const iconName = task.icon || (task.is_standalone 
@@ -442,7 +442,16 @@ const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, 
         <div className="flex items-center gap-1.5 min-w-0">
           <p className="text-sm font-medium truncate">{task.task_name}</p>
           {task.isOverlapping && (
-            <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full whitespace-nowrap" title="на цей день є інший анонс">перетин</span>
+            onOverlapClick ? (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onOverlapClick(task); }}
+                className="text-[10px] bg-red-100 text-red-600 hover:bg-red-200 px-1.5 py-0.5 rounded-full whitespace-nowrap transition-colors"
+                title="клікни щоб перенести"
+              >перетин</button>
+            ) : (
+              <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full whitespace-nowrap" title="на цей день є інший анонс">перетин</span>
+            )
           )}
         </div>
         {!task.is_standalone && task.event_title && <p className="text-xs text-secondary lowercase truncate">{task.event_title}</p>}
@@ -453,6 +462,155 @@ const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, 
         <Check className="w-4 h-4" />
       </button>
     </div>
+  );
+};
+
+// Dialog that opens when user clicks the "перетин" badge.
+// Suggests less-busy nearby dates to move the announcement to.
+const OverlapResolverDialog = ({ task, open, onClose, onResolved }) => {
+  const { events, standaloneTasks, smmTasksDefinition } = useApp();
+  const currentDate = task?.task_date || task?.reminder_date;
+  const taskName = task?.task_name || task?.reminder_name || "";
+  const eventTitle = task?.event_title || "";
+
+  // Tally tasks scheduled on a given date across all columns.
+  const computeLoad = useCallback((dateStr) => {
+    let announcements = 0, smm = 0, mgmt = 0, mktg = 0;
+    const annIds = new Set((smmTasksDefinition || []).filter(s => s.is_announcement).map(s => s.id));
+    (events || []).forEach(e => {
+      if (e.cancelled || e.archived) return;
+      Object.entries(e.smm_tasks || {}).forEach(([tid, d]) => {
+        if (d === dateStr) {
+          smm++;
+          if (annIds.has(tid)) announcements++;
+        }
+      });
+      Object.values(e.reminders || {}).forEach(d => { if (d === dateStr) mgmt++; });
+      Object.values(e.marketing_tasks || {}).forEach(d => { if (d === dateStr) mktg++; });
+    });
+    (standaloneTasks || []).forEach(t => {
+      if (t.date === dateStr && !t.completed) {
+        if (t.assignee === 'kasya') smm++;
+        else if (t.assignee === 'vo') mktg++;
+        else mgmt++;
+      }
+    });
+    return { announcements, smm, mgmt, mktg };
+  }, [events, standaloneTasks, smmTasksDefinition]);
+
+  const suggestions = useMemo(() => {
+    if (!currentDate) return [];
+    const todayD = new Date(); todayD.setHours(0, 0, 0, 0);
+    const baseD = new Date(currentDate); baseD.setHours(0, 0, 0, 0);
+    const out = [];
+    for (let offset = -7; offset <= 14; offset++) {
+      const d = new Date(baseD); d.setDate(d.getDate() + offset);
+      if (d < todayD) continue;
+      const dStr = formatDateLocal(d);
+      if (dStr === currentDate) continue;
+      const load = computeLoad(dStr);
+      // Score: free-of-announcements is the dominant factor; then SMM density;
+      // then proximity to original date.
+      const score = (load.announcements === 0 ? 1000 : -1000 * load.announcements)
+                  - load.smm * 8
+                  - load.mgmt * 2
+                  - Math.abs(offset) * 3;
+      out.push({ date: dStr, dateObj: d, load, score, offset });
+    }
+    return out.sort((a, b) => b.score - a.score).slice(0, 7);
+  }, [currentDate, computeLoad]);
+
+  const currentLoad = currentDate ? computeLoad(currentDate) : null;
+
+  const handleMove = async (newDate) => {
+    if (!task) return;
+    try {
+      if (task.is_standalone) {
+        // Standalone PATCH requires the full body — find the source task.
+        const src = (standaloneTasks || []).find(t => t.id === (task.task_id || task.event_id));
+        if (!src) throw new Error('standalone task not found');
+        await axios.patch(`${API}/tasks/standalone/${src.id}`, {
+          title: src.title,
+          date: newDate,
+          icon: src.icon,
+          type: src.type,
+          color: src.color,
+          assignee: src.assignee,
+        });
+      } else {
+        await axios.patch(`${API}/events/${task.event_id}/tasks/${task.task_id}`, { date: newDate });
+      }
+      toast.success('перенесено!');
+      if (onResolved) onResolved();
+      onClose();
+    } catch (e) {
+      console.error(e);
+      toast.error('не вдалось перенести');
+    }
+  };
+
+  const dayShort = (d) => ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'][d.getDay()];
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="dialog-content max-w-md">
+        <DialogHeader>
+          <DialogTitle>перенести анонс</DialogTitle>
+          <DialogDescription>
+            «{taskName}»{eventTitle ? ` · ${eventTitle}` : ''}
+          </DialogDescription>
+        </DialogHeader>
+
+        {currentLoad && (
+          <div className="mt-3 p-3 rounded-2xl bg-red-50 border border-red-100">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-red-600 font-semibold">зараз</p>
+                <p className="text-sm font-medium text-[#1A1717]">{formatDateUkrainian(currentDate)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-red-600 font-medium">{currentLoad.announcements} анонсів</p>
+                <p className="text-[11px] text-secondary">{currentLoad.smm} SMM · {currentLoad.mgmt} мгмт{currentLoad.mktg ? ` · ${currentLoad.mktg} мктг` : ''}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <p className="text-[10px] uppercase tracking-wide text-secondary font-semibold mt-4 mb-1">рекомендовані дні</p>
+        <div className="space-y-1 max-h-[50vh] overflow-y-auto -mx-2 px-2">
+          {suggestions.length === 0 && (
+            <p className="text-sm text-secondary py-4 text-center">немає вільних днів у найближчі 2 тижні</p>
+          )}
+          {suggestions.map(s => {
+            const free = s.load.announcements === 0;
+            return (
+              <button
+                key={s.date}
+                onClick={() => handleMove(s.date)}
+                className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-black/[0.04] transition-colors text-left"
+              >
+                <div className="flex-shrink-0 w-11 text-center">
+                  <div className="text-[10px] text-secondary uppercase tracking-wide">{dayShort(s.dateObj)}</div>
+                  <div className="text-base font-semibold leading-tight">{s.dateObj.getDate()}</div>
+                  <div className="text-[9px] text-secondary uppercase">{UK_MONTHS_SHORT[s.dateObj.getMonth()]}</div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  {free ? (
+                    <span className="inline-block text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">вільно для анонсу</span>
+                  ) : (
+                    <span className="inline-block text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{s.load.announcements} анонсів</span>
+                  )}
+                  <p className="text-[11px] text-secondary mt-0.5">
+                    {s.load.smm} SMM · {s.load.mgmt} мгмт{s.load.mktg ? ` · ${s.load.mktg} мктг` : ''}
+                  </p>
+                </div>
+                <span className="text-xs text-secondary">→</span>
+              </button>
+            );
+          })}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 
@@ -3707,7 +3865,7 @@ const DraggableTask = ({ task, children }) => {
 };
 
 // Team Column Component - reusable for КАСЯ, КАРОЛІНА, ВО
-const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick, onStandaloneClick, onTaskEdit, onAddClick, overdueExpanded, setOverdueExpanded, soonExpanded, setSoonExpanded, smmTasksDefinition, columnAssignee, announcementOverlaps = {} }) => {
+const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick, onStandaloneClick, onTaskEdit, onAddClick, overdueExpanded, setOverdueExpanded, soonExpanded, setSoonExpanded, smmTasksDefinition, columnAssignee, announcementOverlaps = {}, onOverlapClick }) => {
   const { setNodeRef, isOver } = useDroppable({ id: columnAssignee || 'unknown' });
   const TaskRenderer = ({ task }) => {
     const colAssignee = columnAssignee || (colorClass === 'emerald' ? 'kasya' : colorClass === 'orange' ? 'vo' : 'karolina');
@@ -3731,6 +3889,7 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
           onEventClick={onEventClick}
           onStandaloneClick={onStandaloneClick}
           onTaskEdit={onTaskEdit}
+          onOverlapClick={onOverlapClick}
           smmTasksDefinition={smmTasksDefinition}
         />
       </DraggableTask>
@@ -3829,7 +3988,8 @@ const DesktopDashboard = () => {
   const [showEditCalendar, setShowEditCalendar] = useState(false);
   const [activeTab, setActiveTab] = useState('team'); // 'team' or 'events'
   const [announcementOverlaps, setAnnouncementOverlaps] = useState({});
-  
+  const [overlapResolverTask, setOverlapResolverTask] = useState(null);
+
   // Fetch announcement overlaps
   useEffect(() => {
     axios.get(`${API}/smm/announcement-overlaps`).then(r => setAnnouncementOverlaps(r.data || {})).catch(() => {});
@@ -4423,8 +4583,9 @@ const DesktopDashboard = () => {
             smmTasksDefinition={smmTasksDefinition}
             columnAssignee="kasya"
             announcementOverlaps={announcementOverlaps}
+            onOverlapClick={setOverlapResolverTask}
           />
-          
+
           {/* МАРКЕТИНГ Column (orange) - Third */}
           <TeamColumn 
             name="МАРКЕТИНГ"
@@ -5472,6 +5633,18 @@ const DesktopDashboard = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <OverlapResolverDialog
+        task={overlapResolverTask}
+        open={!!overlapResolverTask}
+        onClose={() => setOverlapResolverTask(null)}
+        onResolved={() => {
+          refreshEvents();
+          refreshStandaloneTasks();
+          // Refresh overlap map so the badge disappears immediately if resolved
+          axios.get(`${API}/smm/announcement-overlaps`).then(r => setAnnouncementOverlaps(r.data || {})).catch(() => {});
+        }}
+      />
     </div>
   );
 };
