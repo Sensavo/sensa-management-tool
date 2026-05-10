@@ -550,6 +550,20 @@ const OverlapResolverDialog = ({ task, open, onClose, onResolved }) => {
   };
 
   const dayShort = (d) => ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'][d.getDay()];
+  const totalOf = (load) => (load?.announcements || 0) + (load?.smm || 0) + (load?.mgmt || 0) + (load?.mktg || 0);
+
+  // Single saturation reference for percentages: the busier of the current
+  // date or any candidate, with a floor of 10 tasks so empty days really
+  // look empty (otherwise scaling against e.g. max=2 would inflate light days).
+  const loadBaseline = useMemo(() => {
+    const totals = suggestions.map(s => totalOf(s.load));
+    if (currentLoad) totals.push(totalOf(currentLoad));
+    return Math.max(10, ...totals);
+  }, [suggestions, currentLoad]);
+
+  const loadPct = (load) => Math.min(100, Math.round((totalOf(load) / loadBaseline) * 100));
+  // 0–33% calm green, 34–66% amber, 67%+ saturated red.
+  const barColor = (pct) => pct >= 67 ? '#DC2626' : pct >= 34 ? '#C4703D' : '#3F8F4F';
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -561,20 +575,26 @@ const OverlapResolverDialog = ({ task, open, onClose, onResolved }) => {
           </DialogDescription>
         </DialogHeader>
 
-        {currentLoad && (
-          <div className="mt-3 p-3 rounded-2xl bg-red-50 border border-red-100">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[10px] uppercase tracking-wide text-red-600 font-semibold">зараз</p>
-                <p className="text-sm font-medium text-[#1A1717]">{formatDateUkrainian(currentDate)}</p>
+        {currentLoad && (() => {
+          const pct = loadPct(currentLoad);
+          return (
+            <div className="mt-3 p-3 rounded-2xl bg-red-50 border border-red-100">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-red-600 font-semibold">зараз</p>
+                  <p className="text-sm font-medium text-[#1A1717]">{formatDateUkrainian(currentDate)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-red-600 font-medium">{currentLoad.announcements} анонсів цього дня</p>
+                  <p className="text-[11px] text-secondary">завантаженість {pct}%</p>
+                </div>
               </div>
-              <div className="text-right">
-                <p className="text-xs text-red-600 font-medium">{currentLoad.announcements} анонсів</p>
-                <p className="text-[11px] text-secondary">{currentLoad.smm} SMM · {currentLoad.mgmt} мгмт{currentLoad.mktg ? ` · ${currentLoad.mktg} мктг` : ''}</p>
+              <div className="h-1.5 rounded-full bg-black/5 overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: barColor(pct) }} />
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         <p className="text-[10px] uppercase tracking-wide text-secondary font-semibold mt-4 mb-1">рекомендовані дні</p>
         <div className="space-y-1 max-h-[50vh] overflow-y-auto -mx-2 px-2">
@@ -583,11 +603,13 @@ const OverlapResolverDialog = ({ task, open, onClose, onResolved }) => {
           )}
           {suggestions.map(s => {
             const free = s.load.announcements === 0;
+            const pct = loadPct(s.load);
             return (
               <button
                 key={s.date}
                 onClick={() => handleMove(s.date)}
                 className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-black/[0.04] transition-colors text-left"
+                title={`${s.load.announcements} анонсів · ${totalOf(s.load)} тасків загалом`}
               >
                 <div className="flex-shrink-0 w-11 text-center">
                   <div className="text-[10px] text-secondary uppercase tracking-wide">{dayShort(s.dateObj)}</div>
@@ -595,14 +617,17 @@ const OverlapResolverDialog = ({ task, open, onClose, onResolved }) => {
                   <div className="text-[9px] text-secondary uppercase">{UK_MONTHS_SHORT[s.dateObj.getMonth()]}</div>
                 </div>
                 <div className="flex-1 min-w-0">
-                  {free ? (
-                    <span className="inline-block text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">вільно для анонсу</span>
-                  ) : (
-                    <span className="inline-block text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{s.load.announcements} анонсів</span>
-                  )}
-                  <p className="text-[11px] text-secondary mt-0.5">
-                    {s.load.smm} SMM · {s.load.mgmt} мгмт{s.load.mktg ? ` · ${s.load.mktg} мктг` : ''}
-                  </p>
+                  <div className="flex items-center gap-2 mb-1">
+                    {free ? (
+                      <span className="inline-block text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">вільно</span>
+                    ) : (
+                      <span className="inline-block text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">{s.load.announcements} анонсів</span>
+                    )}
+                    <span className="text-[11px] text-secondary tabular-nums">{pct}%</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-black/5 overflow-hidden">
+                    <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: barColor(pct) }} />
+                  </div>
                 </div>
                 <span className="text-xs text-secondary">→</span>
               </button>
