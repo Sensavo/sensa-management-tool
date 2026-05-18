@@ -328,10 +328,8 @@
   .bottom-nav { display: none !important; }
 }
 
-/* Surface swap: the page sits a touch darker, columns lift up as the
- * lighter surface (was previously the page tone). Header matches page. */
-.desktop-dashboard { @apply h-screen overflow-hidden; background: #EFEEE8; }
-.desktop-header { @apply flex items-center justify-between px-6 py-4 border-b; background: #EFEEE8; border-color: rgba(0, 0, 0, 0.06); }
+.desktop-dashboard { @apply h-screen overflow-hidden; background: #F5F5F0; }
+.desktop-header { @apply flex items-center justify-between px-6 py-4 border-b; background: #F5F5F0; border-color: rgba(0, 0, 0, 0.06); }
 .desktop-header-left { @apply flex items-center; }
 .desktop-header-right { @apply flex items-center gap-3; }
 .desktop-header-btn { @apply w-10 h-10 rounded-full flex items-center justify-center transition-colors; background: rgba(0, 0, 0, 0.04); color: #6B6B6B; }
@@ -342,7 +340,7 @@
 
 .desktop-columns { @apply grid grid-cols-3 gap-4 p-4; min-height: calc(100vh - 72px); }
 .desktop-columns-4 { @apply grid gap-3 p-4; grid-template-columns: 1fr 1fr 1fr 1fr; height: calc(100vh - 72px); overflow: hidden; }
-.desktop-column { @apply flex flex-col rounded-xl; background: #F5F5F0; height: 100%; overflow: hidden; }
+.desktop-column { @apply flex flex-col rounded-xl; background: rgba(0, 0, 0, 0.02); height: 100%; overflow: hidden; }
 .desktop-columns-4 .desktop-column { min-width: 260px; }
 .column-header { @apply flex items-center gap-3 px-5 py-4 border-b; border-color: rgba(0, 0, 0, 0.06); }
 .column-title { @apply text-sm font-semibold uppercase tracking-wide; color: #6B6B6B; }
