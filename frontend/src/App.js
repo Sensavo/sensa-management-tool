@@ -6611,13 +6611,13 @@ const StatsContent = ({ onClose, settings }) => {
 //   3) Selected event metadata + Altegio bookings
 //   4) Today + overdue tasks for that event, accordion by role
 const EventsDesktopExpanded = () => {
-  const { events, smmTasksDefinition, allTaskDefs, settings } = useApp();
+  const { events, smmTasksDefinition, allTaskDefs, settings, refreshEvents } = useApp();
   const navigate = useNavigate();
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [bookings, setBookings] = useState(null);
-  const [bookingsLoading, setBookingsLoading] = useState(false);
   const [openRoles, setOpenRoles] = useState({ management: false, smm: false, marketing: false });
+  const [exportingEvent, setExportingEvent] = useState(false);
+  const [syncingEvent, setSyncingEvent] = useState(false);
   const listRef = useRef(null);
 
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
@@ -6653,15 +6653,31 @@ const EventsDesktopExpanded = () => {
     }
   }, [selectedEvent]);
 
-  // Pull Altegio bookings for the selected event when the activity_id changes.
-  useEffect(() => {
-    if (!selectedEvent?.altegio_activity_id) { setBookings(null); return; }
-    setBookingsLoading(true);
-    api.getEventBookings(selectedEvent.id)
-      .then(r => setBookings(r.data?.bookings || r.data || []))
-      .catch(() => setBookings([]))
-      .finally(() => setBookingsLoading(false));
-  }, [selectedEvent?.id, selectedEvent?.altegio_activity_id]);
+  // Detail-card actions (same behaviour as the popup version in DesktopDashboard).
+  const handleExportCalendar = async () => {
+    if (!selectedEvent) return;
+    setExportingEvent(true);
+    try { await api.exportEventToCalendar(selectedEvent.id); toast.success("додано до календаря"); refreshEvents(); }
+    catch { toast.error("помилка експорту"); }
+    finally { setExportingEvent(false); }
+  };
+  const handleSyncAltegio = async () => {
+    if (!selectedEvent) return;
+    setSyncingEvent(true);
+    try { await api.syncEventFromAltegio(selectedEvent.id); toast.success("синхронізовано"); refreshEvents(); }
+    catch { toast.error("помилка синхронізації"); }
+    finally { setSyncingEvent(false); }
+  };
+  const handleCancelSelected = async () => {
+    if (!selectedEvent) return;
+    try { await axios.patch(`${API}/events/${selectedEvent.id}`, { cancelled: true }); toast.success("скасовано"); refreshEvents(); }
+    catch { toast.error("помилка"); }
+  };
+  const handleRestoreSelected = async () => {
+    if (!selectedEvent) return;
+    try { await axios.patch(`${API}/events/${selectedEvent.id}`, { cancelled: false }); toast.success("відновлено"); refreshEvents(); }
+    catch { toast.error("помилка"); }
+  };
 
   // Tasks for the selected event: overdue (uncompleted) + today, per role.
   const tasksByRole = useMemo(() => {
@@ -6791,75 +6807,87 @@ const EventsDesktopExpanded = () => {
           </div>
         </div>
 
-        {/* Col 3: Metadata + Altegio bookings */}
+        {/* Col 3: Event card — same layout as the dashboard's event-detail popup. */}
         <div className="desktop-column">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-            <span className="text-sm font-semibold tracking-wide" style={{ color: '#1A1717' }}>ДЕТАЛІ</span>
-            {selectedEvent && (
-              <button className="p-1.5 rounded-full hover:bg-black/5 transition-colors text-secondary" onClick={() => navigate(`/event/${selectedEvent.id}`)} title="редагувати">
-                <Edit className="w-3.5 h-3.5" />
-              </button>
-            )}
+            <span className="text-sm font-semibold tracking-wide" style={{ color: '#1A1717' }}>ПОДІЯ</span>
+            {selectedEvent?.title && <span className="text-xs text-secondary truncate ml-2">{selectedEvent.title}</span>}
           </div>
           <div className="column-content">
             {!selectedEvent ? (
               <p className="text-center text-secondary text-sm py-8">обери подію зі списку</p>
             ) : (
-              <div className="space-y-4">
-                <div>
-                  <h2 className="text-lg font-semibold leading-tight">{selectedEvent.title}</h2>
-                  <p className="text-sm text-secondary mt-1">
-                    {formatDateUkrainian(selectedEvent.date)}
-                    {selectedEvent.start_time && ` · ${selectedEvent.start_time}`}
-                    {selectedEvent.end_time && `–${selectedEvent.end_time}`}
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="p-3 rounded-xl bg-black/[0.03]">
-                    <p className="text-[10px] uppercase tracking-wide text-secondary">ціна</p>
-                    <p className="text-base font-semibold mt-0.5 tabular-nums">{selectedEvent.price} ₴</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-black/[0.03]">
-                    <p className="text-[10px] uppercase tracking-wide text-secondary">місць</p>
-                    <p className="text-base font-semibold mt-0.5 tabular-nums">{selectedEvent.spots || 10}</p>
-                  </div>
-                </div>
-
-                {selectedEvent.description && (
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wide text-secondary mb-1">опис</p>
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{selectedEvent.description}</p>
-                  </div>
-                )}
-
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-[10px] uppercase tracking-wide text-secondary">альтеджіо · записані</p>
-                    {selectedEvent.altegio_booked_count != null && (
-                      <span className={`text-sm font-bold ${getBookingColorClass(getBookingStatusColor(selectedEvent))}`}>
-                        {selectedEvent.altegio_booked_count}/{selectedEvent.spots || 10}
-                      </span>
+              <>
+                <div className="section-card">
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                      <span className="text-secondary text-sm">дата</span>
+                      <span className="font-medium">{formatDateUkrainian(selectedEvent.date)}</span>
+                    </div>
+                    {selectedEvent.start_time && (
+                      <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                        <span className="text-secondary text-sm">час</span>
+                        <span className="font-medium">{selectedEvent.start_time}{selectedEvent.end_time ? ` — ${selectedEvent.end_time}` : ''}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                      <span className="text-secondary text-sm">ціна</span>
+                      <span className="font-medium">{selectedEvent.price} ₴</span>
+                    </div>
+                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                      <span className="text-secondary text-sm">учасники</span>
+                      {(selectedEvent.altegio_booked_count !== null && selectedEvent.altegio_booked_count !== undefined) ? (
+                        <span className={`font-bold ${getBookingColorClass(getBookingStatusColor(selectedEvent))}`}>
+                          {selectedEvent.altegio_booked_count}/{selectedEvent.spots || 10}
+                        </span>
+                      ) : (
+                        <span className="font-medium">0/{selectedEvent.spots || 10}</span>
+                      )}
+                    </div>
+                    {selectedEvent.description && (
+                      <div className="py-2">
+                        <span className="text-secondary text-sm block mb-1">опис</span>
+                        <p className="text-sm">{selectedEvent.description}</p>
+                      </div>
                     )}
                   </div>
-                  {!selectedEvent.altegio_activity_id ? (
-                    <p className="text-xs text-secondary py-2">подія не синхронізована з Altegio</p>
-                  ) : bookingsLoading ? (
-                    <p className="text-xs text-secondary py-2">завантаження…</p>
-                  ) : !bookings || bookings.length === 0 ? (
-                    <p className="text-xs text-secondary py-2">записів поки немає</p>
-                  ) : (
-                    <ul className="space-y-0">
-                      {bookings.map((b, i) => (
-                        <li key={i} className="flex items-center justify-between text-sm py-2 border-b last:border-b-0 border-black/5">
-                          <span className="truncate">{b.client_name || b.name || b.client?.name || 'без імені'}</span>
-                          {(b.phone || b.client?.phone) && <span className="text-xs text-secondary tabular-nums ml-2">{b.phone || b.client?.phone}</span>}
-                        </li>
-                      ))}
-                    </ul>
+                  {selectedEvent.cancelled && (
+                    <div className="mt-4 p-3 bg-red-50 rounded-lg text-center">
+                      <p className="text-red-600 font-medium">подію скасовано</p>
+                    </div>
                   )}
                 </div>
-              </div>
+
+                <div className="section-card mt-4">
+                  <p className="text-xs text-secondary mb-3">синхронізація</p>
+                  <div className="flex gap-2">
+                    <button className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 transition-colors" onClick={handleExportCalendar} disabled={exportingEvent}>
+                      <ExternalLink className="w-4 h-4" /><span>{exportingEvent ? "..." : "Calendar"}</span>
+                    </button>
+                    <button className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 transition-colors" onClick={handleSyncAltegio} disabled={syncingEvent}>
+                      <RefreshCw className={`w-4 h-4 ${syncingEvent ? 'animate-spin' : ''}`} /><span>{syncingEvent ? "..." : "Altegio"}</span>
+                    </button>
+                  </div>
+                  {selectedEvent.altegio_last_sync && (
+                    <p className="text-xs text-secondary mt-2 text-center">оновлено: {new Date(selectedEvent.altegio_last_sync).toLocaleString('uk-UA')}</p>
+                  )}
+                </div>
+
+                <div className="flex gap-2 mt-4">
+                  <Button variant="outline" className="flex-1" onClick={() => navigate(`/event/${selectedEvent.id}`)}>
+                    <Edit className="w-4 h-4 mr-2" />редагувати
+                  </Button>
+                  {!selectedEvent.cancelled ? (
+                    <Button variant="outline" className="flex-1 text-orange-600 border-orange-200 hover:bg-orange-50" onClick={handleCancelSelected}>
+                      <X className="w-4 h-4 mr-2" />скасувати
+                    </Button>
+                  ) : (
+                    <Button variant="outline" className="flex-1 text-green-600 border-green-200 hover:bg-green-50" onClick={handleRestoreSelected}>
+                      <RotateCcw className="w-4 h-4 mr-2" />відновити
+                    </Button>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>
