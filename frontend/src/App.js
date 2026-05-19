@@ -6653,6 +6653,13 @@ const EventsDesktopExpanded = () => {
     }
   }, [selectedEvent]);
 
+  // ESC closes the expanded view and returns to the dashboard.
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') navigate('/'); };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [navigate]);
+
   // Detail-card actions (same behaviour as the popup version in DesktopDashboard).
   const handleExportCalendar = async () => {
     if (!selectedEvent) return;
@@ -6714,8 +6721,9 @@ const EventsDesktopExpanded = () => {
     <div className="desktop-dashboard" data-testid="events-desktop-expanded">
       <header className="desktop-header">
         <div className="desktop-header-left gap-4">
-          <button onClick={() => navigate('/')} className="p-2 -ml-2 rounded-full hover:bg-black/5 transition-colors" title="назад на дашборд">
+          <button onClick={() => navigate('/')} className="p-2 -ml-2 rounded-full hover:bg-black/5 transition-colors flex items-center gap-2" title="назад на дашборд">
             <ArrowLeft className="w-5 h-5" />
+            <span className="text-xs text-secondary flex items-center gap-1 font-normal">або <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px] font-mono border border-gray-200">ESC</kbd></span>
           </button>
           <h1 className="logo" style={{ textTransform: 'none' }}>Poriadok</h1>
           <span className="text-sm text-secondary lowercase">{todayFormatted.phrase} {todayFormatted.day} {todayFormatted.month} · події</span>
