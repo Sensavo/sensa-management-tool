@@ -229,10 +229,18 @@
 .calendar-minimal .rdp-months { justify-content: center; width: 100%; }
 .calendar-minimal .rdp-month { width: 100%; }
 .calendar-minimal .rdp-table { width: 100%; }
+.calendar-minimal .rdp-head_row,
+.calendar-minimal .rdp-row {
+  display: grid !important;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  align-items: center;
+  width: 100%;
+}
+.calendar-minimal .rdp-row { margin-top: 6px; }
 .calendar-minimal .rdp-caption_label { font-size: 0.875rem; font-weight: 600; text-transform: lowercase; }
-.calendar-minimal .rdp-head_cell { color: #6B6B6B; font-weight: 400; font-size: 0.7rem; text-transform: lowercase; width: calc(100% / 7); }
-.calendar-minimal .rdp-cell { width: calc(100% / 7); text-align: center; }
-.calendar-minimal .rdp-day { background: transparent !important; border-radius: 50%; width: 32px; height: 32px; margin: 0 auto; }
+.calendar-minimal .rdp-head_cell { color: #6B6B6B; font-weight: 400; font-size: 0.7rem; text-transform: lowercase; width: auto; text-align: center; }
+.calendar-minimal .rdp-cell { width: auto; text-align: center; padding: 0 !important; }
+.calendar-minimal .rdp-day { background: transparent !important; border-radius: 50%; width: 30px; height: 30px; margin: 0 auto; display: flex; align-items: center; justify-content: center; padding: 0 !important; }
 .calendar-minimal .rdp-day:hover { background: rgba(0, 0, 0, 0.05) !important; }
 .calendar-minimal .rdp-day_selected { background: rgba(0, 0, 0, 0.08) !important; color: #1A1717 !important; }
 .calendar-today-hidden { font-weight: normal !important; background: transparent !important; border: none !important; }
@@ -242,6 +250,67 @@
 .calendar-day-content span:first-child { display: block; }
 .calendar-day-content .event-dot { @apply w-1 h-1 rounded-full absolute; background: #1A1717; bottom: 2px; left: 50%; transform: translateX(-50%); }
 .rdp-day { position: relative; }
+
+.dialog-content .rdp {
+  width: 100%;
+  max-width: 286px;
+  margin: 0 auto;
+}
+.dialog-content .rdp-months,
+.dialog-content .rdp-month,
+.dialog-content .rdp-table {
+  width: 100%;
+}
+.dialog-content .rdp-head_row,
+.dialog-content .rdp-row {
+  display: grid !important;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  align-items: center;
+  width: 100%;
+}
+.dialog-content .rdp-row { margin-top: 6px; }
+.dialog-content .rdp-caption {
+  min-height: 34px;
+  margin-bottom: 4px;
+}
+.dialog-content .rdp-nav_button {
+  width: 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+}
+.dialog-content .rdp-head_cell {
+  width: auto;
+  text-align: center;
+  padding: 0;
+  color: #6B6B6B;
+  font-size: 0.7rem;
+  font-weight: 400;
+  text-transform: lowercase;
+}
+.dialog-content .rdp-cell {
+  width: auto;
+  padding: 0 !important;
+  text-align: center;
+}
+.dialog-content .rdp-day {
+  width: 30px !important;
+  height: 30px !important;
+  margin: 0 auto;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent !important;
+}
+.dialog-content .rdp-day:hover { background: rgba(26, 23, 23, 0.06) !important; }
+.dialog-content .rdp-day_selected,
+.dialog-content .calendar-today-visible {
+  background: #1A1717 !important;
+  color: #F5F5F0 !important;
+}
 
 /* Task checkbox - Fixed size circles */
 .task-checkbox { 
@@ -347,20 +416,29 @@
 .section-header-mini { @apply flex items-center gap-2 mb-3 w-full text-left text-base font-medium; color: #6B6B6B; }
 .section-header-mini.overdue-header { color: #D4849A; }
 
-.calendar-container-desktop { @apply mb-1 pb-1 border-b; border-color: rgba(0, 0, 0, 0.06); width: 100%; }
-.calendar-container-desktop .calendar-minimal { width: 100% !important; max-width: none; }
+.calendar-container-desktop { @apply mb-1 border-b; border-color: rgba(0, 0, 0, 0.06); width: 100%; padding: 12px 14px 14px; }
+.calendar-container-desktop .calendar-minimal { width: 100% !important; max-width: none; padding: 0 !important; }
 .calendar-container-desktop .rdp { width: 100% !important; margin: 0; }
 .calendar-container-desktop .rdp-months { width: 100%; justify-content: center; }
 .calendar-container-desktop .rdp-month { width: 100%; }
 .calendar-container-desktop .rdp-table { width: 100%; border-collapse: collapse; border-spacing: 0; }
-.calendar-container-desktop .rdp-head_cell { width: calc(100% / 7); text-align: center; padding: 0; font-size: 10px; line-height: 1; height: 16px; color: #9CA3AF; font-weight: 400; }
-.calendar-container-desktop .rdp-cell { width: calc(100% / 7); text-align: center; padding: 0 !important; height: auto !important; }
-.calendar-container-desktop .rdp-day { width: 100% !important; height: 20px !important; display: flex; align-items: center; justify-content: center; margin: 0; border-radius: 4px; padding: 0 !important; font-size: 11px; background: transparent !important; border: none !important; box-shadow: none !important; }
+.calendar-container-desktop .rdp-head_row,
+.calendar-container-desktop .rdp-row {
+  display: grid !important;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  align-items: center;
+  width: 100%;
+}
+.calendar-container-desktop .rdp-row { margin-top: 6px; }
+.calendar-container-desktop .rdp-head_cell { width: auto; text-align: center; padding: 0; font-size: 11px; line-height: 1; height: 16px; color: #6B6B6B; font-weight: 400; }
+.calendar-container-desktop .rdp-cell { width: auto; text-align: center; padding: 0 !important; height: 28px !important; display: flex; align-items: center; justify-content: center; }
+.calendar-container-desktop .rdp-day { width: 28px !important; height: 28px !important; display: flex; align-items: center; justify-content: center; margin: 0 auto; border-radius: 50%; padding: 0 !important; font-size: 13px; background: transparent !important; border: none !important; box-shadow: none !important; }
 .calendar-container-desktop .rdp-day:hover { background: rgba(26, 23, 23, 0.08) !important; }
 .calendar-container-desktop .rdp-day_selected { background: rgba(26, 23, 23, 0.1) !important; color: #1A1717 !important; }
-.calendar-container-desktop .calendar-day-content { font-size: 11px; font-weight: 500; line-height: 1; }
+.calendar-container-desktop .calendar-day-content { font-size: 13px; font-weight: 500; line-height: 1; }
+.calendar-container-desktop .calendar-day-content .event-dot { bottom: -3px; }
 .calendar-container-desktop .rdp-row { height: auto; }
-.calendar-container-desktop .rdp-head_row { height: auto; }
+.calendar-container-desktop .rdp-head_row { height: auto; margin-top: 0; }
 
 /* Event cards desktop - unified */
 .event-card-desktop { @apply flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all mb-3; background: rgba(0, 0, 0, 0.03); }
@@ -454,4 +532,3 @@
 .calendar-dark td, .calendar-dark th { width: 48px; height: 48px; text-align: center; vertical-align: middle; }
 .calendar-dark button[name="day"] { width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border-radius: 12px; }
 .calendar-dark [role="gridcell"] { padding: 2px; }
-

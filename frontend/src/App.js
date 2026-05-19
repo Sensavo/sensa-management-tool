@@ -314,6 +314,12 @@ const formatDateLocal = (date) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
+const shiftDateLocal = (dateStr, offset) => {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + offset);
+  return formatDateLocal(d);
+};
+
 const formatMonthShort = (monthStr) => {
   const [year, month] = monthStr.split("-");
   return `${UK_MONTHS_SHORT[parseInt(month) - 1]}. ${year.slice(2)} р.`;
@@ -4027,6 +4033,7 @@ const DesktopDashboard = () => {
   const [editingStandaloneTask, setEditingStandaloneTask] = useState(null);
   const [showEditStandaloneDialog, setShowEditStandaloneDialog] = useState(false);
   const [showEditCalendar, setShowEditCalendar] = useState(false);
+  const [reschedulingTaskDate, setReschedulingTaskDate] = useState(null);
   const [activeTab, setActiveTab] = useState('team'); // 'team' or 'events'
   const [announcementOverlaps, setAnnouncementOverlaps] = useState({});
   const [overlapResolverTask, setOverlapResolverTask] = useState(null);
@@ -4490,6 +4497,43 @@ const DesktopDashboard = () => {
       setShowEditStandaloneDialog(false);
       setEditingStandaloneTask(null);
     } catch { toast.error("помилка"); }
+  };
+
+  const handleRescheduleStandaloneTask = async (nextDate) => {
+    if (!editingStandaloneTask?.title?.trim() || !nextDate) return;
+    const task = { ...editingStandaloneTask, date: nextDate };
+    setReschedulingTaskDate(nextDate);
+    try {
+      if (task._isStandalone === false) {
+        await axios.patch(`${API}/events/${task._eventId}/tasks/${task._taskId}`, {
+          color: task.color,
+          icon: task.icon,
+          title: task.title,
+          assignee: task.assignee,
+          date: task.date,
+        });
+        refreshEvents();
+      } else {
+        await api.updateStandaloneTaskFull(task.id, {
+          title: task.title,
+          date: task.date,
+          icon: task.icon,
+          type: task.type,
+          color: task.color,
+          assignee: task.assignee || 'karolina',
+          event_id: task.event_id || "",
+        });
+        refreshStandaloneTasks();
+      }
+      toast.success("перенесено!");
+      setShowEditCalendar(false);
+      setShowEditStandaloneDialog(false);
+      setEditingStandaloneTask(null);
+    } catch {
+      toast.error("помилка");
+    } finally {
+      setReschedulingTaskDate(null);
+    }
   };
   
   // Keyboard shortcut for save (Ctrl/Cmd + Enter)
@@ -5345,6 +5389,7 @@ const DesktopDashboard = () => {
             const dateChips = [
               { label: "сьогодні", value: dt(0) },
               { label: "завтра",  value: dt(1) },
+              { label: "+2д",     value: dt(2) },
               { label: "+3д",     value: dt(3) },
               { label: "+1 тиж",  value: dt(7) },
             ];
@@ -5403,26 +5448,55 @@ const DesktopDashboard = () => {
                   data-testid="edit-task-input"
                 />
 
-                <div className="mt-3 flex gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1 scrollbar-hide">
+                <div className="mt-3 grid grid-cols-5 gap-1.5">
                   {dateChips.map(chip => {
                     const sel = editingStandaloneTask.date === chip.value;
+                    const isSavingThisDate = reschedulingTaskDate === chip.value;
                     return (
                       <button key={chip.value} type="button"
-                        onClick={() => setEditingStandaloneTask({ ...editingStandaloneTask, date: chip.value })}
-                        className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-colors ${
+                        onClick={() => handleRescheduleStandaloneTask(chip.value)}
+                        disabled={!!reschedulingTaskDate}
+                        className={`h-9 rounded-full text-[12.5px] font-medium transition-colors disabled:opacity-50 ${
                           sel ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
                         }`}
-                      >{chip.label}</button>
+                        data-testid={`edit-task-date-${chip.label}`}
+                      >{isSavingThisDate ? "..." : chip.label}</button>
                     );
                   })}
-                  <button type="button"
-                    onClick={() => setShowEditCalendar(true)}
-                    className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-colors inline-flex items-center gap-1.5 ${
-                      isCustomDate ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
-                    }`}
+                </div>
+
+                <div className="mt-2 grid grid-cols-[40px_1fr_40px] gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleRescheduleStandaloneTask(shiftDateLocal(editingStandaloneTask.date, -1))}
+                    disabled={!!reschedulingTaskDate}
+                    className="h-9 rounded-full bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25 transition-colors disabled:opacity-50 inline-flex items-center justify-center"
+                    aria-label="перенести на день назад"
+                    data-testid="edit-task-date-prev"
                   >
-                    <CalendarIcon className="w-3 h-3" />
-                    {isCustomDate ? formatDateUkrainian(editingStandaloneTask.date) : 'інша'}
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <div className={`h-9 rounded-full bg-white text-[#1A1717] ring-1 ring-black/8 inline-flex items-center justify-center gap-2 px-3 ${isCustomDate ? 'ring-black/25' : ''}`}>
+                    <button
+                      type="button"
+                      onClick={() => setShowEditCalendar(true)}
+                      className="w-7 h-7 rounded-full hover:bg-black/5 inline-flex items-center justify-center"
+                      aria-label="відкрити календар"
+                      data-testid="edit-task-date-calendar"
+                    >
+                      <CalendarIcon className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="text-[12.5px] font-medium tabular-nums">{formatDateUkrainian(editingStandaloneTask.date)}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRescheduleStandaloneTask(shiftDateLocal(editingStandaloneTask.date, 1))}
+                    disabled={!!reschedulingTaskDate}
+                    className="h-9 rounded-full bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25 transition-colors disabled:opacity-50 inline-flex items-center justify-center"
+                    aria-label="перенести на день вперед"
+                    data-testid="edit-task-date-next"
+                  >
+                    <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
 
@@ -5481,7 +5555,20 @@ const DesktopDashboard = () => {
       {/* Edit Calendar for standalone task */}
       <Dialog open={showEditCalendar} onOpenChange={setShowEditCalendar}>
         <DialogContent className="dialog-content">
-          <Calendar mode="single" locale={uk} weekStartsOn={1} selected={editingStandaloneTask ? new Date(editingStandaloneTask.date) : new Date()} onSelect={(d) => { if (d && editingStandaloneTask) { setEditingStandaloneTask({ ...editingStandaloneTask, date: formatDateLocal(d) }); } setShowEditCalendar(false); }} className="w-full" />
+          <Calendar
+            mode="single"
+            locale={uk}
+            weekStartsOn={1}
+            selected={editingStandaloneTask ? new Date(editingStandaloneTask.date) : new Date()}
+            onSelect={(d) => {
+              if (d && editingStandaloneTask) {
+                handleRescheduleStandaloneTask(formatDateLocal(d));
+              } else {
+                setShowEditCalendar(false);
+              }
+            }}
+            className="w-full"
+          />
         </DialogContent>
       </Dialog>
 
@@ -6721,15 +6808,20 @@ const EventsDesktopExpanded = () => {
     <div className="desktop-dashboard" data-testid="events-desktop-expanded">
       <header className="desktop-header">
         <div className="desktop-header-left gap-4">
-          <button onClick={() => navigate('/')} className="p-2 -ml-2 rounded-full hover:bg-black/5 transition-colors flex items-center gap-2" title="назад на дашборд">
-            <ArrowLeft className="w-5 h-5" />
-            <span className="text-xs text-secondary flex items-center gap-1 font-normal">або <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px] font-mono border border-gray-200">ESC</kbd></span>
-          </button>
           <h1 className="logo" style={{ textTransform: 'none' }}>Poriadok</h1>
           <span className="text-sm text-secondary lowercase">{todayFormatted.phrase} {todayFormatted.day} {todayFormatted.month} · події</span>
         </div>
         <div className="desktop-header-right">
           <button className="btn-dark" onClick={() => navigate("/event/new")} data-testid="events-expand-new-btn"><Plus className="w-4 h-4" /><span>подія</span></button>
+          <button
+            className="flex items-center gap-2 rounded-full pl-2 transition-colors hover:bg-black/5"
+            onClick={() => navigate('/')}
+            title="закрити"
+            data-testid="events-expand-close-btn"
+          >
+            <span className="text-xs text-secondary flex items-center gap-1 whitespace-nowrap font-normal">або <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px] font-mono border border-gray-200">ESC</kbd> щоб закрити</span>
+            <span className="desktop-header-btn"><X className="w-5 h-5" /></span>
+          </button>
         </div>
       </header>
 
