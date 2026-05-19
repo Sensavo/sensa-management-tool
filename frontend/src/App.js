@@ -4559,7 +4559,7 @@ const DesktopDashboard = () => {
                 return (
                   <div key={event.id} className="event-card-desktop" onClick={() => handleEventClick(event.id)} data-event-date={event.date.split('T')[0]}>
                     <div className="date-badge-desktop">
-                      <span className="date-badge-month">{UK_MONTHS_SHORT[eventDate.getMonth()]}</span>
+                      <span className="date-badge-month">{['нд','пн','вт','ср','чт','пт','сб'][eventDate.getDay()]}</span>
                       <span className="date-badge-day">{eventDate.getDate()}</span>
                     </div>
                     <div className="flex-1 min-w-0">
