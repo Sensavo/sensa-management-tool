@@ -150,7 +150,7 @@ body {
 .logo {
     font-family: 'Space Grotesk', sans-serif;
     font-weight: 500;
-    letter-spacing: 0.25em;
+    letter-spacing: 0.05em;
     text-transform: lowercase;
     font-size: 1.75rem;
 }
