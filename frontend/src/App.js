@@ -53,7 +53,8 @@ import {
   RotateCcw,
   RefreshCw,
   Smile,
-  Info
+  Info,
+  Maximize2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -4540,7 +4541,12 @@ const DesktopDashboard = () => {
                   <button className="p-0.5 hover:bg-gray-100 rounded-full transition-colors" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}><ChevronRight className="w-3.5 h-3.5 text-secondary" /></button>
                 </div>
               </div>
-              <button className="add-btn" onClick={() => navigate("/event/new")}><Plus className="w-4 h-4" /></button>
+              <button
+                className="p-1.5 rounded-full hover:bg-black/5 transition-colors text-secondary"
+                onClick={() => navigate("/events")}
+                title="розгорнути на весь екран"
+                data-testid="events-expand-btn"
+              ><Maximize2 className="w-4 h-4" /></button>
             </div>
             <div className="column-content">
               <div className="calendar-container-desktop">
@@ -6598,11 +6604,323 @@ const StatsContent = ({ onClose, settings }) => {
 };
 
 // Responsive wrapper
-const ResponsiveWrapper = ({ children }) => {
+// Expanded desktop events workspace. Reached by clicking the Maximize2
+// button on the dashboard ПОДІЇ column. Four columns:
+//   1) Calendar (with month nav, sticky in its own column)
+//   2) Scrollable list of future events
+//   3) Selected event metadata + Altegio bookings
+//   4) Today + overdue tasks for that event, accordion by role
+const EventsDesktopExpanded = () => {
+  const { events, smmTasksDefinition, allTaskDefs, settings } = useApp();
+  const navigate = useNavigate();
+  const [selectedEventId, setSelectedEventId] = useState(null);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [bookings, setBookings] = useState(null);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+  const [openRoles, setOpenRoles] = useState({ management: false, smm: false, marketing: false });
+
+  const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
+  const todayStr = formatDateLocal(today);
+
+  const allEvents = useMemo(() =>
+    [...events]
+      .filter(e => !e.cancelled && !e.archived && new Date(e.date) >= today)
+      .sort((a, b) => new Date(a.date) - new Date(b.date)),
+  [events, today]);
+
+  // Auto-select the closest upcoming event on first render / when list changes.
+  useEffect(() => {
+    if (!selectedEventId && allEvents.length > 0) {
+      setSelectedEventId(allEvents[0].id);
+    }
+  }, [allEvents, selectedEventId]);
+
+  const selectedEvent = useMemo(() =>
+    events.find(e => e.id === selectedEventId), [events, selectedEventId]);
+
+  // Pull Altegio bookings for the selected event when the activity_id changes.
+  useEffect(() => {
+    if (!selectedEvent?.altegio_activity_id) { setBookings(null); return; }
+    setBookingsLoading(true);
+    api.getEventBookings(selectedEvent.id)
+      .then(r => setBookings(r.data?.bookings || r.data || []))
+      .catch(() => setBookings([]))
+      .finally(() => setBookingsLoading(false));
+  }, [selectedEvent?.id, selectedEvent?.altegio_activity_id]);
+
+  // Tasks for the selected event: overdue (uncompleted) + today, per role.
+  const tasksByRole = useMemo(() => {
+    const empty = { management: [], smm: [], marketing: [] };
+    if (!selectedEvent) return empty;
+    const result = { management: [], smm: [], marketing: [] };
+
+    const push = (key, defs, completedMap, taskMap) => {
+      Object.entries(taskMap || {}).forEach(([id, dateStr]) => {
+        const completed = !!(completedMap || {})[id];
+        const isOverdue = dateStr < todayStr;
+        const isToday = dateStr === todayStr;
+        if ((isOverdue && !completed) || isToday) {
+          const def = (defs || []).find(t => t.id === id);
+          result[key].push({ id, date: dateStr, name: def?.name || id, completed, isOverdue, isToday });
+        }
+      });
+    };
+
+    push('management', allTaskDefs.management || settings?.reminder_types, selectedEvent.completed_tasks, selectedEvent.reminders);
+    push('smm', smmTasksDefinition.length ? smmTasksDefinition : (allTaskDefs.smm || []), selectedEvent.completed_smm_tasks, selectedEvent.smm_tasks);
+    push('marketing', allTaskDefs.marketing || [], selectedEvent.completed_marketing_tasks, selectedEvent.marketing_tasks);
+
+    // Sort: overdue first (oldest first), then today.
+    Object.keys(result).forEach(k => {
+      result[k].sort((a, b) => a.date.localeCompare(b.date));
+    });
+    return result;
+  }, [selectedEvent, allTaskDefs, smmTasksDefinition, settings, todayStr]);
+
+  const todayFormatted = formatDateWithWeekday(new Date());
+
+  return (
+    <div className="desktop-dashboard" data-testid="events-desktop-expanded">
+      <header className="desktop-header">
+        <div className="desktop-header-left gap-4">
+          <button onClick={() => navigate('/')} className="p-2 -ml-2 rounded-full hover:bg-black/5 transition-colors" title="назад на дашборд">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <h1 className="logo" style={{ textTransform: 'none' }}>Poriadok</h1>
+          <span className="text-sm text-secondary lowercase">{todayFormatted.phrase} {todayFormatted.day} {todayFormatted.month} · події</span>
+        </div>
+        <div className="desktop-header-right">
+          <button className="btn-dark" onClick={() => navigate("/event/new")} data-testid="events-expand-new-btn"><Plus className="w-4 h-4" /><span>подія</span></button>
+        </div>
+      </header>
+
+      <div className="desktop-columns-4">
+        {/* Col 1: Calendar — has its own scroll so it stays put as list scrolls. */}
+        <div className="desktop-column">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <span className="text-sm font-semibold tracking-wide" style={{ color: '#1A1717' }}>КАЛЕНДАР</span>
+            <div className="flex items-center gap-1">
+              <button className="p-0.5 hover:bg-gray-100 rounded-full transition-colors" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}><ChevronLeft className="w-3.5 h-3.5 text-secondary" /></button>
+              <span className="text-xs font-medium text-secondary min-w-[60px] text-center">{UK_MONTHS_NOMINATIVE[currentMonth.getMonth()]}</span>
+              <button className="p-0.5 hover:bg-gray-100 rounded-full transition-colors" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}><ChevronRight className="w-3.5 h-3.5 text-secondary" /></button>
+            </div>
+          </div>
+          <div className="column-content">
+            <div className="calendar-container-desktop">
+              <Calendar
+                mode="single"
+                locale={uk}
+                weekStartsOn={1}
+                month={currentMonth}
+                onMonthChange={setCurrentMonth}
+                selected={selectedEvent ? new Date(selectedEvent.date) : undefined}
+                onSelect={(date) => {
+                  if (!date) return;
+                  const dStr = formatDateLocal(date);
+                  const ev = allEvents.find(e => e.date.startsWith(dStr));
+                  if (ev) setSelectedEventId(ev.id);
+                }}
+                className="w-full calendar-minimal calendar-wide !p-1"
+                classNames={{ month: "space-y-0 w-full", caption: "hidden", row: "flex w-full", head_row: "flex w-full", table: "w-full border-collapse" }}
+                modifiersClassNames={{ today: "calendar-today-visible" }}
+                components={{
+                  DayContent: ({ date }) => {
+                    const checkDate = formatDateLocal(date);
+                    const hasEvent = events.some(e => !e.cancelled && e.date.startsWith(checkDate));
+                    return <div className="calendar-day-content"><span>{date.getDate()}</span>{hasEvent && <span className="event-dot" />}</div>;
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Col 2: Events list — scrollable, calendar stays put in col 1 */}
+        <div className="desktop-column">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <span className="text-sm font-semibold tracking-wide" style={{ color: '#1A1717' }}>СПИСОК</span>
+            <span className="text-xs text-secondary">{allEvents.length}</span>
+          </div>
+          <div className="column-content">
+            <div className="events-list space-y-1">
+              {allEvents.length === 0 && <p className="text-center text-secondary text-sm py-8">немає активних подій</p>}
+              {allEvents.map(event => {
+                const eventDate = new Date(event.date);
+                const isSelected = event.id === selectedEventId;
+                return (
+                  <div
+                    key={event.id}
+                    className={`event-card-desktop cursor-pointer transition-all ${isSelected ? 'ring-2 ring-[#1A1717]/20 bg-black/[0.04]' : 'hover:bg-black/[0.02]'}`}
+                    onClick={() => setSelectedEventId(event.id)}
+                    data-event-date={event.date.split('T')[0]}
+                  >
+                    <div className="date-badge-desktop">
+                      <span className="date-badge-month">{['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'][eventDate.getDay()]}</span>
+                      <span className="date-badge-day">{eventDate.getDate()}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate">{event.title}</p>
+                      <p className="text-xs text-secondary">{UK_MONTHS_SHORT[eventDate.getMonth()]} · {event.price} ₴</p>
+                    </div>
+                    {event.altegio_booked_count != null && (
+                      <div className="text-right">
+                        <span className={`text-sm font-bold ${getBookingColorClass(getBookingStatusColor(event))}`}>
+                          {event.altegio_booked_count}/{event.spots || 10}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Col 3: Metadata + Altegio bookings */}
+        <div className="desktop-column">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <span className="text-sm font-semibold tracking-wide" style={{ color: '#1A1717' }}>ДЕТАЛІ</span>
+            {selectedEvent && (
+              <button className="p-1.5 rounded-full hover:bg-black/5 transition-colors text-secondary" onClick={() => navigate(`/event/${selectedEvent.id}`)} title="редагувати">
+                <Edit className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <div className="column-content">
+            {!selectedEvent ? (
+              <p className="text-center text-secondary text-sm py-8">обери подію зі списку</p>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <h2 className="text-lg font-semibold leading-tight">{selectedEvent.title}</h2>
+                  <p className="text-sm text-secondary mt-1">
+                    {formatDateUkrainian(selectedEvent.date)}
+                    {selectedEvent.start_time && ` · ${selectedEvent.start_time}`}
+                    {selectedEvent.end_time && `–${selectedEvent.end_time}`}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-3 rounded-xl bg-black/[0.03]">
+                    <p className="text-[10px] uppercase tracking-wide text-secondary">ціна</p>
+                    <p className="text-base font-semibold mt-0.5 tabular-nums">{selectedEvent.price} ₴</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-black/[0.03]">
+                    <p className="text-[10px] uppercase tracking-wide text-secondary">місць</p>
+                    <p className="text-base font-semibold mt-0.5 tabular-nums">{selectedEvent.spots || 10}</p>
+                  </div>
+                </div>
+
+                {selectedEvent.description && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wide text-secondary mb-1">опис</p>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{selectedEvent.description}</p>
+                  </div>
+                )}
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] uppercase tracking-wide text-secondary">альтеджіо · записані</p>
+                    {selectedEvent.altegio_booked_count != null && (
+                      <span className={`text-sm font-bold ${getBookingColorClass(getBookingStatusColor(selectedEvent))}`}>
+                        {selectedEvent.altegio_booked_count}/{selectedEvent.spots || 10}
+                      </span>
+                    )}
+                  </div>
+                  {!selectedEvent.altegio_activity_id ? (
+                    <p className="text-xs text-secondary py-2">подія не синхронізована з Altegio</p>
+                  ) : bookingsLoading ? (
+                    <p className="text-xs text-secondary py-2">завантаження…</p>
+                  ) : !bookings || bookings.length === 0 ? (
+                    <p className="text-xs text-secondary py-2">записів поки немає</p>
+                  ) : (
+                    <ul className="space-y-0">
+                      {bookings.map((b, i) => (
+                        <li key={i} className="flex items-center justify-between text-sm py-2 border-b last:border-b-0 border-black/5">
+                          <span className="truncate">{b.client_name || b.name || b.client?.name || 'без імені'}</span>
+                          {(b.phone || b.client?.phone) && <span className="text-xs text-secondary tabular-nums ml-2">{b.phone || b.client?.phone}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Col 4: Tasks accordion (overdue + today only) */}
+        <div className="desktop-column">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <span className="text-sm font-semibold tracking-wide" style={{ color: '#1A1717' }}>ЗАДАЧІ</span>
+            <span className="text-xs text-secondary">протерм. + сьогодні</span>
+          </div>
+          <div className="column-content">
+            {!selectedEvent ? (
+              <p className="text-center text-secondary text-sm py-8">обери подію</p>
+            ) : (
+              <div className="space-y-2">
+                {[
+                  { key: 'management', label: 'МЕНЕДЖМЕНТ' },
+                  { key: 'smm', label: 'SMM' },
+                  { key: 'marketing', label: 'МАРКЕТИНГ' },
+                ].map(({ key, label }) => {
+                  const list = tasksByRole[key];
+                  const isOpen = openRoles[key];
+                  const overdueCount = list.filter(t => t.isOverdue).length;
+                  const hasUrgent = overdueCount > 0;
+                  return (
+                    <div key={key} className="rounded-xl border border-black/5 overflow-hidden">
+                      <button
+                        className="w-full flex items-center justify-between p-3 hover:bg-black/[0.02] transition-colors"
+                        onClick={() => setOpenRoles(r => ({ ...r, [key]: !r[key] }))}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold tracking-wide" style={{ color: '#1A1717' }}>{label}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full tabular-nums ${hasUrgent ? 'bg-red-100 text-red-600' : list.length === 0 ? 'bg-green-50 text-green-700' : 'bg-black/5 text-secondary'}`}>
+                            {list.length === 0 ? '0' : hasUrgent ? `${list.length} · ${overdueCount} протерм` : `${list.length}`}
+                          </span>
+                        </div>
+                        <ChevronDown className={`w-4 h-4 text-secondary transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                      {isOpen && (
+                        <div className="border-t border-black/5">
+                          {list.length === 0 ? (
+                            <p className="text-xs text-secondary p-3 text-center">все в порядку</p>
+                          ) : (
+                            <ul className="p-2 space-y-1">
+                              {list.map(t => (
+                                <li key={t.id} className={`text-sm p-2 rounded-lg flex items-center justify-between ${t.isOverdue ? 'bg-red-50/60' : ''}`}>
+                                  <span className="truncate pr-2">{t.name}</span>
+                                  <span className={`text-xs whitespace-nowrap ${t.isOverdue ? 'text-red-600 font-medium' : 'text-secondary'}`}>
+                                    {formatDateUkrainian(t.date)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Renders the mobile `children` below 1024px; on desktop renders the
+// optional `desktop` prop or falls back to DesktopDashboard. Letting routes
+// supply their own desktop element keeps us from hard-coding one page.
+const ResponsiveWrapper = ({ children, desktop }) => {
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1024);
   useEffect(() => { const h = () => setIsDesktop(window.innerWidth >= 1024); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
-  
-  if (isDesktop) return <DesktopDashboard />;
+
+  if (isDesktop) return desktop || <DesktopDashboard />;
   return children;
 };
 
@@ -6661,7 +6979,7 @@ function App() {
             <Toaster position="top-center" richColors />
             <Routes>
               <Route path="/" element={<ResponsiveWrapper><Dashboard /></ResponsiveWrapper>} />
-              <Route path="/events" element={<EventsPage />} />
+              <Route path="/events" element={<ResponsiveWrapper desktop={<EventsDesktopExpanded />}><EventsPage /></ResponsiveWrapper>} />
               <Route path="/smm" element={<SMMPage />} />
               <Route path="/task/new" element={<NewTaskPage />} />
               <Route path="/smm/task/new" element={<NewSMMTaskPage />} />
