@@ -805,7 +805,15 @@ const Dashboard = () => {
         await axios.patch(`${API}/events/${editingTask._eventId}/tasks/${editingTask._taskId}`, { color: editingTask.color, icon: editingTask.icon, title: editingTask.title, assignee: editingTask.assignee, date: editingTask.date });
         toast.success("збережено!"); refreshEvents();
       } else {
-        await api.updateStandaloneTaskFull(editingTask.id, { title: editingTask.title, date: editingTask.date, icon: editingTask.icon, type: editingTask.type, color: editingTask.color, assignee: editingTask.assignee || 'karolina' });
+        await api.updateStandaloneTaskFull(editingTask.id, {
+          title: editingTask.title,
+          date: editingTask.date,
+          icon: editingTask.icon,
+          type: editingTask.type,
+          color: editingTask.color,
+          assignee: editingTask.assignee || 'karolina',
+          event_id: editingTask.event_id || "",
+        });
         toast.success("збережено!"); refreshStandaloneTasks();
       }
       setShowEditDialog(false); setEditingTask(null);
@@ -4490,6 +4498,7 @@ const DesktopDashboard = () => {
           type: editingStandaloneTask.type,
           color: editingStandaloneTask.color,
           assignee: editingStandaloneTask.assignee || 'karolina',
+          event_id: editingStandaloneTask.event_id || "",
         });
         toast.success("збережено!");
         refreshStandaloneTasks();

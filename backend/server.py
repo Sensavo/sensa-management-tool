@@ -1632,7 +1632,8 @@ async def update_standalone_task_full(task_id: str, task_data: StandaloneTaskCre
         "icon": task_data.icon,
         "type": task_data.type,
         "color": task_data.color,
-        "assignee": task_data.assignee
+        "assignee": task_data.assignee,
+        "event_id": task_data.event_id or "",
     }
     
     await db.standalone_tasks.update_one({"id": task_id}, {"$set": update})
