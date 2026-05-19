@@ -6829,7 +6829,7 @@ const EventsDesktopExpanded = () => {
             data-testid="events-expand-close-btn"
           >
             <span className="text-xs text-secondary flex items-center gap-1 whitespace-nowrap font-normal">або <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px] font-mono border border-gray-200">ESC</kbd> щоб закрити</span>
-            <div className="desktop-header-btn"><X className="w-5 h-5" /></div>
+            <span className="desktop-header-btn"><X className="w-5 h-5" /></span>
           </button>
         </div>
       </header>
