@@ -6618,6 +6618,7 @@ const EventsDesktopExpanded = () => {
   const [bookings, setBookings] = useState(null);
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const [openRoles, setOpenRoles] = useState({ management: false, smm: false, marketing: false });
+  const listRef = useRef(null);
 
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
   const todayStr = formatDateLocal(today);
@@ -6637,6 +6638,20 @@ const EventsDesktopExpanded = () => {
 
   const selectedEvent = useMemo(() =>
     events.find(e => e.id === selectedEventId), [events, selectedEventId]);
+
+  // When the selected event changes (e.g. via calendar click), pull the
+  // matching card into view inside the list column. rAF gives React a tick
+  // to commit the new selected styling before we scroll.
+  useEffect(() => {
+    if (!selectedEvent || !listRef.current) return;
+    const datePart = (selectedEvent.date || '').split('T')[0];
+    const card = listRef.current.querySelector(`[data-event-date="${datePart}"]`);
+    if (card) {
+      requestAnimationFrame(() => {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    }
+  }, [selectedEvent]);
 
   // Pull Altegio bookings for the selected event when the activity_id changes.
   useEffect(() => {
@@ -6741,7 +6756,7 @@ const EventsDesktopExpanded = () => {
             <span className="text-sm font-semibold tracking-wide" style={{ color: '#1A1717' }}>СПИСОК</span>
             <span className="text-xs text-secondary">{allEvents.length}</span>
           </div>
-          <div className="column-content">
+          <div className="column-content" ref={listRef}>
             <div className="events-list space-y-1">
               {allEvents.length === 0 && <p className="text-center text-secondary text-sm py-8">немає активних подій</p>}
               {allEvents.map(event => {
