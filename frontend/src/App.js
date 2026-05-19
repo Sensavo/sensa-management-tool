@@ -844,9 +844,9 @@ const Dashboard = () => {
   return (
     <div className="animate-fade-in" style={{ height: '100dvh', display: 'flex', flexDirection: 'column' }}>
       <header className="px-5 pt-6 pb-3">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="logo text-xl">sensa</h1>
-          <p className="text-sm text-secondary">{todayFormatted.day} {todayFormatted.month} — {todayFormatted.weekday}</p>
+        <div className="flex items-center gap-3 mb-4">
+          <h1 className="logo text-xl" style={{ textTransform: 'none' }}>Poriadok</h1>
+          <p className="text-sm text-secondary lowercase">{todayFormatted.day} {todayFormatted.month}, {todayFormatted.weekday}</p>
         </div>
         <div className="flex gap-1.5 justify-end pb-1" data-testid="mobile-tabs">
           {tabs.map(tab => (
@@ -2834,11 +2834,9 @@ const ContentPage = () => {
   return (
     <div className="desktop-dashboard" data-testid="content-page">
       <header className="desktop-header">
-        <div className="desktop-header-left">
+        <div className="desktop-header-left gap-4">
           <span className="text-xl font-semibold">контент-план</span>
-        </div>
-        <div className="desktop-date-center">
-          <span className="desktop-date-simple">{todayFormatted.day} {todayFormatted.month} — {todayFormatted.weekday}</span>
+          <span className="text-sm text-secondary lowercase">{todayFormatted.day} {todayFormatted.month}, {todayFormatted.weekday}</span>
         </div>
         <div className="desktop-header-right cursor-pointer" onClick={() => navigate('/')} style={{marginRight: '-24px', paddingRight: '24px'}} data-testid="content-close-area">
           <div className="desktop-header-btn relative">
@@ -4499,11 +4497,9 @@ const DesktopDashboard = () => {
   return (
     <div className="desktop-dashboard">
       <header className="desktop-header">
-        <div className="desktop-header-left">
-          <h1 className="logo">sensa</h1>
-        </div>
-        <div className="desktop-date-center">
-          <span className="desktop-date-simple">{todayFormatted.day} {todayFormatted.month} — {todayFormatted.weekday}</span>
+        <div className="desktop-header-left gap-4">
+          <h1 className="logo" style={{ textTransform: 'none' }}>Poriadok</h1>
+          <span className="text-sm text-secondary lowercase">{todayFormatted.day} {todayFormatted.month}, {todayFormatted.weekday}</span>
         </div>
         <div className="desktop-header-right">
           <button className="desktop-header-btn" onClick={() => setShowStats(true)} title="Аналітика" data-testid="analytics-btn"><BarChart3 className="w-5 h-5" /></button>
@@ -6639,7 +6635,7 @@ function App() {
     ]).then(() => setLoading(false)); 
   }, []);
   
-  if (loading) return <div className="app-container flex items-center justify-center min-h-screen"><div className="text-center"><h1 className="logo mb-2">sensa</h1><p className="text-secondary text-sm">завантажую...</p></div></div>;
+  if (loading) return <div className="app-container flex items-center justify-center min-h-screen"><div className="text-center"><h1 className="logo mb-2" style={{ textTransform: 'none' }}>Poriadok</h1><p className="text-secondary text-sm">завантажую...</p></div></div>;
   
   return (
       <AppContext.Provider value={{ events, settings, standaloneTasks, smmTasksDefinition, allTaskDefs, googleCalendarStatus, refreshEvents, refreshSettings, refreshStandaloneTasks, refreshGoogleStatus, refreshSMMTasksDefinition }}>
