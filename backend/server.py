@@ -929,7 +929,10 @@ async def _sync_event_to_external(event: Event) -> None:
                     service_id=int(service_id),
                 )
                 if altegio_id:
-                    await db.events.update_one({"id": event.id}, {"$set": {"altegio_activity_id": str(altegio_id)}})
+                    await db.events.update_one(
+                        {"id": event.id},
+                        {"$set": {"altegio_activity_id": str(altegio_id), "altegio_id": str(altegio_id)}}
+                    )
                     logging.info(f"Auto-pushed event '{event.title}' to Altegio: {altegio_id}")
             else:
                 logging.info(f"Altegio push skipped — no matching service for '{event.title}'")
@@ -1164,7 +1167,7 @@ async def update_event(event_id: str, event_data: EventUpdate):
         if altegio_id and ALTEGIO_PARTNER_TOKEN:
             if update_dict.get("cancelled"):
                 await altegio_client.delete_activity(altegio_id)
-                await db.events.update_one({"id": event_id}, {"$set": {"altegio_activity_id": None}})
+                await db.events.update_one({"id": event_id}, {"$set": {"altegio_activity_id": None, "altegio_id": None}})
             else:
                 await altegio_client.update_activity(
                     activity_id=altegio_id,
@@ -1288,7 +1291,10 @@ async def patch_event(event_id: str, event_data: dict):
                     service_id=updated.get("altegio_service_id") or existing.get("altegio_service_id")
                 )
                 if new_id:
-                    await db.events.update_one({"id": event_id}, {"$set": {"altegio_activity_id": str(new_id)}})
+                    await db.events.update_one(
+                        {"id": event_id},
+                        {"$set": {"altegio_activity_id": str(new_id), "altegio_id": str(new_id)}}
+                    )
     except Exception as e:
         logging.error(f"Failed to sync cancel/restore to Altegio: {e}")
     
@@ -3000,11 +3006,11 @@ async def get_google_calendar_url(event_id: str):
 @api_router.get("/altegio/status")
 async def altegio_status():
     """Check if Altegio is connected and V2 push is configured."""
-    v2_configured = bool(ALTEGIO_PARTNER_TOKEN and ALTEGIO_DEFAULT_SERVICE_ID)
+    v2_configured = bool(ALTEGIO_PARTNER_TOKEN)
     return {
         "connected": bool(ALTEGIO_USER_TOKEN),
         "push_enabled": v2_configured,
-        "service_id": ALTEGIO_DEFAULT_SERVICE_ID if v2_configured else None,
+        "service_id": ALTEGIO_DEFAULT_SERVICE_ID or None,
         "staff_id": ALTEGIO_DEFAULT_STAFF_ID if v2_configured else None
     }
 
@@ -3453,7 +3459,7 @@ async def link_event_to_altegio(event_id: str, altegio_id: str):
     try:
         result = await db.events.update_one(
             {"id": event_id},
-            {"$set": {"altegio_id": altegio_id}}
+            {"$set": {"altegio_id": altegio_id, "altegio_activity_id": altegio_id}}
         )
         
         if result.modified_count == 0:
