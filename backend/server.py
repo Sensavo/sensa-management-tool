@@ -331,6 +331,8 @@ class Event(BaseModel):
     altegio_service_id: Optional[int] = None  # per-event Altegio service (overrides default)
     altegio_booked_count: Optional[int] = None
     altegio_last_sync: Optional[str] = None
+    altegio_last_error: Optional[str] = None
+    altegio_last_status_code: Optional[int] = None
     task_overrides: Dict[str, dict] = {}
     # Google Calendar integration
     google_calendar_event_id: Optional[str] = None
@@ -1338,6 +1340,9 @@ async def _persist_event(event_data: EventCreate, settings, source_event_id: str
 
     if sync_external:
         await _sync_event_to_external(event)
+        updated = await db.events.find_one({"id": event.id}, {"_id": 0})
+        if updated:
+            return Event(**updated)
 
     return event
 
@@ -1394,7 +1399,7 @@ async def _sync_event_to_external(event: Event) -> None:
                     # Persist match so subsequent updates reuse it without re-matching
                     await db.events.update_one({"id": event.id}, {"$set": {"altegio_service_id": int(service_id)}})
             if service_id:
-                altegio_id = await altegio_client.create_activity(
+                result = await altegio_client.create_activity_result(
                     title=event.title,
                     date=event.date[:10],
                     start_time=event.start_time or "14:00",
@@ -1403,12 +1408,34 @@ async def _sync_event_to_external(event: Event) -> None:
                     comment=event.description or "",
                     service_id=int(service_id),
                 )
-                if altegio_id:
+                if result.get("ok") and result.get("activity_id"):
+                    altegio_id = str(result["activity_id"])
                     await db.events.update_one(
                         {"id": event.id},
-                        {"$set": {"altegio_activity_id": str(altegio_id), "altegio_id": str(altegio_id)}}
+                        {"$set": {
+                            "altegio_activity_id": altegio_id,
+                            "altegio_id": altegio_id,
+                            "altegio_service_id": int(service_id),
+                            "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+                            "altegio_last_error": None,
+                            "altegio_last_status_code": result.get("status_code"),
+                        }}
                     )
                     logging.info(f"Auto-pushed event '{event.title}' to Altegio: {altegio_id}")
+                else:
+                    error_body = result.get("body")
+                    if not isinstance(error_body, str):
+                        error_body = str(error_body)
+                    await db.events.update_one(
+                        {"id": event.id},
+                        {"$set": {
+                            "altegio_service_id": int(service_id),
+                            "altegio_last_error": error_body[:1000],
+                            "altegio_last_status_code": result.get("status_code"),
+                            "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+                        }}
+                    )
+                    logging.error(f"Altegio auto-push failed for '{event.title}': {result.get('status_code')} - {error_body[:300]}")
             else:
                 logging.info(f"Altegio push skipped — no matching service for '{event.title}'")
     except Exception as e:
