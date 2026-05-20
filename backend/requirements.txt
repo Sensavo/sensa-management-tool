@@ -19,6 +19,7 @@ email-validator>=2.1.0
 # HTTP clients
 httpx>=0.26.0
 requests>=2.31.0
+python-telegram-bot>=21.0
 
 # Google Calendar
 google-api-python-client>=2.100.0

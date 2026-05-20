@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -18,6 +18,17 @@ import httpx
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from contextlib import asynccontextmanager
+from zoneinfo import ZoneInfo
+import html
+
+try:
+    from telegram import Update
+    from telegram.ext import Application, CommandHandler, ContextTypes
+except Exception:  # pragma: no cover - keeps the API alive when TG deps are absent
+    Update = None
+    Application = None
+    CommandHandler = None
+    ContextTypes = None
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -41,6 +52,21 @@ ALTEGIO_DEFAULT_STAFF_ID = int(os.environ.get("ALTEGIO_DEFAULT_STAFF_ID", "0"))
 # Background task for Altegio auto-sync
 altegio_sync_task = None
 
+# Telegram notifications
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME", "")
+TELEGRAM_TIMEZONE = os.environ.get("TELEGRAM_TIMEZONE", "Europe/Kyiv")
+PORIADOK_APP_URL = (os.environ.get("FRONTEND_URL") or "https://app.sensa.events").rstrip("/")
+
+telegram_app = None
+telegram_summary_task = None
+TEAM_USERS = ("karolina", "kasya", "vo")
+TEAM_USER_LABELS = {
+    "karolina": "karolina",
+    "kasya": "kasya",
+    "vo": "vo",
+}
+
 async def altegio_auto_sync():
     """Background task to sync Altegio data every 60 minutes"""
     while True:
@@ -61,10 +87,55 @@ async def altegio_auto_sync():
         except Exception as e:
             logging.error(f"Altegio auto-sync error: {e}")
 
+
+def _telegram_enabled() -> bool:
+    return bool(TELEGRAM_BOT_TOKEN and Application and CommandHandler)
+
+
+async def start_telegram_bot():
+    """Start Telegram polling if the token is configured."""
+    global telegram_app
+    if not TELEGRAM_BOT_TOKEN:
+        logging.info("Telegram bot disabled — TELEGRAM_BOT_TOKEN is not configured")
+        return
+    if not _telegram_enabled():
+        logging.error("Telegram bot disabled — python-telegram-bot is not installed")
+        return
+
+    telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    telegram_app.add_handler(CommandHandler("start", telegram_start_command))
+    telegram_app.add_handler(CommandHandler("link", telegram_link_command))
+    telegram_app.add_handler(CommandHandler("today", telegram_today_command))
+    telegram_app.add_handler(CommandHandler("overdue", telegram_overdue_command))
+    telegram_app.add_handler(CommandHandler("mute", telegram_mute_command))
+    telegram_app.add_handler(CommandHandler("unmute", telegram_unmute_command))
+
+    await telegram_app.initialize()
+    await telegram_app.start()
+    if telegram_app.updater:
+        await telegram_app.updater.start_polling(drop_pending_updates=True)
+    logging.info("Telegram bot polling started")
+
+
+async def stop_telegram_bot():
+    global telegram_app
+    if not telegram_app:
+        return
+    try:
+        if telegram_app.updater:
+            await telegram_app.updater.stop()
+        await telegram_app.stop()
+        await telegram_app.shutdown()
+        logging.info("Telegram bot stopped")
+    except Exception as e:
+        logging.error(f"Telegram bot shutdown error: {e}")
+    finally:
+        telegram_app = None
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
-    global altegio_sync_task
+    global altegio_sync_task, telegram_summary_task
     # Load any task-definition overrides from DB into in-memory cache
     try:
         await _refresh_task_overrides_cache()
@@ -175,6 +246,9 @@ async def lifespan(app: FastAPI):
                 logging.info(f"Auto-generated daily task: {task_id}")
     
     asyncio.create_task(auto_generate_daily())
+
+    await start_telegram_bot()
+    telegram_summary_task = asyncio.create_task(telegram_summary_loop())
     
     yield
     
@@ -186,6 +260,14 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
     logging.info("Altegio auto-sync stopped")
+
+    if telegram_summary_task:
+        telegram_summary_task.cancel()
+        try:
+            await telegram_summary_task
+        except asyncio.CancelledError:
+            pass
+    await stop_telegram_bot()
 
 app = FastAPI(lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
