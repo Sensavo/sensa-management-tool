@@ -3200,10 +3200,26 @@ class AltegioClient:
 
         service_id: per-event Altegio service id. If not provided, falls back to ALTEGIO_DEFAULT_SERVICE_ID.
         """
+        result = await self.create_activity_result(
+            title=title,
+            date=date,
+            start_time=start_time,
+            end_time=end_time,
+            capacity=capacity,
+            comment=comment,
+            service_id=service_id,
+        )
+        return result.get("activity_id") if result.get("ok") else None
+
+    async def create_activity_result(self, title: str, date: str, start_time: str = "14:00",
+                                     end_time: str = "16:00", capacity: int = 10, comment: str = "",
+                                     service_id: Optional[int] = None):
+        """Create an Altegio activity and return a debuggable result object."""
         effective_service_id = service_id or ALTEGIO_DEFAULT_SERVICE_ID
         if not ALTEGIO_PARTNER_TOKEN or not self.push_user_token or not effective_service_id:
-            logging.warning("Altegio push skipped: partner token, write-capable user token, or service_id missing")
-            return None
+            message = "Altegio push skipped: partner token, write-capable user token, or service_id missing"
+            logging.warning(message)
+            return {"ok": False, "activity_id": None, "status_code": None, "body": message}
 
         url = f"{ALTEGIO_BASE_URL_V2}/companies/{self.company_id}/activities"
         length = self._calc_length_seconds(start_time, end_time)
@@ -3226,10 +3242,10 @@ class AltegioClient:
                 data = response.json()
                 activity_id = data.get("data", {}).get("id")
                 logging.info(f"Altegio activity created: {activity_id} for '{title}'")
-                return activity_id
-            else:
-                logging.error(f"Altegio create activity error: {response.status_code} - {response.text}")
-                return None
+                return {"ok": True, "activity_id": activity_id, "status_code": response.status_code, "body": data}
+
+            logging.error(f"Altegio create activity error: {response.status_code} - {response.text}")
+            return {"ok": False, "activity_id": None, "status_code": response.status_code, "body": response.text}
     
     async def update_activity(self, activity_id: str, title: str, date: str,
                                start_time: str = "14:00", end_time: str = "16:00",
@@ -3340,6 +3356,64 @@ async def sync_from_altegio():
     except Exception as e:
         logging.error(f"Altegio sync failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/altegio/event/{event_id}/push")
+async def push_single_event_to_altegio(event_id: str):
+    """Push a local event to Altegio and return the exact Altegio result."""
+    event = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    existing_altegio_id = event.get("altegio_id") or event.get("altegio_activity_id")
+    if existing_altegio_id:
+        return {
+            "event_id": event_id,
+            "altegio_id": str(existing_altegio_id),
+            "message": "Event already linked to Altegio",
+        }
+
+    service_id = event.get("altegio_service_id") or ALTEGIO_DEFAULT_SERVICE_ID or None
+    if not service_id:
+        matched = await _altegio_match_service_by_title(event.get("title", ""))
+        if matched:
+            service_id = matched
+
+    if not service_id:
+        raise HTTPException(status_code=400, detail="No matching Altegio service for event title")
+
+    result = await altegio_client.create_activity_result(
+        title=event.get("title", ""),
+        date=event.get("date", "")[:10],
+        start_time=event.get("start_time") or "14:00",
+        end_time=event.get("end_time") or "16:00",
+        capacity=event.get("spots") or 10,
+        comment=event.get("description") or "",
+        service_id=int(service_id),
+    )
+
+    if not result.get("ok") or not result.get("activity_id"):
+        raise HTTPException(status_code=502, detail=result)
+
+    altegio_id = str(result["activity_id"])
+    await db.events.update_one(
+        {"id": event_id},
+        {"$set": {
+            "altegio_id": altegio_id,
+            "altegio_activity_id": altegio_id,
+            "altegio_service_id": int(service_id),
+            "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+
+    return {
+        "event_id": event_id,
+        "altegio_id": altegio_id,
+        "service_id": int(service_id),
+        "status_code": result.get("status_code"),
+        "message": "Pushed to Altegio",
+    }
+
 
 @api_router.get("/altegio/event/{event_id}/bookings")
 async def get_event_bookings_from_altegio(event_id: str):
