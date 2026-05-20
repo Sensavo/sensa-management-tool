@@ -780,6 +780,275 @@ def calculate_smm_dates(event_date: str, is_series_child: bool = False, is_serie
     """Calculate SMM task dates based on event date with date corrections"""
     return calculate_event_tasks(event_date, "smm", is_series_child=is_series_child, is_series=is_series)
 
+
+# ==================== TELEGRAM HELPERS ====================
+
+def _telegram_tz():
+    try:
+        return ZoneInfo(TELEGRAM_TIMEZONE)
+    except Exception:
+        return ZoneInfo("Europe/Kyiv")
+
+
+def _today_kyiv() -> str:
+    return datetime.now(_telegram_tz()).date().isoformat()
+
+
+def _html_escape(value: object) -> str:
+    return html.escape(str(value or ""), quote=False)
+
+
+def _poriadok_link() -> str:
+    return f'<a href="{_html_escape(PORIADOK_APP_URL)}">відкрити Poriadok</a>'
+
+
+def _format_task_date(date_str: str) -> str:
+    if not date_str:
+        return "без дати"
+    try:
+        d = datetime.strptime(date_str[:10], "%Y-%m-%d").date()
+        today = datetime.now(_telegram_tz()).date()
+        if d == today:
+            return "сьогодні"
+        if d == today + timedelta(days=1):
+            return "завтра"
+        return d.strftime("%d.%m")
+    except Exception:
+        return date_str[:10]
+
+
+async def _ensure_user_setting(user_id: str) -> dict:
+    if user_id not in TEAM_USERS:
+        raise HTTPException(status_code=404, detail="User not found")
+    defaults = {
+        "user_id": user_id,
+        "telegram_chat_id": None,
+        "telegram_username": "",
+        "link_code": None,
+        "muted": False,
+        "link_expires_at": None,
+    }
+    await db.user_settings.update_one(
+        {"user_id": user_id},
+        {"$setOnInsert": defaults},
+        upsert=True,
+    )
+    doc = await db.user_settings.find_one({"user_id": user_id}, {"_id": 0})
+    return doc or defaults
+
+
+async def _find_user_by_chat(chat_id: int) -> Optional[dict]:
+    return await db.user_settings.find_one({"telegram_chat_id": chat_id}, {"_id": 0})
+
+
+async def _telegram_status_payload(user_id: str) -> dict:
+    doc = await _ensure_user_setting(user_id)
+    linked = bool(doc.get("telegram_chat_id"))
+    expires_at = doc.get("link_expires_at")
+    if isinstance(expires_at, datetime):
+        expires_at = expires_at.isoformat()
+    return {
+        "user_id": user_id,
+        "linked": linked,
+        "muted": bool(doc.get("muted")),
+        "telegram_username": doc.get("telegram_username") or "",
+        "telegram_chat_id": doc.get("telegram_chat_id"),
+        "link_expires_at": expires_at,
+        "bot_username": TELEGRAM_BOT_USERNAME,
+        "enabled": bool(TELEGRAM_BOT_TOKEN),
+    }
+
+
+def _task_def_for_event_task(column: str, task_id: str) -> dict:
+    return next((t for t in get_tasks_for_column(column) if t.get("id") == task_id), {})
+
+
+def _event_task_owner(column: str, override: dict) -> str:
+    owner_by_column = {
+        "management": "karolina",
+        "smm": "kasya",
+        "marketing": "vo",
+    }
+    return override.get("assignee") or owner_by_column.get(column, "karolina")
+
+
+async def _collect_user_tasks(user_id: str, *, target_date: Optional[str] = None, overdue: bool = False) -> List[dict]:
+    column = ASSIGNEE_TO_COLUMN.get(user_id)
+    if not column:
+        return []
+
+    today = _today_kyiv()
+    tasks: List[dict] = []
+
+    standalone_filter = {"assignee": user_id, "completed": {"$ne": True}}
+    standalone = await db.standalone_tasks.find(standalone_filter, {"_id": 0}).to_list(2000)
+    for task in standalone:
+        task_date = (task.get("date") or "")[:10]
+        if target_date and task_date != target_date:
+            continue
+        if overdue and (not task_date or task_date >= today):
+            continue
+        tasks.append({
+            "title": task.get("title") or "таск",
+            "date": task_date,
+            "source": "standalone",
+            "event_title": "",
+        })
+
+    event_query = {"cancelled": {"$ne": True}, "archived": {"$ne": True}}
+    events = await db.events.find(event_query, {"_id": 0}).to_list(3000)
+    field = COLUMN_TO_FIELD[column]
+    completed_field = COLUMN_TO_COMPLETED_FIELD[column]
+    for event in events:
+        event_tasks = event.get(field, {}) or {}
+        completed = event.get(completed_field, {}) or {}
+        overrides = event.get("task_overrides", {}) or {}
+        for task_id, task_date in event_tasks.items():
+            task_date = (task_date or "")[:10]
+            if not task_date or completed.get(task_id):
+                continue
+            override = overrides.get(task_id, {}) or {}
+            if _event_task_owner(column, override) != user_id:
+                continue
+            if target_date and task_date != target_date:
+                continue
+            if overdue and task_date >= today:
+                continue
+            definition = _task_def_for_event_task(column, task_id)
+            tasks.append({
+                "title": override.get("title") or definition.get("name") or task_id,
+                "date": task_date,
+                "source": "event",
+                "event_title": event.get("title", ""),
+                "event_id": event.get("id", ""),
+            })
+
+    tasks.sort(key=lambda item: (item.get("date") or "9999-99-99", item.get("title") or ""))
+    return tasks
+
+
+def _format_task_list(tasks: List[dict], empty_text: str) -> str:
+    if not tasks:
+        return empty_text
+    lines = []
+    for idx, task in enumerate(tasks[:12], start=1):
+        event_part = f" · {_html_escape(task.get('event_title'))}" if task.get("event_title") else ""
+        lines.append(f"{idx}. {_html_escape(task.get('title'))} — {_format_task_date(task.get('date', ''))}{event_part}")
+    if len(tasks) > 12:
+        lines.append(f"ще {len(tasks) - 12}...")
+    return "\n".join(lines)
+
+
+async def telegram_start_command(update, context):
+    await update.message.reply_text("привіт. для привʼязки надішли /link 123456")
+
+
+async def telegram_link_command(update, context):
+    args = context.args or []
+    if not args:
+        await update.message.reply_text("надішли код так: /link 123456")
+        return
+
+    code = args[0].strip()
+    now = datetime.now(timezone.utc)
+    doc = await db.user_settings.find_one({
+        "link_code": code,
+        "link_expires_at": {"$gt": now},
+    }, {"_id": 0})
+    if not doc:
+        await update.message.reply_text("код не знайдено або він вже протермінований")
+        return
+
+    chat = update.effective_chat
+    username = update.effective_user.username if update.effective_user else ""
+    await db.user_settings.update_one(
+        {"user_id": doc["user_id"]},
+        {"$set": {
+            "telegram_chat_id": chat.id,
+            "telegram_username": username or "",
+            "muted": False,
+            "link_code": None,
+            "link_expires_at": None,
+        }},
+    )
+    await update.message.reply_text(f"✓ привʼязано до акаунту {doc['user_id']}")
+
+
+async def telegram_today_command(update, context):
+    user = await _find_user_by_chat(update.effective_chat.id)
+    if not user:
+        await update.message.reply_text("спершу привʼяжи акаунт через /link 123456")
+        return
+    tasks = await _collect_user_tasks(user["user_id"], target_date=_today_kyiv())
+    await update.message.reply_html(f"📋 сьогодні:\n{_format_task_list(tasks, 'тасків на сьогодні немає')}\n\n{_poriadok_link()}")
+
+
+async def telegram_overdue_command(update, context):
+    user = await _find_user_by_chat(update.effective_chat.id)
+    if not user:
+        await update.message.reply_text("спершу привʼяжи акаунт через /link 123456")
+        return
+    tasks = await _collect_user_tasks(user["user_id"], overdue=True)
+    await update.message.reply_html(f"📋 протерміновано:\n{_format_task_list(tasks, 'протермінованих тасків немає')}\n\n{_poriadok_link()}")
+
+
+async def telegram_mute_command(update, context):
+    user = await _find_user_by_chat(update.effective_chat.id)
+    if not user:
+        await update.message.reply_text("спершу привʼяжи акаунт через /link 123456")
+        return
+    await db.user_settings.update_one({"user_id": user["user_id"]}, {"$set": {"muted": True}})
+    await update.message.reply_text("ок, сповіщення тимчасово вимкнено")
+
+
+async def telegram_unmute_command(update, context):
+    user = await _find_user_by_chat(update.effective_chat.id)
+    if not user:
+        await update.message.reply_text("спершу привʼяжи акаунт через /link 123456")
+        return
+    await db.user_settings.update_one({"user_id": user["user_id"]}, {"$set": {"muted": False}})
+    await update.message.reply_text("ок, сповіщення знову увімкнено")
+
+
+@api_router.get("/users/{user_id}/telegram/status")
+async def get_telegram_status(user_id: str):
+    return await _telegram_status_payload(user_id)
+
+
+@api_router.post("/users/{user_id}/telegram/link-code")
+async def create_telegram_link_code(user_id: str):
+    await _ensure_user_setting(user_id)
+    code = f"{random.randint(0, 999999):06d}"
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
+    await db.user_settings.update_one(
+        {"user_id": user_id},
+        {"$set": {
+            "link_code": code,
+            "link_expires_at": expires_at,
+        }},
+        upsert=True,
+    )
+    return {
+        "code": code,
+        "expires_at": expires_at.isoformat(),
+        "bot_username": TELEGRAM_BOT_USERNAME,
+    }
+
+
+@api_router.post("/users/{user_id}/telegram/mute")
+async def mute_telegram_user(user_id: str):
+    await _ensure_user_setting(user_id)
+    await db.user_settings.update_one({"user_id": user_id}, {"$set": {"muted": True}})
+    return await _telegram_status_payload(user_id)
+
+
+@api_router.post("/users/{user_id}/telegram/unmute")
+async def unmute_telegram_user(user_id: str):
+    await _ensure_user_setting(user_id)
+    await db.user_settings.update_one({"user_id": user_id}, {"$set": {"muted": False}})
+    return await _telegram_status_payload(user_id)
+
+
 # ==================== EVENTS API ====================
 
 @api_router.get("/")
