@@ -71,6 +71,11 @@ import { DndContext, useDraggable, useDroppable, PointerSensor, useSensor, useSe
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 const ACTOR_USER_STORAGE_KEY = "poriadok_actor_user";
+const TEAM_USER_OPTIONS = [
+  { id: "karolina", label: "Karolina" },
+  { id: "kasya", label: "Kasya" },
+  { id: "vo", label: "Vo" },
+];
 
 const getActorUser = () => {
   try {
@@ -132,6 +137,10 @@ const api = {
   getEventBookings: (eventId) => axios.get(`${API}/altegio/event/${eventId}/bookings`),
   syncEventFromAltegio: (eventId) => axios.post(`${API}/altegio/event/${eventId}/sync`),
   exportEventToCalendar: (eventId) => axios.post(`${API}/calendar/events/${eventId}/export`),
+  getTelegramStatus: (userId) => axios.get(`${API}/users/${userId}/telegram/status`),
+  createTelegramLinkCode: (userId) => axios.post(`${API}/users/${userId}/telegram/link-code`),
+  muteTelegram: (userId) => axios.post(`${API}/users/${userId}/telegram/mute`),
+  unmuteTelegram: (userId) => axios.post(`${API}/users/${userId}/telegram/unmute`),
 };
 
 // Helper function to get booking status color
@@ -2641,6 +2650,143 @@ const AltegioSyncSection = () => {
   );
 };
 
+const TelegramSettingsSection = ({ compact = false }) => {
+  const [currentUser, setCurrentUser] = useState(getActorUser());
+  const [status, setStatus] = useState(null);
+  const [linkData, setLinkData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(0);
+
+  const loadStatus = useCallback(async (userId = currentUser) => {
+    if (!userId) {
+      setStatus(null);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api.getTelegramStatus(userId);
+      setStatus(res.data);
+    } catch {
+      toast.error("не вдалося отримати статус Telegram");
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    loadStatus(currentUser);
+  }, [currentUser, loadStatus]);
+
+  useEffect(() => {
+    if (!linkData?.expires_at) {
+      setSecondsLeft(0);
+      return;
+    }
+    const tick = () => {
+      const left = Math.max(0, Math.floor((new Date(linkData.expires_at).getTime() - Date.now()) / 1000));
+      setSecondsLeft(left);
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [linkData]);
+
+  const handleUserChange = (userId) => {
+    setCurrentUser(userId);
+    setLinkData(null);
+    try {
+      if (userId) localStorage.setItem(ACTOR_USER_STORAGE_KEY, userId);
+      else localStorage.removeItem(ACTOR_USER_STORAGE_KEY);
+    } catch {}
+  };
+
+  const handleCreateCode = async () => {
+    if (!currentUser) {
+      toast.info("спершу обери себе");
+      return;
+    }
+    try {
+      const res = await api.createTelegramLinkCode(currentUser);
+      setLinkData(res.data);
+      toast.success("код створено");
+    } catch {
+      toast.error("не вдалося створити код");
+    }
+  };
+
+  const handleToggleMute = async () => {
+    if (!currentUser || !status) return;
+    try {
+      const res = status.muted ? await api.unmuteTelegram(currentUser) : await api.muteTelegram(currentUser);
+      setStatus(res.data);
+      toast.success(status.muted ? "сповіщення увімкнено" : "сповіщення вимкнено");
+    } catch {
+      toast.error("не вдалося змінити статус");
+    }
+  };
+
+  const botUsername = linkData?.bot_username || status?.bot_username;
+  const botUrl = botUsername ? `https://t.me/${botUsername.replace("@", "")}` : "";
+  const codeText = linkData?.code ? `/link ${linkData.code}` : "";
+  const statusText = !currentUser
+    ? "обери себе"
+    : loading
+      ? "перевіряю..."
+      : status?.linked
+        ? `привʼязано${status.telegram_username ? ` як @${status.telegram_username}` : ""}${status.muted ? " · mute" : ""}`
+        : "не привʼязано";
+
+  return (
+    <div className={compact ? "space-y-2" : "section-card mt-4"}>
+      {!compact && <p className="text-xs text-secondary mb-4">сповіщення в Telegram</p>}
+      <div className="reminder-item !py-2">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="task-icon"><MessageCircle className="w-4 h-4" /></div>
+          <div className="min-w-0">
+            <p className="font-medium text-sm">Telegram</p>
+            <p className="text-xs text-secondary truncate">{statusText}</p>
+          </div>
+        </div>
+        <select
+          value={currentUser}
+          onChange={(e) => handleUserChange(e.target.value)}
+          className="h-8 rounded-full bg-white border border-black/10 px-2 text-xs"
+        >
+          <option value="">хто я</option>
+          {TEAM_USER_OPTIONS.map(user => <option key={user.id} value={user.id}>{user.label}</option>)}
+        </select>
+      </div>
+
+      <div className="flex gap-2">
+        <button className="btn-dark flex-1 h-9 text-xs" onClick={handleCreateCode} disabled={!currentUser}>
+          {status?.linked ? "перепривʼязати" : "привʼязати TG"}
+        </button>
+        <button className="btn-subtle flex-1 h-9 text-xs" onClick={handleToggleMute} disabled={!currentUser || !status?.linked}>
+          {status?.muted ? "увімкнути" : "тимч. вимкнути"}
+        </button>
+      </div>
+
+      {linkData?.code && (
+        <div className="rounded-xl bg-black/5 p-3 flex gap-3 items-center">
+          {botUrl && (
+            <img
+              className="w-20 h-20 rounded-lg bg-white p-1"
+              alt="Telegram QR"
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(botUrl)}`}
+            />
+          )}
+          <div className="min-w-0">
+            <p className="text-xs text-secondary mb-1">надішли боту команду</p>
+            <p className="font-mono text-sm font-semibold truncate">{codeText}</p>
+            <p className="text-xs text-secondary mt-1">{secondsLeft > 0 ? `діє ще ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}` : "код протерміновано"}</p>
+            {botUrl && <a className="text-xs underline mt-1 inline-block" href={botUrl} target="_blank" rel="noreferrer">відкрити бота</a>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Settings Page with edit capability
 
 // ==================== CALENDAR PAGE (/cal) ====================
@@ -3538,6 +3684,10 @@ const SettingsPage = () => {
         
         {activeTab === "sync" && (
           <AltegioSyncSection />
+        )}
+
+        {activeTab === "sync" && (
+          <TelegramSettingsSection />
         )}
         
         {activeTab === "management" && (
@@ -5994,6 +6144,9 @@ const SettingsContent = () => {
                   <div><p className="font-medium text-sm">Altegio</p><p className="text-xs text-secondary">{altegioConnected ? "підключено" : "не підключено"}</p></div>
                 </div>
                 <span className={`text-xs ${altegioConnected ? 'text-green-600' : 'text-secondary'}`}>{altegioConnected ? "активний" : "—"}</span>
+              </div>
+              <div className="pt-2 border-t border-gray-100">
+                <TelegramSettingsSection compact />
               </div>
             </div>
           </div>
