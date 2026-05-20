@@ -878,7 +878,7 @@ const Dashboard = () => {
       <header className="px-5 pt-6 pb-3">
         <div className="flex items-center gap-3 mb-4">
           <h1 className="logo text-xl" style={{ textTransform: 'none' }}>Poriadok</h1>
-          <p className="text-sm text-secondary lowercase">{todayFormatted.phrase} {todayFormatted.day} {todayFormatted.month}</p>
+          <p className="text-sm text-secondary lowercase">{todayFormatted.phrase}, {todayFormatted.day}-го {todayFormatted.month}</p>
         </div>
         <div className="flex gap-1.5 justify-end pb-1" data-testid="mobile-tabs">
           {tabs.map(tab => (
@@ -2868,7 +2868,7 @@ const ContentPage = () => {
       <header className="desktop-header">
         <div className="desktop-header-left gap-4">
           <span className="text-xl font-semibold">контент-план</span>
-          <span className="text-sm text-secondary lowercase">{todayFormatted.phrase} {todayFormatted.day} {todayFormatted.month}</span>
+          <span className="text-sm text-secondary lowercase">{todayFormatted.phrase}, {todayFormatted.day}-го {todayFormatted.month}</span>
         </div>
         <div className="desktop-header-right cursor-pointer" onClick={() => navigate('/')} style={{marginRight: '-24px', paddingRight: '24px'}} data-testid="content-close-area">
           <div className="desktop-header-btn relative">
@@ -4590,7 +4590,7 @@ const DesktopDashboard = () => {
       <header className="desktop-header">
         <div className="desktop-header-left gap-4">
           <h1 className="logo" style={{ textTransform: 'none' }}>Poriadok</h1>
-          <span className="text-sm text-secondary lowercase">{todayFormatted.phrase} {todayFormatted.day} {todayFormatted.month}</span>
+          <span className="text-sm text-secondary lowercase">{todayFormatted.phrase}, {todayFormatted.day}-го {todayFormatted.month}</span>
         </div>
         <div className="desktop-header-right">
           <button className="desktop-header-btn" onClick={() => setShowStats(true)} title="Аналітика" data-testid="analytics-btn"><BarChart3 className="w-5 h-5" /></button>
@@ -6838,7 +6838,7 @@ const EventsDesktopExpanded = () => {
       <header className="desktop-header">
         <div className="desktop-header-left gap-4">
           <h1 className="logo" style={{ textTransform: 'none' }}>Poriadok</h1>
-          <span className="text-sm text-secondary lowercase">{todayFormatted.phrase} {todayFormatted.day} {todayFormatted.month} · події</span>
+          <span className="text-sm text-secondary lowercase">{todayFormatted.phrase}, {todayFormatted.day}-го {todayFormatted.month} · події</span>
         </div>
         <div className="desktop-header-right">
           <button className="btn-dark" onClick={() => navigate("/event/new")} data-testid="events-expand-new-btn"><Plus className="w-4 h-4" /><span>подія</span></button>
