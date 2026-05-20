@@ -939,6 +939,101 @@ def _format_task_list(tasks: List[dict], empty_text: str) -> str:
     return "\n".join(lines)
 
 
+async def send_telegram(user_id: str, text: str) -> bool:
+    if not telegram_app:
+        return False
+    doc = await db.user_settings.find_one({"user_id": user_id}, {"_id": 0})
+    if not doc or not doc.get("telegram_chat_id") or doc.get("muted"):
+        return False
+    try:
+        await telegram_app.bot.send_message(
+            chat_id=doc["telegram_chat_id"],
+            text=text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        return True
+    except Exception as e:
+        logging.error(f"Telegram send error for {user_id}: {e}")
+        return False
+
+
+def enqueue_telegram(user_id: str, text: str) -> None:
+    if telegram_app:
+        asyncio.create_task(send_telegram(user_id, text))
+
+
+async def _today_events_summary() -> str:
+    today = _today_kyiv()
+    events = await db.events.find(
+        {"date": {"$regex": f"^{today}"}, "cancelled": {"$ne": True}, "archived": {"$ne": True}},
+        {"_id": 0, "title": 1, "start_time": 1},
+    ).to_list(20)
+    if not events:
+        return ""
+    events.sort(key=lambda e: e.get("start_time") or "99:99")
+    first = events[0]
+    time_part = f" {first.get('start_time')}" if first.get("start_time") else ""
+    extra = f" (+{len(events) - 1})" if len(events) > 1 else ""
+    return f"подія сьогодні: <b>{_html_escape(first.get('title'))}</b>{_html_escape(time_part)}{extra}"
+
+
+async def _build_morning_summary(user_id: str) -> Optional[str]:
+    today_tasks = await _collect_user_tasks(user_id, target_date=_today_kyiv())
+    overdue_tasks = await _collect_user_tasks(user_id, overdue=True)
+    if not today_tasks and not overdue_tasks:
+        return None
+
+    total = len(today_tasks) + len(overdue_tasks)
+    first_task = (overdue_tasks + today_tasks)[0]
+    event_line = await _today_events_summary()
+    lines = [
+        f"📋 доброго ранку, {_html_escape(TEAM_USER_LABELS.get(user_id, user_id))}.",
+        f"сьогодні в тебе: <b>{total}</b> тасків ({len(overdue_tasks)} протерм).",
+        f"найперший — <b>{_html_escape(first_task.get('title'))}</b> {_format_task_date(first_task.get('date', ''))}.",
+    ]
+    if event_line:
+        lines.append(event_line)
+    lines.append("")
+    lines.append(_poriadok_link())
+    return "\n".join(lines)
+
+
+async def _send_morning_summaries() -> dict:
+    sent = 0
+    skipped = 0
+    for user_id in TEAM_USERS:
+        message = await _build_morning_summary(user_id)
+        if not message:
+            skipped += 1
+            continue
+        if await send_telegram(user_id, message):
+            sent += 1
+        else:
+            skipped += 1
+    return {"sent": sent, "skipped": skipped}
+
+
+async def telegram_summary_loop():
+    if not TELEGRAM_BOT_TOKEN:
+        return
+    while True:
+        try:
+            now = datetime.now(_telegram_tz())
+            target = now.replace(hour=9, minute=0, second=0, microsecond=0)
+            if target <= now:
+                target = target + timedelta(days=1)
+            await asyncio.sleep(max(1, (target - now).total_seconds()))
+            result = await _send_morning_summaries()
+            logging.info(f"Telegram morning summary completed: {result}")
+        except asyncio.CancelledError:
+            logging.info("Telegram summary task cancelled")
+            break
+        except Exception as e:
+            logging.error(f"Telegram summary error: {e}")
+            await asyncio.sleep(60)
+
+
 async def telegram_start_command(update, context):
     await update.message.reply_text("привіт. для привʼязки надішли /link 123456")
 
@@ -1047,6 +1142,11 @@ async def unmute_telegram_user(user_id: str):
     await _ensure_user_setting(user_id)
     await db.user_settings.update_one({"user_id": user_id}, {"$set": {"muted": False}})
     return await _telegram_status_payload(user_id)
+
+
+@api_router.post("/admin/telegram/test-summary")
+async def test_telegram_summary():
+    return await _send_morning_summaries()
 
 
 # ==================== EVENTS API ====================
