@@ -33,6 +33,7 @@ ALTEGIO_BASE_URL = "https://api.alteg.io/api/v1"
 ALTEGIO_BASE_URL_V2 = "https://api.alteg.io/api/v2"
 ALTEGIO_COMPANY_ID = os.environ.get("ALTEGIO_COMPANY_ID", "1187362")
 ALTEGIO_USER_TOKEN = os.environ.get("ALTEGIO_USER_TOKEN", "")
+ALTEGIO_PUSH_USER_TOKEN = os.environ.get("ALTEGIO_PUSH_USER_TOKEN", "") or ALTEGIO_USER_TOKEN
 ALTEGIO_PARTNER_TOKEN = os.environ.get("ALTEGIO_PARTNER_TOKEN", "")
 ALTEGIO_DEFAULT_SERVICE_ID = int(os.environ.get("ALTEGIO_DEFAULT_SERVICE_ID", "0"))
 ALTEGIO_DEFAULT_STAFF_ID = int(os.environ.get("ALTEGIO_DEFAULT_STAFF_ID", "0"))
@@ -3010,6 +3011,8 @@ async def altegio_status():
     return {
         "connected": bool(ALTEGIO_USER_TOKEN),
         "push_enabled": v2_configured,
+        "push_user_token_configured": bool(ALTEGIO_PUSH_USER_TOKEN),
+        "using_separate_push_user_token": bool(ALTEGIO_PUSH_USER_TOKEN and ALTEGIO_PUSH_USER_TOKEN != ALTEGIO_USER_TOKEN),
         "service_id": ALTEGIO_DEFAULT_SERVICE_ID or None,
         "staff_id": ALTEGIO_DEFAULT_STAFF_ID if v2_configured else None
     }
@@ -3057,6 +3060,7 @@ class AltegioClient:
         self.base_url = ALTEGIO_BASE_URL
         self.company_id = ALTEGIO_COMPANY_ID
         self.user_token = ALTEGIO_USER_TOKEN
+        self.push_user_token = ALTEGIO_PUSH_USER_TOKEN
     
     def get_headers(self):
         """Get authorization headers for Altegio API"""
@@ -3167,13 +3171,18 @@ class AltegioClient:
 
     # ---- V2 API Methods (push sync) ----
     
-    def get_v2_headers(self):
+    def get_v2_headers(self, user_token: Optional[str] = None):
         """Get V2 API authorization headers (requires partner + user tokens)"""
+        effective_user_token = user_token or self.user_token
         return {
-            "Authorization": f"Bearer {ALTEGIO_PARTNER_TOKEN}, User {self.user_token}",
+            "Authorization": f"Bearer {ALTEGIO_PARTNER_TOKEN}, User {effective_user_token}",
             "Accept": "application/vnd.api.v2+json",
             "Content-Type": "application/json"
         }
+
+    def get_v2_push_headers(self):
+        """Use a write-capable user token for create/update/delete when configured."""
+        return self.get_v2_headers(self.push_user_token)
     
     def _calc_length_seconds(self, start_time: str, end_time: str) -> int:
         """Calculate event length in seconds from HH:MM strings"""
@@ -3192,8 +3201,8 @@ class AltegioClient:
         service_id: per-event Altegio service id. If not provided, falls back to ALTEGIO_DEFAULT_SERVICE_ID.
         """
         effective_service_id = service_id or ALTEGIO_DEFAULT_SERVICE_ID
-        if not ALTEGIO_PARTNER_TOKEN or not effective_service_id:
-            logging.warning("Altegio push skipped: ALTEGIO_PARTNER_TOKEN missing, or no service_id (per-event nor default)")
+        if not ALTEGIO_PARTNER_TOKEN or not self.push_user_token or not effective_service_id:
+            logging.warning("Altegio push skipped: partner token, write-capable user token, or service_id missing")
             return None
 
         url = f"{ALTEGIO_BASE_URL_V2}/companies/{self.company_id}/activities"
@@ -3212,7 +3221,7 @@ class AltegioClient:
         }
         
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, headers=self.get_v2_headers(), json=payload)
+            response = await client.post(url, headers=self.get_v2_push_headers(), json=payload)
             if response.status_code in [200, 201]:
                 data = response.json()
                 activity_id = data.get("data", {}).get("id")
@@ -3231,7 +3240,7 @@ class AltegioClient:
         service_id: per-event Altegio service id. If not provided, falls back to ALTEGIO_DEFAULT_SERVICE_ID.
         """
         effective_service_id = service_id or ALTEGIO_DEFAULT_SERVICE_ID
-        if not ALTEGIO_PARTNER_TOKEN or not activity_id or not effective_service_id:
+        if not ALTEGIO_PARTNER_TOKEN or not self.push_user_token or not activity_id or not effective_service_id:
             return None
 
         url = f"{ALTEGIO_BASE_URL_V2}/companies/{self.company_id}/activities/{activity_id}"
@@ -3250,7 +3259,7 @@ class AltegioClient:
         }
         
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.put(url, headers=self.get_v2_headers(), json=payload)
+            response = await client.put(url, headers=self.get_v2_push_headers(), json=payload)
             if response.status_code == 200:
                 logging.info(f"Altegio activity updated: {activity_id}")
                 return True
@@ -3260,13 +3269,13 @@ class AltegioClient:
     
     async def delete_activity(self, activity_id: str):
         """Delete an activity/event in Altegio via V2 API"""
-        if not ALTEGIO_PARTNER_TOKEN or not activity_id:
+        if not ALTEGIO_PARTNER_TOKEN or not self.push_user_token or not activity_id:
             return None
         
         url = f"{ALTEGIO_BASE_URL_V2}/companies/{self.company_id}/activities/{activity_id}"
         
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.delete(url, headers=self.get_v2_headers())
+            response = await client.delete(url, headers=self.get_v2_push_headers())
             if response.status_code in [200, 204]:
                 logging.info(f"Altegio activity deleted: {activity_id}")
                 return True
