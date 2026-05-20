@@ -4565,6 +4565,26 @@ const DesktopDashboard = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showTaskDialog, showSMMTaskDialog, showEditStandaloneDialog, newTask, newSMMTask, editingStandaloneTask]);
 
+  // Digit shortcuts in the edit dialog: 0 = today, 1 = tomorrow, … 9 = +9d.
+  // Calls the same reschedule handler the chips use, so the popup closes on
+  // success. Skipped while focused on input/textarea so title editing isn't
+  // hijacked, and skipped if any modifier is held (those are for save etc.).
+  useEffect(() => {
+    if (!showEditStandaloneDialog) return;
+    const handleDigit = (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      const tag = e.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
+      const d = parseInt(e.key, 10);
+      if (Number.isNaN(d) || d < 0 || d > 9) return;
+      if (!editingStandaloneTask?.title?.trim()) return;
+      e.preventDefault();
+      handleRescheduleStandaloneTask(shiftDateLocal(todayStr, d));
+    };
+    window.addEventListener('keydown', handleDigit);
+    return () => window.removeEventListener('keydown', handleDigit);
+  }, [showEditStandaloneDialog, editingStandaloneTask, todayStr]);
+
   return (
     <div className="desktop-dashboard">
       <header className="desktop-header">
