@@ -3115,13 +3115,13 @@ class AltegioClient:
         url = f"{self.base_url}/activity/{self.company_id}/{activity_id}/records"
         
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(url, headers=self.get_headers())
+            response = await client.get(url, headers=self.get_v2_headers())
             if response.status_code == 200:
                 data = response.json()
                 return data.get("data", [])
             else:
-                logging.error(f"Altegio activity bookings error: {response.status_code}")
-                return []
+                logging.error(f"Altegio activity bookings error: {response.status_code} - {response.text[:200]}")
+                return None
     
     async def get_services(self):
         """Get all services from Altegio.
@@ -3344,17 +3344,30 @@ async def get_event_bookings_from_altegio(event_id: str):
         if not event:
             raise HTTPException(status_code=404, detail="Event not found")
         
-        altegio_id = event.get("altegio_id")
+        altegio_id = event.get("altegio_id") or event.get("altegio_activity_id")
         
         if altegio_id:
-            # Fetch from Altegio
             bookings = await altegio_client.get_activity_bookings(altegio_id)
-            booked_count = len(bookings)
+            booked_count = len(bookings) if bookings is not None else None
+
+            if booked_count is None:
+                altegio_events = await altegio_client.get_group_events()
+                for altegio_event in altegio_events:
+                    if str(altegio_event.get("id")) == str(altegio_id):
+                        booked_count = altegio_event.get("records_count", 0)
+                        break
+
+            if booked_count is None:
+                booked_count = event.get("altegio_booked_count", 0) or 0
+            if bookings is None:
+                bookings = []
             
             # Update local event
             await db.events.update_one(
                 {"id": event_id},
                 {"$set": {
+                    "altegio_id": str(altegio_id),
+                    "altegio_activity_id": str(altegio_id),
                     "altegio_booked_count": booked_count,
                     "altegio_last_sync": datetime.now(timezone.utc).isoformat()
                 }}
