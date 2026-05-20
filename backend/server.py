@@ -51,43 +51,9 @@ async def altegio_auto_sync():
                 logging.warning("Altegio token not configured, skipping sync")
                 continue
             
-            # Fetch activities/events from Altegio
-            url = f"{ALTEGIO_BASE_URL}/activity/{ALTEGIO_COMPANY_ID}/search/"
-            headers = {
-                "Authorization": f"Bearer {ALTEGIO_USER_TOKEN}",
-                "Accept": "application/vnd.api.v2+json"
-            }
-            params = {
-                "from": datetime.now().strftime("%Y-%m-%d"),
-                "till": (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%d")
-            }
-            
-            async with httpx.AsyncClient(timeout=30.0) as http_client:
-                response = await http_client.get(url, headers=headers, params=params)
-                if response.status_code == 200:
-                    altegio_events = response.json().get("data", [])
-                    synced_count = 0
-                    
-                    for altegio_event in altegio_events:
-                        altegio_id = str(altegio_event.get("id"))
-                        title = altegio_event.get("service", {}).get("title", "") or altegio_event.get("title", "")
-                        records_count = altegio_event.get("records_count", 0)
-                        
-                        # Update local events that match by title
-                        result = await db.events.update_many(
-                            {"title": {"$regex": title, "$options": "i"}},
-                            {"$set": {
-                                "altegio_id": altegio_id,
-                                "altegio_booked_count": records_count,
-                                "altegio_last_sync": datetime.now(timezone.utc).isoformat()
-                            }}
-                        )
-                        if result.modified_count > 0:
-                            synced_count += result.modified_count
-                    
-                    logging.info(f"Altegio auto-sync completed: {synced_count} events updated")
-                else:
-                    logging.error(f"Altegio sync failed: {response.status_code}")
+            altegio_events = await altegio_client.get_group_events()
+            synced_count, _ = await _sync_altegio_events_to_local(altegio_events)
+            logging.info(f"Altegio auto-sync completed: {synced_count} events updated")
         except asyncio.CancelledError:
             logging.info("Altegio sync task cancelled")
             break
@@ -114,32 +80,9 @@ async def lifespan(app: FastAPI):
         if ALTEGIO_USER_TOKEN:
             logging.info("Running initial Altegio sync...")
             try:
-                url = f"{ALTEGIO_BASE_URL}/activity/{ALTEGIO_COMPANY_ID}/search/"
-                headers = {
-                    "Authorization": f"Bearer {ALTEGIO_USER_TOKEN}",
-                    "Accept": "application/vnd.api.v2+json"
-                }
-                params = {
-                    "from": datetime.now().strftime("%Y-%m-%d"),
-                    "till": (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%d")
-                }
-                async with httpx.AsyncClient(timeout=30.0) as http_client:
-                    response = await http_client.get(url, headers=headers, params=params)
-                    if response.status_code == 200:
-                        altegio_events = response.json().get("data", [])
-                        for altegio_event in altegio_events:
-                            altegio_id = str(altegio_event.get("id"))
-                            title = altegio_event.get("service", {}).get("title", "") or altegio_event.get("title", "")
-                            records_count = altegio_event.get("records_count", 0)
-                            await db.events.update_many(
-                                {"title": {"$regex": title, "$options": "i"}},
-                                {"$set": {
-                                    "altegio_id": altegio_id,
-                                    "altegio_booked_count": records_count,
-                                    "altegio_last_sync": datetime.now(timezone.utc).isoformat()
-                                }}
-                            )
-                        logging.info(f"Initial Altegio sync: {len(altegio_events)} events processed")
+                altegio_events = await altegio_client.get_group_events()
+                synced_count, _ = await _sync_altegio_events_to_local(altegio_events)
+                logging.info(f"Initial Altegio sync: {len(altegio_events)} events processed, {synced_count} events updated")
             except Exception as e:
                 logging.error(f"Initial sync error: {e}")
     
@@ -787,6 +730,79 @@ def _normalize_for_match(s: str) -> str:
     if not s:
         return ""
     return "".join(ch for ch in s.lower() if ch.isalnum())
+
+
+def _altegio_event_title(altegio_event: dict) -> str:
+    return altegio_event.get("service", {}).get("title", "") or altegio_event.get("title", "") or ""
+
+
+def _altegio_event_date(altegio_event: dict) -> str:
+    return (altegio_event.get("date") or "").split(" ")[0]
+
+
+async def _find_local_event_for_altegio(altegio_event: dict) -> Optional[dict]:
+    """Find a local event by exact Altegio id first, then normalized title+date."""
+    altegio_id = str(altegio_event.get("id") or "")
+    if altegio_id:
+        local_event = await db.events.find_one({
+            "$or": [
+                {"altegio_id": altegio_id},
+                {"altegio_activity_id": altegio_id},
+            ]
+        })
+        if local_event:
+            return local_event
+
+    title_norm = _normalize_for_match(_altegio_event_title(altegio_event))
+    date_part = _altegio_event_date(altegio_event)
+    if not title_norm:
+        return None
+
+    query = {"cancelled": {"$ne": True}, "archived": {"$ne": True}}
+    if date_part:
+        query["date"] = {"$regex": f"^{date_part}"}
+
+    candidates = await db.events.find(query).to_list(500)
+    for event in candidates:
+        event_norm = _normalize_for_match(event.get("title", ""))
+        if event_norm and (event_norm == title_norm or event_norm in title_norm or title_norm in event_norm):
+            return event
+    return None
+
+
+async def _sync_altegio_events_to_local(altegio_events: list) -> tuple[int, list]:
+    synced_count = 0
+    synced_events = []
+
+    for altegio_event in altegio_events:
+        altegio_id = str(altegio_event.get("id") or "")
+        if not altegio_id:
+            continue
+
+        local_event = await _find_local_event_for_altegio(altegio_event)
+        if not local_event:
+            continue
+
+        booked_count = altegio_event.get("records_count", 0)
+        title = _altegio_event_title(altegio_event)
+        await db.events.update_one(
+            {"id": local_event["id"]},
+            {"$set": {
+                "altegio_id": altegio_id,
+                "altegio_activity_id": altegio_id,
+                "altegio_booked_count": booked_count,
+                "altegio_last_sync": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        synced_events.append({
+            "local_id": local_event["id"],
+            "altegio_id": altegio_id,
+            "title": title,
+            "booked_count": booked_count
+        })
+        synced_count += 1
+
+    return synced_count, synced_events
 
 
 async def _altegio_match_service_by_title(title: str) -> Optional[int]:
@@ -3077,7 +3093,7 @@ class AltegioClient:
         }
         
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(url, headers=self.get_headers(), params=params)
+            response = await client.get(url, headers=self.get_v2_headers(), params=params)
             if response.status_code == 200:
                 data = response.json()
                 return data.get("data", [])
@@ -3299,42 +3315,7 @@ async def sync_from_altegio():
     try:
         # Fetch activities/events from Altegio
         altegio_events = await altegio_client.get_group_events()
-        
-        synced_count = 0
-        synced_events = []
-        
-        for altegio_event in altegio_events:
-            altegio_id = str(altegio_event.get("id"))
-            # Get title from service or event itself
-            title = altegio_event.get("service", {}).get("title", "") or altegio_event.get("title", "")
-            # Use records_count directly from the response (already provided by API)
-            booked_count = altegio_event.get("records_count", 0)
-            
-            # Find matching local event by altegio_id first, then by title
-            local_event = await db.events.find_one({
-                "$or": [
-                    {"altegio_id": altegio_id},
-                    {"title": {"$regex": title, "$options": "i"}}
-                ]
-            })
-            
-            if local_event:
-                # Update local event with Altegio data
-                await db.events.update_one(
-                    {"id": local_event["id"]},
-                    {"$set": {
-                        "altegio_id": altegio_id,
-                        "altegio_booked_count": booked_count,
-                        "altegio_last_sync": datetime.now(timezone.utc).isoformat()
-                    }}
-                )
-                synced_events.append({
-                    "local_id": local_event["id"],
-                    "altegio_id": altegio_id,
-                    "title": title,
-                    "booked_count": booked_count
-                })
-                synced_count += 1
+        synced_count, synced_events = await _sync_altegio_events_to_local(altegio_events)
         
         return {
             "synced_count": synced_count,
@@ -3403,7 +3384,7 @@ async def sync_single_event_from_altegio(event_id: str):
         if not event:
             raise HTTPException(status_code=404, detail="Event not found")
         
-        altegio_id = event.get("altegio_id")
+        altegio_id = event.get("altegio_id") or event.get("altegio_activity_id")
         
         if altegio_id:
             # Fetch all Altegio events and find the matching one
@@ -3414,6 +3395,8 @@ async def sync_single_event_from_altegio(event_id: str):
                     await db.events.update_one(
                         {"id": event_id},
                         {"$set": {
+                            "altegio_id": str(altegio_id),
+                            "altegio_activity_id": str(altegio_id),
                             "altegio_booked_count": records_count,
                             "altegio_last_sync": datetime.now(timezone.utc).isoformat()
                         }}
@@ -3428,17 +3411,24 @@ async def sync_single_event_from_altegio(event_id: str):
             return {"event_id": event_id, "message": "Event not found in Altegio"}
         else:
             # Try to find by title
-            title = event.get("title", "")
+            title_norm = _normalize_for_match(event.get("title", ""))
             altegio_events = await altegio_client.get_group_events()
             for altegio_event in altegio_events:
-                altegio_title = altegio_event.get("service", {}).get("title", "") or altegio_event.get("title", "")
-                if title.lower() in altegio_title.lower() or altegio_title.lower() in title.lower():
+                altegio_title_norm = _normalize_for_match(_altegio_event_title(altegio_event))
+                same_title = title_norm and altegio_title_norm and (
+                    title_norm == altegio_title_norm
+                    or title_norm in altegio_title_norm
+                    or altegio_title_norm in title_norm
+                )
+                same_date = not _altegio_event_date(altegio_event) or event.get("date", "").startswith(_altegio_event_date(altegio_event))
+                if same_title and same_date:
                     altegio_id = str(altegio_event.get("id"))
                     records_count = altegio_event.get("records_count", 0)
                     await db.events.update_one(
                         {"id": event_id},
                         {"$set": {
                             "altegio_id": altegio_id,
+                            "altegio_activity_id": altegio_id,
                             "altegio_booked_count": records_count,
                             "altegio_last_sync": datetime.now(timezone.utc).isoformat()
                         }}
