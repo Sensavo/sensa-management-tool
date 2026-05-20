@@ -963,6 +963,29 @@ def enqueue_telegram(user_id: str, text: str) -> None:
         asyncio.create_task(send_telegram(user_id, text))
 
 
+def _actor_from_request(request: Request) -> str:
+    actor = (request.headers.get("X-Actor-User") or "").strip().lower()
+    return actor if actor in TEAM_USERS else ""
+
+
+def _event_line(event: dict) -> str:
+    time_part = f" {event.get('start_time')}" if event.get("start_time") else ""
+    return f"<b>{_html_escape(event.get('title'))}</b> {_format_task_date(event.get('date', ''))}{_html_escape(time_part)}"
+
+
+def _notify_team(actor: str, text: str) -> None:
+    if not actor:
+        return
+    for user_id in TEAM_USERS:
+        if user_id != actor:
+            enqueue_telegram(user_id, text)
+
+
+def _notify_assignee(actor: str, assignee: str, text: str) -> None:
+    if actor and assignee in TEAM_USERS and assignee != actor:
+        enqueue_telegram(assignee, text)
+
+
 async def _today_events_summary() -> str:
     today = _today_kyiv()
     events = await db.events.find(
@@ -1393,7 +1416,8 @@ async def _sync_event_to_external(event: Event) -> None:
 
 
 @api_router.post("/events")
-async def create_event(event_data: EventCreate):
+async def create_event(event_data: EventCreate, request: Request):
+    actor = _actor_from_request(request)
     settings = await get_settings()
 
     is_regular = event_data.event_type == "regular" and bool(event_data.repeat_days)
@@ -1401,6 +1425,7 @@ async def create_event(event_data: EventCreate):
     if not is_regular:
         # Single one-off event — full external sync
         event = await _persist_event(event_data, settings, sync_external=True)
+        _notify_team(actor, f"📅 створено подію: {_event_line(event.model_dump())}\n{_poriadok_link()}")
         return {**event.model_dump(), "series_count": 1}
 
     # Regular series — expand to SERIES_WEEKS of instances on selected weekdays
@@ -1438,6 +1463,8 @@ async def create_event(event_data: EventCreate):
     # instance of that month. Master/children otherwise skip mgmt_pay_master
     # (series_master_only=True). This pass adds it back to the right instance.
     await _attach_monthly_pay_master(master.id, dates)
+
+    _notify_team(actor, f"📅 створено серію подій: {_event_line(master.model_dump())} (+{len(dates) - 1})\n{_poriadok_link()}")
 
     return {**master.model_dump(), "series_count": len(dates)}
 
@@ -1678,7 +1705,7 @@ async def _create_cancellation_tasks(event: dict, series_count: int = 0) -> None
 
 
 @api_router.patch("/events/{event_id}", response_model=Event)
-async def patch_event(event_id: str, event_data: dict):
+async def patch_event(event_id: str, event_data: dict, request: Request):
     """Patch event - used for cancel/restore functionality"""
     existing = await db.events.find_one({"id": event_id}, {"_id": 0})
     if not existing:
@@ -1724,6 +1751,11 @@ async def patch_event(event_id: str, event_data: dict):
         await db.events.update_one({"id": event_id}, {"$set": update_dict})
     
     updated = await db.events.find_one({"id": event_id}, {"_id": 0})
+    actor = _actor_from_request(request)
+    if event_data.get("cancelled") == True and not existing.get("cancelled"):
+        _notify_team(actor, f"📅 скасовано подію: {_event_line(existing)}\n{_poriadok_link()}")
+    elif event_data.get("cancelled") == False and existing.get("cancelled"):
+        _notify_team(actor, f"📅 відновлено подію: {_event_line(updated)}\n{_poriadok_link()}")
     
     # Sync cancel/restore to Altegio
     try:
@@ -1753,7 +1785,7 @@ async def patch_event(event_id: str, event_data: dict):
     return updated
 
 @api_router.post("/events/{event_id}/cancel-series")
-async def cancel_event_series(event_id: str):
+async def cancel_event_series(event_id: str, request: Request):
     """Cancel this event AND all future events in the same recurring series.
 
     Series membership: an event is part of a series if it has a non-empty
@@ -1814,6 +1846,8 @@ async def cancel_event_series(event_id: str):
             await _create_cancellation_tasks(anchor, series_count=len(cancelled_ids))
         except Exception as e:
             logging.error(f"Failed to create cancellation tasks for series {master_id}: {e}")
+        actor = _actor_from_request(request)
+        _notify_team(actor, f"📅 скасовано серію подій: {_event_line(anchor)} (+{len(cancelled_ids) - 1})\n{_poriadok_link()}")
 
     return {"cancelled_count": len(cancelled_ids), "cancelled_ids": cancelled_ids, "master_id": master_id}
 
@@ -1865,7 +1899,7 @@ async def get_event_series(event_id: str):
 
 
 @api_router.delete("/events/{event_id}")
-async def delete_event(event_id: str):
+async def delete_event(event_id: str, request: Request):
     existing = await db.events.find_one({"id": event_id}, {"_id": 0})
     result = await db.events.delete_one({"id": event_id})
     if result.deleted_count == 0:
@@ -1897,15 +1931,23 @@ async def delete_event(event_id: str):
             await _create_cancellation_tasks(existing)
         except Exception as e:
             logging.error(f"Failed to create cancellation tasks for deleted {event_id}: {e}")
+        actor = _actor_from_request(request)
+        _notify_team(actor, f"📅 видалено подію: {_event_line(existing)}\n{_poriadok_link()}")
 
     return {"message": "Event deleted"}
 
 # ==================== STANDALONE TASKS API ====================
 
 @api_router.post("/tasks/standalone", response_model=StandaloneTask)
-async def create_standalone_task(task_data: StandaloneTaskCreate):
+async def create_standalone_task(task_data: StandaloneTaskCreate, request: Request):
     task = StandaloneTask(**task_data.model_dump())
     await db.standalone_tasks.insert_one(task.model_dump())
+    actor = _actor_from_request(request)
+    _notify_assignee(
+        actor,
+        task.assignee,
+        f"➕ новий таск для тебе: <b>{_html_escape(task.title)}</b> — {_format_task_date(task.date)}\n{_poriadok_link()}",
+    )
     return task
 
 @api_router.get("/tasks/standalone", response_model=List[StandaloneTask])
@@ -2094,7 +2136,7 @@ async def update_standalone_task(task_id: str, completed: bool):
     return {"success": True}
 
 @api_router.patch("/tasks/standalone/{task_id}")
-async def update_standalone_task_full(task_id: str, task_data: StandaloneTaskCreate):
+async def update_standalone_task_full(task_id: str, task_data: StandaloneTaskCreate, request: Request):
     """Full update of standalone task (title, date, icon, color, type)"""
     existing = await db.standalone_tasks.find_one({"id": task_id}, {"_id": 0})
     if not existing:
@@ -2112,6 +2154,13 @@ async def update_standalone_task_full(task_id: str, task_data: StandaloneTaskCre
     
     await db.standalone_tasks.update_one({"id": task_id}, {"$set": update})
     updated = await db.standalone_tasks.find_one({"id": task_id}, {"_id": 0})
+    actor = _actor_from_request(request)
+    if (existing.get("date") or "")[:10] != (task_data.date or "")[:10]:
+        _notify_assignee(
+            actor,
+            task_data.assignee,
+            f"🔄 таск перенесено: <b>{_html_escape(task_data.title)}</b> — {_format_task_date(existing.get('date', ''))} → {_format_task_date(task_data.date)}\n{_poriadok_link()}",
+        )
     return updated
 
 @api_router.delete("/tasks/standalone/{task_id}")
@@ -2225,13 +2274,22 @@ async def complete_marketing_task(request: SMMTaskCompletionRequest):
 
 
 @api_router.patch("/events/{event_id}/tasks/{task_id}")
-async def update_event_task(event_id: str, task_id: str, data: dict):
+async def update_event_task(event_id: str, task_id: str, data: dict, request: Request):
     """Update color/icon/assignee overrides and date for an event-based task"""
     event = await db.events.find_one({"id": event_id}, {"_id": 0})
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
+    old_date = ""
+    task_column = ""
+    for column, field in COLUMN_TO_FIELD.items():
+        current = (event.get(field) or {}).get(task_id)
+        if current:
+            old_date = current
+            task_column = column
+            break
     overrides = event.get("task_overrides", {})
-    overrides[task_id] = {k: v for k, v in data.items() if k in ("color", "icon", "title", "assignee")}
+    previous_override = overrides.get(task_id, {}) or {}
+    overrides[task_id] = {**previous_override, **{k: v for k, v in data.items() if k in ("color", "icon", "title", "assignee")}}
     update = {"task_overrides": overrides}
     # Update date in smm_tasks, reminders, or marketing_tasks if provided
     new_date = data.get("date")
@@ -2243,6 +2301,16 @@ async def update_event_task(event_id: str, task_id: str, data: dict):
         elif task_id in (event.get("marketing_tasks") or {}):
             update[f"marketing_tasks.{task_id}"] = new_date
     await db.events.update_one({"id": event_id}, {"$set": update})
+    if new_date and old_date and old_date[:10] != new_date[:10] and task_column:
+        actor = _actor_from_request(request)
+        assignee = overrides[task_id].get("assignee") or _event_task_owner(task_column, previous_override)
+        definition = _task_def_for_event_task(task_column, task_id)
+        title = overrides[task_id].get("title") or definition.get("name") or task_id
+        _notify_assignee(
+            actor,
+            assignee,
+            f"🔄 таск перенесено: <b>{_html_escape(title)}</b> · {_html_escape(event.get('title'))} — {_format_task_date(old_date)} → {_format_task_date(new_date)}\n{_poriadok_link()}",
+        )
 
 
 @api_router.get("/smm/announcement-overlaps")

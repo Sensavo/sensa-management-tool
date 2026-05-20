@@ -70,6 +70,24 @@ import { DndContext, useDraggable, useDroppable, PointerSensor, useSensor, useSe
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
+const ACTOR_USER_STORAGE_KEY = "poriadok_actor_user";
+
+const getActorUser = () => {
+  try {
+    return localStorage.getItem(ACTOR_USER_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+};
+
+axios.interceptors.request.use((config) => {
+  const actor = getActorUser();
+  if (actor) {
+    config.headers = config.headers || {};
+    config.headers["X-Actor-User"] = actor;
+  }
+  return config;
+});
 
 const AppContext = createContext();
 export const useApp = () => useContext(AppContext);
