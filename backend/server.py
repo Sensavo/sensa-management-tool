@@ -1477,14 +1477,14 @@ async def create_event(event_data: EventCreate, request: Request):
     if not dates:
         raise HTTPException(status_code=400, detail="Жоден день тижня не потрапляє в найближчі 6 тижнів")
 
-    # First instance is the master (full sync); children link to it via source_event_id
+    # First instance is the master; every generated instance is pushed to Altegio
+    # so the booking calendar has a real activity for each occurrence.
     master_payload = event_data.model_copy(update={"date": dates[0].isoformat()})
     master = await _persist_event(master_payload, settings, sync_external=True)
 
     for d in dates[1:]:
         child_payload = event_data.model_copy(update={"date": d.isoformat()})
-        # External sync of children skipped for speed; Phase 8B (cron sync) will fill them in
-        await _persist_event(child_payload, settings, source_event_id=master.id, sync_external=False)
+        await _persist_event(child_payload, settings, source_event_id=master.id, sync_external=True)
 
     # Post-process: pay_master fires once per calendar month — on the LAST
     # instance of that month. Master/children otherwise skip mgmt_pay_master
