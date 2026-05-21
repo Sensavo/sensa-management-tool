@@ -729,7 +729,7 @@ const Dashboard = () => {
         const reminderInfo = reminderMap[reminderId]; if (!reminderInfo) return;
         const reminderDate = new Date(reminderDateStr); reminderDate.setHours(0, 0, 0, 0);
         const ov = (event.task_overrides || {})[reminderId] || {};
-        const task = { event_id: event.id, event_title: event.title, reminder_id: reminderId, reminder_name: ov.title || reminderInfo.name, reminder_date: reminderDateStr, icon: ov.icon || reminderInfo.icon, completed: !!(event.completed_tasks || {})[reminderId], is_standalone: false, color: ov.color, assignee: ov.assignee };
+        const task = { event_id: event.id, event_title: event.title, reminder_id: reminderId, reminder_name: ov.title || reminderInfo.name, reminder_date: reminderDateStr, icon: ov.icon || reminderInfo.icon, completed: !!(event.completed_tasks || {})[reminderId], is_standalone: false, color: ov.color, assignee: ov.assignee, order: ov.order || 0 };
         if (reminderDateStr === todayStr) todayTasks.push(task);
         else if (reminderDate < today && !task.completed) overdueTasks.push(task);
         else if (reminderDate > today && reminderDateStr <= twoWeeksStr) soonTasks.push(task);
@@ -4066,10 +4066,13 @@ const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, sta
 };
 
 // Desktop Dashboard
-// Wraps a task render in a draggable handle. Skips standalone tasks
-// (those need a different endpoint to swap assignee).
+const getTaskDragKey = (task) => `${task.event_id}::${task.task_id || task.reminder_id}`;
+const getTaskDate = (task) => task.task_date || task.reminder_date || task.date || "";
+const getTaskOrder = (task) => Number(task.order || 0);
+
+// Wraps a task render in a draggable handle.
 const DraggableTask = ({ task, children }) => {
-  const draggableId = `${task.event_id}::${task.task_id || task.reminder_id}`;
+  const draggableId = getTaskDragKey(task);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: draggableId,
     data: { task },
@@ -4088,8 +4091,32 @@ const DraggableTask = ({ task, children }) => {
   );
 };
 
+const DroppableTaskTarget = ({ task, children }) => {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `task-drop::${getTaskDragKey(task)}`,
+    data: { type: "task", task },
+  });
+  return (
+    <div ref={setNodeRef} className={isOver ? "rounded-xl ring-2 ring-[#1A1717]/30" : ""}>
+      {children}
+    </div>
+  );
+};
+
+const DroppableDateSection = ({ assignee, date, children }) => {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `date-drop::${assignee}::${date}`,
+    data: { type: "date", assignee, date },
+  });
+  return (
+    <div ref={setNodeRef} className={isOver ? "rounded-xl bg-[#1A1717]/[0.04]" : ""}>
+      {children}
+    </div>
+  );
+};
+
 // Team Column Component - reusable for КАСЯ, КАРОЛІНА, ВО
-const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick, onStandaloneClick, onTaskEdit, onAddClick, overdueExpanded, setOverdueExpanded, soonExpanded, setSoonExpanded, smmTasksDefinition, columnAssignee, announcementOverlaps = {}, onOverlapClick }) => {
+const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick, onStandaloneClick, onTaskEdit, onAddClick, overdueExpanded, setOverdueExpanded, soonExpanded, setSoonExpanded, smmTasksDefinition, columnAssignee, announcementOverlaps = {}, onOverlapClick, todayStr }) => {
   const { setNodeRef, isOver } = useDroppable({ id: columnAssignee || 'unknown' });
   const TaskRenderer = ({ task }) => {
     const colAssignee = columnAssignee || (colorClass === 'emerald' ? 'kasya' : colorClass === 'orange' ? 'vo' : 'karolina');
@@ -4102,21 +4129,24 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
       task_date: task.task_date || task.reminder_date,
       color: task.color || (colorClass === 'emerald' ? 'kasya' : colorClass === 'orange' ? 'vo' : 'karolina'),
       assignee: task.assignee || colAssignee,
+      order: getTaskOrder(task),
       isOverlapping
     };
     return (
-      <DraggableTask task={normalizedTask}>
-        <SMMTaskItem
-          key={`${normalizedTask.event_id}-${normalizedTask.task_id}`}
-          task={normalizedTask}
-          onToggle={onToggle}
-          onEventClick={onEventClick}
-          onStandaloneClick={onStandaloneClick}
-          onTaskEdit={onTaskEdit}
-          onOverlapClick={onOverlapClick}
-          smmTasksDefinition={smmTasksDefinition}
-        />
-      </DraggableTask>
+      <DroppableTaskTarget task={normalizedTask}>
+        <DraggableTask task={normalizedTask}>
+          <SMMTaskItem
+            key={`${normalizedTask.event_id}-${normalizedTask.task_id}`}
+            task={normalizedTask}
+            onToggle={onToggle}
+            onEventClick={onEventClick}
+            onStandaloneClick={onStandaloneClick}
+            onTaskEdit={onTaskEdit}
+            onOverlapClick={onOverlapClick}
+            smmTasksDefinition={smmTasksDefinition}
+          />
+        </DraggableTask>
+      </DroppableTaskTarget>
     );
   };
 
@@ -4139,8 +4169,11 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
         
         <div className="mb-3">
           <div className="section-header-mini"><span>сьогодні ({tasks.today.length})</span></div>
-          {tasks.today.length > 0 ? [...tasks.today].sort((a, b) => (a.completed ? 1 : 0) - (b.completed ? 1 : 0)).map((t, i) => <TaskRenderer key={i} task={t} />)
-            : <p className="text-center text-secondary text-sm py-2">все зроблено!</p>}
+          <DroppableDateSection assignee={columnAssignee} date={todayStr}>
+            {tasks.today.length > 0 ? [...tasks.today].sort((a, b) => getTaskOrder(a) - getTaskOrder(b) || (a.completed ? 1 : 0) - (b.completed ? 1 : 0)).map((t) => (
+              <TaskRenderer key={getTaskDragKey({ ...t, task_id: t.task_id || t.reminder_id })} task={t} />
+            )) : <p className="text-center text-secondary text-sm py-2">все зроблено!</p>}
+          </DroppableDateSection>
         </div>
         
         {tasks.soon.length > 0 && (
@@ -4162,7 +4195,11 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
                       {formatDateUkrainian(date)}
                       {announcementOverlaps[date] && <span className="ml-1.5 text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">перетин</span>}
                     </p>
-                    {dateTasks.map((t, i) => <TaskRenderer key={i} task={t} />)}
+                    <DroppableDateSection assignee={columnAssignee} date={date}>
+                      {dateTasks.map((t) => (
+                        <TaskRenderer key={getTaskDragKey({ ...t, task_id: t.task_id || t.reminder_id })} task={t} />
+                      ))}
+                    </DroppableDateSection>
                   </div>
                 ))}
               </div>
@@ -4288,7 +4325,7 @@ const DesktopDashboard = () => {
     
     standaloneTasks.filter(t => t.type !== "smm").forEach(task => {
       const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
-      const t = { event_id: task.id, event_title: task.title, reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "karolina", assignee: task.assignee || "karolina" };
+      const t = { event_id: task.id, event_title: task.title, reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "karolina", assignee: task.assignee || "karolina", type: task.type, event_id_link: task.event_id || "", order: task.order || 0 };
       if (task.date === todayStr) todayTasks.push(t);
       else if (taskDate < today && !task.completed) overdueTasks.push(t);
       else if (taskDate > today && task.date <= twoWeeksStr) soonTasks.push(t);
@@ -4309,7 +4346,7 @@ const DesktopDashboard = () => {
         const taskInfo = smmTasksMap[taskId]; if (!taskInfo) return;
         const taskDate = new Date(taskDateStr); taskDate.setHours(0, 0, 0, 0);
         const ov2 = (event.task_overrides || {})[taskId] || {};
-        const task = { event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov2.title || taskInfo.name, task_date: taskDateStr, completed: !!(completedDict || {})[taskId], color: ov2.color || taskInfo.color || "standard", icon: ov2.icon || taskInfo.icon, assignee: ov2.assignee };
+        const task = { event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov2.title || taskInfo.name, task_date: taskDateStr, completed: !!(completedDict || {})[taskId], color: ov2.color || taskInfo.color || "standard", icon: ov2.icon || taskInfo.icon, assignee: ov2.assignee, order: ov2.order || 0 };
         if (taskDateStr === todayStr) todayTasks.push(task);
         else if (taskDate < today && !task.completed) overdueTasks.push(task);
         else if (taskDate > today && taskDateStr <= twoWeeksStr) soonTasks.push(task);
@@ -4326,7 +4363,7 @@ const DesktopDashboard = () => {
     // Add standalone tasks
     standaloneTasks.filter(t => t.type === "smm").forEach(task => {
       const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
-      const t = { event_id: task.id, event_title: task.title, task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "karolina", assignee: task.assignee || "kasya" };
+      const t = { event_id: task.id, event_title: task.title, task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "karolina", assignee: task.assignee || "kasya", type: task.type, event_id_link: task.event_id || "", order: task.order || 0 };
       if (task.date === todayStr) todayTasks.push(t);
       else if (taskDate < today && !task.completed) overdueTasks.push(t);
       else if (taskDate > today && task.date <= twoWeeksStr) soonTasks.push(t);
@@ -4372,6 +4409,11 @@ const DesktopDashboard = () => {
     // Sort tasks: daily first, then event-based, then monthly
     const sortByType = (tasks) => {
       return tasks.sort((a, b) => {
+        const da = getTaskDate(a);
+        const db = getTaskDate(b);
+        if (da !== db) return new Date(da) - new Date(db);
+        const orderDiff = getTaskOrder(a) - getTaskOrder(b);
+        if (orderDiff !== 0) return orderDiff;
         const typeOrder = (t) => {
           const id = t.task_id || t.reminder_id || t.event_id || '';
           if (id.startsWith('daily_') || (t.is_standalone && t.type !== 'monthly')) return 0; // daily/standalone
@@ -4380,7 +4422,7 @@ const DesktopDashboard = () => {
         };
         const oa = typeOrder(a), ob = typeOrder(b);
         if (oa !== ob) return oa - ob;
-        return new Date(a.task_date || a.reminder_date) - new Date(b.task_date || b.reminder_date);
+        return (a.task_name || a.reminder_name || "").localeCompare(b.task_name || b.reminder_name || "");
       });
     };
 
@@ -4504,14 +4546,69 @@ const DesktopDashboard = () => {
   const handleTaskDragStart = ({ active }) => {
     setActiveDragTask(active?.data?.current?.task || null);
   };
+
+  const persistTaskPlacement = async (task, assignee, date, order) => {
+    if (task.is_standalone) {
+      const full = standaloneTasks.find(t => t.id === task.event_id);
+      if (!full) return;
+      await api.updateStandaloneTaskFull(full.id, {
+        title: full.title,
+        date,
+        icon: full.icon || task.icon || "coffee",
+        type: full.type || task.type || "regular",
+        color: full.color || task.color || "standard",
+        assignee,
+        event_id: full.event_id || task.event_id_link || "",
+        order,
+      });
+      return;
+    }
+    const taskId = task.task_id || task.reminder_id;
+    if (!taskId || taskId === "standalone") return;
+    await api.updateEventTask(task.event_id, taskId, { date, assignee, order });
+  };
+
   const handleTaskDragEnd = async ({ active, over }) => {
     setActiveDragTask(null);
     if (!over) return;
-    const newAssignee = over.id; // "karolina" | "kasya" | "vo"
     const task = active?.data?.current?.task;
     if (!task) return;
-    if (task.assignee === newAssignee) return;
+    const overData = over.data?.current || {};
+    const targetTask = overData.type === "task" ? overData.task : null;
+    const newAssignee = targetTask?.assignee || overData.assignee || over.id; // "karolina" | "kasya" | "vo"
+    const newDate = targetTask ? getTaskDate(targetTask) : (overData.date || getTaskDate(task));
+    if (!["karolina", "kasya", "vo"].includes(newAssignee)) return;
+    if (overData.type === "task" || overData.type === "date") {
+      const activeKey = getTaskDragKey(task);
+      const targetKey = targetTask ? getTaskDragKey(targetTask) : null;
+      if (targetKey && activeKey === targetKey && task.assignee === newAssignee && getTaskDate(task) === newDate) return;
+      const targetColumnTasks = Object.values(tasksByTeam[newAssignee] || {}).flat();
+      const targetDateTasks = targetColumnTasks
+        .filter(t => getTaskDate(t) === newDate)
+        .filter(t => getTaskDragKey({ ...t, task_id: t.task_id || t.reminder_id }) !== activeKey);
+      const movedTask = {
+        ...task,
+        assignee: newAssignee,
+        task_date: newDate,
+        reminder_date: newDate,
+      };
+      const targetIndex = targetKey
+        ? targetDateTasks.findIndex(t => getTaskDragKey({ ...t, task_id: t.task_id || t.reminder_id }) === targetKey)
+        : -1;
+      const insertAt = targetKey && targetIndex >= 0 ? targetIndex : targetDateTasks.length;
+      targetDateTasks.splice(insertAt, 0, movedTask);
+      try {
+        await Promise.all(targetDateTasks.map((item, index) => persistTaskPlacement(item, newAssignee, newDate, (index + 1) * 1000)));
+        toast.success("порядок оновлено");
+        refreshStandaloneTasks();
+        refreshEvents();
+      } catch {
+        toast.error("не вдалось перенести");
+      }
+      return;
+    }
     const labels = { karolina: "Менеджер", kasya: "SMM", vo: "Маркетолог" };
+    if (task.assignee === newAssignee) return;
     try {
       if (task.is_standalone) {
         // Find full standalone task and PATCH with new assignee
@@ -4525,6 +4622,7 @@ const DesktopDashboard = () => {
           color: full.color || "standard",
           assignee: newAssignee,
           event_id: full.event_id || "",
+          order: full.order || 0,
         });
         toast.success(`перенесено на ${labels[newAssignee] || newAssignee}`);
         refreshStandaloneTasks();
@@ -4562,6 +4660,7 @@ const DesktopDashboard = () => {
         type: "smm",
         completed: task.completed,
         eventTitle: task.event_title,
+        order: task.order || 0,
       });
       setShowEditStandaloneDialog(true);
     }
@@ -4656,6 +4755,7 @@ const DesktopDashboard = () => {
           title: editingStandaloneTask.title,
           assignee: editingStandaloneTask.assignee,
           date: editingStandaloneTask.date,
+          order: editingStandaloneTask.order || 0,
         });
         toast.success("збережено!");
         refreshEvents();
@@ -4668,6 +4768,7 @@ const DesktopDashboard = () => {
           color: editingStandaloneTask.color,
           assignee: editingStandaloneTask.assignee || 'karolina',
           event_id: editingStandaloneTask.event_id || "",
+          order: editingStandaloneTask.order || 0,
         });
         toast.success("збережено!");
         refreshStandaloneTasks();
@@ -4689,6 +4790,7 @@ const DesktopDashboard = () => {
           title: task.title,
           assignee: task.assignee,
           date: task.date,
+          order: task.order || 0,
         });
         refreshEvents();
       } else {
@@ -4700,6 +4802,7 @@ const DesktopDashboard = () => {
           color: task.color,
           assignee: task.assignee || 'karolina',
           event_id: task.event_id || "",
+          order: task.order || 0,
         });
         refreshStandaloneTasks();
       }
@@ -4856,6 +4959,7 @@ const DesktopDashboard = () => {
             setSoonExpanded={setKarolinaSoon}
             smmTasksDefinition={smmTasksDefinition}
             columnAssignee="karolina"
+            todayStr={todayStr}
           />
           
           {/* SMM Column - Second */}
@@ -4875,6 +4979,7 @@ const DesktopDashboard = () => {
             setSoonExpanded={setKasyaSoon}
             smmTasksDefinition={smmTasksDefinition}
             columnAssignee="kasya"
+            todayStr={todayStr}
             announcementOverlaps={announcementOverlaps}
             onOverlapClick={setOverlapResolverTask}
           />
@@ -4896,6 +5001,7 @@ const DesktopDashboard = () => {
             setSoonExpanded={setVoSoon}
             smmTasksDefinition={smmTasksDefinition}
             columnAssignee="vo"
+            todayStr={todayStr}
           />
           <DragOverlay dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }}>
             {activeDragTask ? (

@@ -366,6 +366,7 @@ class StandaloneTask(BaseModel):
     completed: bool = False
     completed_at: Optional[str] = None
     event_id: Optional[str] = ""  # optional link to existing event (metadata only)
+    order: Optional[float] = 0
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -401,6 +402,7 @@ class StandaloneTaskCreate(BaseModel):
     color: str = "standard"
     assignee: str = "karolina"
     event_id: Optional[str] = ""  # optional link to an existing event
+    order: Optional[float] = 0
 
 class SMMTaskUpdate(BaseModel):
     name: Optional[str] = None
@@ -2177,6 +2179,7 @@ async def update_standalone_task_full(task_id: str, task_data: StandaloneTaskCre
         "color": task_data.color,
         "assignee": task_data.assignee,
         "event_id": task_data.event_id or "",
+        "order": task_data.order or 0,
     }
     
     await db.standalone_tasks.update_one({"id": task_id}, {"$set": update})
@@ -2316,7 +2319,7 @@ async def update_event_task(event_id: str, task_id: str, data: dict, request: Re
             break
     overrides = event.get("task_overrides", {})
     previous_override = overrides.get(task_id, {}) or {}
-    overrides[task_id] = {**previous_override, **{k: v for k, v in data.items() if k in ("color", "icon", "title", "assignee")}}
+    overrides[task_id] = {**previous_override, **{k: v for k, v in data.items() if k in ("color", "icon", "title", "assignee", "order")}}
     update = {"task_overrides": overrides}
     # Update date in smm_tasks, reminders, or marketing_tasks if provided
     new_date = data.get("date")
