@@ -397,6 +397,7 @@
 .desktop-dashboard { @apply h-screen overflow-hidden; background: #F5F5F0; }
 .desktop-header { @apply flex items-center justify-between px-6 py-4 border-b; background: #F5F5F0; border-color: rgba(0, 0, 0, 0.06); }
 .desktop-header-left { @apply flex items-center; }
+.desktop-date-label { align-self: flex-start; padding-top: 9px; line-height: 1.2; }
 .desktop-header-right { @apply flex items-center gap-3; }
 .desktop-header-btn { @apply w-10 h-10 rounded-full flex items-center justify-center transition-colors; background: rgba(0, 0, 0, 0.04); color: #6B6B6B; }
 .desktop-header-btn:hover { background: rgba(0, 0, 0, 0.08); }
@@ -413,7 +414,7 @@
 .section-header-mini { @apply flex items-center gap-2 mb-3 w-full text-left text-base font-medium; color: #6B6B6B; }
 .section-header-mini.overdue-header { color: #D4849A; }
 
-.calendar-container-desktop { @apply mb-1 border-b; border-color: rgba(0, 0, 0, 0.06); width: 100%; padding: 12px 14px 14px; }
+.calendar-container-desktop { @apply mb-1 border-b; border-color: rgba(0, 0, 0, 0.06); width: 100%; padding: 16px; }
 .calendar-container-desktop .calendar-minimal { width: 100% !important; max-width: none; padding: 0 !important; }
 .calendar-container-desktop .rdp { width: 100% !important; margin: 0; }
 .calendar-container-desktop .rdp-months { width: 100%; justify-content: center; }

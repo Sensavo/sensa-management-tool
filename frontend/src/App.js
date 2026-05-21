@@ -4758,7 +4758,7 @@ const DesktopDashboard = () => {
       <header className="desktop-header">
         <div className="desktop-header-left gap-4">
           <h1 className="logo" style={{ textTransform: 'none' }}>Poriadok</h1>
-          <span className="text-sm text-secondary lowercase">{todayFormatted.weekday} • {todayFormatted.day} {todayFormatted.month}</span>
+          <span className="desktop-date-label text-sm text-secondary lowercase">{todayFormatted.weekday} • {todayFormatted.day} {todayFormatted.month}</span>
         </div>
         <div className="desktop-header-right">
           <button className="desktop-header-btn" onClick={() => setShowStats(true)} title="Аналітика" data-testid="analytics-btn"><BarChart3 className="w-5 h-5" /></button>
