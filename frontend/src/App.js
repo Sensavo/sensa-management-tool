@@ -54,7 +54,8 @@ import {
   RefreshCw,
   Smile,
   Info,
-  Maximize2
+  Maximize2,
+  Minimize2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7028,12 +7029,20 @@ const EventsDesktopExpanded = () => {
         {/* Col 1: Calendar — has its own scroll so it stays put as list scrolls. */}
         <div className="desktop-column">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-            <span className="text-sm font-semibold tracking-wide" style={{ color: '#1A1717' }}>КАЛЕНДАР</span>
-            <div className="flex items-center gap-1">
-              <button className="p-0.5 hover:bg-gray-100 rounded-full transition-colors" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}><ChevronLeft className="w-3.5 h-3.5 text-secondary" /></button>
-              <span className="text-xs font-medium text-secondary min-w-[60px] text-center">{UK_MONTHS_NOMINATIVE[currentMonth.getMonth()]}</span>
-              <button className="p-0.5 hover:bg-gray-100 rounded-full transition-colors" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}><ChevronRight className="w-3.5 h-3.5 text-secondary" /></button>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold tracking-wide" style={{ color: '#1A1717' }}>КАЛЕНДАР</span>
+              <div className="flex items-center gap-1">
+                <button className="p-0.5 hover:bg-gray-100 rounded-full transition-colors" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}><ChevronLeft className="w-3.5 h-3.5 text-secondary" /></button>
+                <span className="text-xs font-medium text-secondary min-w-[60px] text-center">{UK_MONTHS_NOMINATIVE[currentMonth.getMonth()]}</span>
+                <button className="p-0.5 hover:bg-gray-100 rounded-full transition-colors" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}><ChevronRight className="w-3.5 h-3.5 text-secondary" /></button>
+              </div>
             </div>
+            <button
+              className="p-1.5 rounded-full hover:bg-black/5 transition-colors text-secondary"
+              onClick={() => navigate("/")}
+              title="згорнути календар"
+              data-testid="events-collapse-btn"
+            ><Minimize2 className="w-4 h-4" /></button>
           </div>
           <div className="column-content">
             <div className="calendar-container-desktop">
