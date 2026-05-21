@@ -4744,6 +4744,13 @@ const DesktopDashboard = () => {
       if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
       const tag = e.target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
+      const isTodayShortcut = e.code === 'Backquote' || e.key === '`' || e.key === 'ʼ' || e.key === '0';
+      if (isTodayShortcut) {
+        if (!editingStandaloneTask?.title?.trim()) return;
+        e.preventDefault();
+        handleRescheduleStandaloneTask(todayStr);
+        return;
+      }
       const d = parseInt(e.key, 10);
       if (Number.isNaN(d) || d < 0 || d > 9) return;
       if (!editingStandaloneTask?.title?.trim()) return;
@@ -5564,7 +5571,7 @@ const DesktopDashboard = () => {
       
       {/* Edit Task Dialog (both standalone and event-based) */}
       <Dialog open={showEditStandaloneDialog} onOpenChange={setShowEditStandaloneDialog}>
-        <DialogContent className="sm:max-w-[420px] !p-5 sm:!p-6" onOpenAutoFocus={(e) => e.preventDefault()}>
+        <DialogContent className="relative sm:max-w-[420px] !p-5 sm:!p-6" onOpenAutoFocus={(e) => e.preventDefault()}>
           {editingStandaloneTask && (() => {
             const getAssigneeName = () => {
               const a = editingStandaloneTask.assignee;
@@ -5592,6 +5599,17 @@ const DesktopDashboard = () => {
               { label: "+1 тиж",  value: dt(7) },
             ];
             const isCustomDate = !dateChips.some(c => c.value === editingStandaloneTask.date);
+            const handleDeleteEditingTask = async () => {
+              try {
+                await api.deleteStandaloneTask(editingStandaloneTask.id);
+                toast.success("видалено!");
+                refreshStandaloneTasks();
+                setShowEditStandaloneDialog(false);
+                setEditingStandaloneTask(null);
+              } catch {
+                toast.error("помилка");
+              }
+            };
             return (
               <>
                 {/* Header inline: title + assignee chip + event chip */}
@@ -5635,6 +5653,17 @@ const DesktopDashboard = () => {
                       {editingStandaloneTask.eventTitle}
                     </span>
                   ))}
+                  {isStandalone && (
+                    <button
+                      type="button"
+                      className="absolute right-12 top-5 w-9 h-9 rounded-full text-red-500 hover:bg-red-50 transition-colors inline-flex items-center justify-center"
+                      onClick={handleDeleteEditingTask}
+                      title="видалити таск"
+                      data-testid="edit-task-delete-icon"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
 
                 <Input
@@ -5737,7 +5766,7 @@ const DesktopDashboard = () => {
 
                 <div className="mt-4 flex gap-2">
                   {isStandalone && (
-                    <button className="flex-1 h-12 rounded-full border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5 text-sm font-medium" data-testid="edit-task-delete" onClick={async () => { try { await api.deleteStandaloneTask(editingStandaloneTask.id); toast.success("видалено!"); refreshStandaloneTasks(); setShowEditStandaloneDialog(false); setEditingStandaloneTask(null); } catch { toast.error("помилка"); } }}>
+                    <button className="flex-1 h-12 rounded-full border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5 text-sm font-medium" data-testid="edit-task-delete" onClick={handleDeleteEditingTask}>
                       <Trash2 className="w-4 h-4" />видалити
                     </button>
                   )}
