@@ -5563,7 +5563,7 @@ const DesktopDashboard = () => {
       
       {/* Edit Task Dialog (both standalone and event-based) */}
       <Dialog open={showEditStandaloneDialog} onOpenChange={setShowEditStandaloneDialog}>
-        <DialogContent className="sm:max-w-[420px] !p-5 sm:!p-6">
+        <DialogContent className="sm:max-w-[420px] !p-5 sm:!p-6" onOpenAutoFocus={(e) => e.preventDefault()}>
           {editingStandaloneTask && (() => {
             const getAssigneeName = () => {
               const a = editingStandaloneTask.assignee;
@@ -5637,7 +5637,6 @@ const DesktopDashboard = () => {
                 </div>
 
                 <Input
-                  autoFocus
                   placeholder="що треба зробити?"
                   value={editingStandaloneTask.title}
                   onChange={(e) => setEditingStandaloneTask({ ...editingStandaloneTask, title: e.target.value })}
