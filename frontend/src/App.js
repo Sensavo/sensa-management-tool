@@ -4070,17 +4070,66 @@ const getTaskDate = (task) => task.task_date || task.reminder_date || task.date 
 const getTaskOrder = (task) => Number(task.order || 0);
 
 // Wraps a task render in a draggable handle.
-const DraggableTask = ({ task, children, onDragStart, onDragEnd }) => {
-  const draggableId = getTaskDragKey(task);
+const DraggableTask = ({ task, children, onDragStart, onDragEnd, onDropAtPointer }) => {
+  const dragStateRef = useRef(null);
+  const suppressClickRef = useRef(false);
+
+  const cleanupPointerDrag = () => {
+    window.removeEventListener("pointermove", handlePointerMove);
+    window.removeEventListener("pointerup", handlePointerUp);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  };
+
+  const buildDropData = (clientX, clientY) => {
+    const dropEl = document.elementFromPoint(clientX, clientY)?.closest("[data-task-drop-type]");
+    if (!dropEl) return null;
+    const type = dropEl.dataset.taskDropType;
+    if (type === "task") return { type, taskKey: dropEl.dataset.taskKey };
+    if (type === "date") return { type, assignee: dropEl.dataset.assignee, date: dropEl.dataset.date };
+    if (type === "column") return { type, assignee: dropEl.dataset.assignee };
+    return null;
+  };
+
+  const handlePointerMove = (e) => {
+    const state = dragStateRef.current;
+    if (!state) return;
+    const distance = Math.hypot(e.clientX - state.startX, e.clientY - state.startY);
+    if (!state.dragging && distance >= 6) {
+      state.dragging = true;
+      suppressClickRef.current = true;
+      document.body.style.cursor = "grabbing";
+      document.body.style.userSelect = "none";
+      onDragStart(task);
+    }
+  };
+
+  const handlePointerUp = (e) => {
+    const state = dragStateRef.current;
+    cleanupPointerDrag();
+    dragStateRef.current = null;
+    if (state?.dragging) {
+      const dropData = buildDropData(e.clientX, e.clientY);
+      if (dropData) onDropAtPointer(dropData, task);
+      onDragEnd();
+      setTimeout(() => { suppressClickRef.current = false; }, 0);
+    }
+  };
+
   return (
     <div
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", draggableId);
-        onDragStart(task);
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        if (e.target.closest("button,a,input,textarea,select,[role='button']")) return;
+        dragStateRef.current = { startX: e.clientX, startY: e.clientY, dragging: false };
+        window.addEventListener("pointermove", handlePointerMove);
+        window.addEventListener("pointerup", handlePointerUp);
       }}
-      onDragEnd={onDragEnd}
+      onClickCapture={(e) => {
+        if (!suppressClickRef.current) return;
+        e.preventDefault();
+        e.stopPropagation();
+      }}
       style={{
         opacity: 1,
         cursor: 'grab',
@@ -4092,30 +4141,23 @@ const DraggableTask = ({ task, children, onDragStart, onDragEnd }) => {
   );
 };
 
-const DroppableTaskTarget = ({ task, children, onTaskDrop }) => {
+const DroppableTaskTarget = ({ task, children }) => {
   return (
     <div
-      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-      onDrop={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onTaskDrop({ type: "task", task });
-      }}
+      data-task-drop-type="task"
+      data-task-key={getTaskDragKey(task)}
     >
       {children}
     </div>
   );
 };
 
-const DroppableDateSection = ({ assignee, date, children, onTaskDrop }) => {
+const DroppableDateSection = ({ assignee, date, children }) => {
   return (
     <div
-      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-      onDrop={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onTaskDrop({ type: "date", assignee, date });
-      }}
+      data-task-drop-type="date"
+      data-assignee={assignee}
+      data-date={date}
     >
       {children}
     </div>
@@ -4139,8 +4181,8 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
       isOverlapping
     };
     return (
-      <DroppableTaskTarget task={normalizedTask} onTaskDrop={onTaskDrop}>
-        <DraggableTask task={normalizedTask} onDragStart={onTaskDragStart} onDragEnd={onTaskDragEnd}>
+      <DroppableTaskTarget task={normalizedTask}>
+        <DraggableTask task={normalizedTask} onDragStart={onTaskDragStart} onDragEnd={onTaskDragEnd} onDropAtPointer={onTaskDrop}>
           <SMMTaskItem
             key={`${normalizedTask.event_id}-${normalizedTask.task_id}`}
             task={normalizedTask}
@@ -4159,11 +4201,8 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
   return (
     <div
       className="desktop-column transition-all duration-150"
-      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-      onDrop={(e) => {
-        e.preventDefault();
-        onTaskDrop({ type: "column", assignee: columnAssignee });
-      }}
+      data-task-drop-type="column"
+      data-assignee={columnAssignee}
     >
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>{name}</span>
@@ -4182,7 +4221,7 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
         
         <div className="mb-3">
           <div className="section-header-mini"><span>сьогодні ({tasks.today.length})</span></div>
-          <DroppableDateSection assignee={columnAssignee} date={todayStr} onTaskDrop={onTaskDrop}>
+          <DroppableDateSection assignee={columnAssignee} date={todayStr}>
             {tasks.today.length > 0 ? [...tasks.today].sort((a, b) => getTaskOrder(a) - getTaskOrder(b) || (a.completed ? 1 : 0) - (b.completed ? 1 : 0)).map((t) => (
               <TaskRenderer key={getTaskDragKey({ ...t, task_id: t.task_id || t.reminder_id })} task={t} />
             )) : <p className="text-center text-secondary text-sm py-2">все зроблено!</p>}
@@ -4208,7 +4247,7 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
                       {formatDateUkrainian(date)}
                       {announcementOverlaps[date] && <span className="ml-1.5 text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">перетин</span>}
                     </p>
-                    <DroppableDateSection assignee={columnAssignee} date={date} onTaskDrop={onTaskDrop}>
+                    <DroppableDateSection assignee={columnAssignee} date={date}>
                       {dateTasks.map((t) => (
                         <TaskRenderer key={getTaskDragKey({ ...t, task_id: t.task_id || t.reminder_id })} task={t} />
                       ))}
@@ -4578,10 +4617,15 @@ const DesktopDashboard = () => {
     await api.updateEventTask(task.event_id, taskId, { date, assignee, order });
   };
 
-  const handleTaskDrop = async (overData) => {
-    const task = activeDragTask;
+  const handleTaskDrop = async (overData, draggedTask = null) => {
+    const task = draggedTask || activeDragTask;
     if (!task) return;
-    const targetTask = overData.type === "task" ? overData.task : null;
+    const findTaskByKey = (taskKey) => {
+      if (!taskKey) return null;
+      return Object.values(tasksByTeam).flatMap(group => Object.values(group).flat())
+        .find(t => getTaskDragKey({ ...t, task_id: t.task_id || t.reminder_id }) === taskKey) || null;
+    };
+    const targetTask = overData.type === "task" ? (overData.task || findTaskByKey(overData.taskKey)) : null;
     const newAssignee = targetTask?.assignee || overData.assignee; // "karolina" | "kasya" | "vo"
     const newDate = targetTask ? getTaskDate(targetTask) : (overData.date || getTaskDate(task));
     if (!["karolina", "kasya", "vo"].includes(newAssignee)) return;
