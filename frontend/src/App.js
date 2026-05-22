@@ -67,7 +67,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { uk } from "date-fns/locale";
-import { DndContext, useDraggable, useDroppable, PointerSensor, useSensor, useSensors, DragOverlay } from "@dnd-kit/core";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -4071,19 +4070,21 @@ const getTaskDate = (task) => task.task_date || task.reminder_date || task.date 
 const getTaskOrder = (task) => Number(task.order || 0);
 
 // Wraps a task render in a draggable handle.
-const DraggableTask = ({ task, children }) => {
+const DraggableTask = ({ task, children, onDragStart, onDragEnd }) => {
   const draggableId = getTaskDragKey(task);
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: draggableId,
-    data: { task },
-  });
   return (
-    <div ref={setNodeRef} {...attributes} {...listeners}
+    <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", draggableId);
+        onDragStart(task);
+      }}
+      onDragEnd={onDragEnd}
       style={{
-        opacity: isDragging ? 0.25 : 1,
+        opacity: 1,
         cursor: 'grab',
         touchAction: 'none',
-        transition: isDragging ? 'none' : 'opacity 120ms ease',
       }}
     >
       {children}
@@ -4091,33 +4092,38 @@ const DraggableTask = ({ task, children }) => {
   );
 };
 
-const DroppableTaskTarget = ({ task, children }) => {
-  const { setNodeRef, isOver } = useDroppable({
-    id: `task-drop::${getTaskDragKey(task)}`,
-    data: { type: "task", task },
-  });
+const DroppableTaskTarget = ({ task, children, onTaskDrop }) => {
   return (
-    <div ref={setNodeRef} className={isOver ? "rounded-xl ring-2 ring-[#1A1717]/30" : ""}>
+    <div
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+      onDrop={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onTaskDrop({ type: "task", task });
+      }}
+    >
       {children}
     </div>
   );
 };
 
-const DroppableDateSection = ({ assignee, date, children }) => {
-  const { setNodeRef, isOver } = useDroppable({
-    id: `date-drop::${assignee}::${date}`,
-    data: { type: "date", assignee, date },
-  });
+const DroppableDateSection = ({ assignee, date, children, onTaskDrop }) => {
   return (
-    <div ref={setNodeRef} className={isOver ? "rounded-xl bg-[#1A1717]/[0.04]" : ""}>
+    <div
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+      onDrop={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onTaskDrop({ type: "date", assignee, date });
+      }}
+    >
       {children}
     </div>
   );
 };
 
 // Team Column Component - reusable for КАСЯ, КАРОЛІНА, ВО
-const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick, onStandaloneClick, onTaskEdit, onAddClick, overdueExpanded, setOverdueExpanded, soonExpanded, setSoonExpanded, smmTasksDefinition, columnAssignee, announcementOverlaps = {}, onOverlapClick, todayStr }) => {
-  const { setNodeRef, isOver } = useDroppable({ id: columnAssignee || 'unknown' });
+const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick, onStandaloneClick, onTaskEdit, onAddClick, overdueExpanded, setOverdueExpanded, soonExpanded, setSoonExpanded, smmTasksDefinition, columnAssignee, announcementOverlaps = {}, onOverlapClick, todayStr, onTaskDragStart, onTaskDragEnd, onTaskDrop }) => {
   const TaskRenderer = ({ task }) => {
     const colAssignee = columnAssignee || (colorClass === 'emerald' ? 'kasya' : colorClass === 'orange' ? 'vo' : 'karolina');
     const taskDate = task.task_date || task.reminder_date;
@@ -4133,8 +4139,8 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
       isOverlapping
     };
     return (
-      <DroppableTaskTarget task={normalizedTask}>
-        <DraggableTask task={normalizedTask}>
+      <DroppableTaskTarget task={normalizedTask} onTaskDrop={onTaskDrop}>
+        <DraggableTask task={normalizedTask} onDragStart={onTaskDragStart} onDragEnd={onTaskDragEnd}>
           <SMMTaskItem
             key={`${normalizedTask.event_id}-${normalizedTask.task_id}`}
             task={normalizedTask}
@@ -4151,7 +4157,14 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
   };
 
   return (
-    <div ref={setNodeRef} className={`desktop-column transition-all duration-150 ${isOver ? 'ring-2 ring-[#1A1717] rounded-xl bg-[#1A1717]/[0.03]' : ''}`}>
+    <div
+      className="desktop-column transition-all duration-150"
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+      onDrop={(e) => {
+        e.preventDefault();
+        onTaskDrop({ type: "column", assignee: columnAssignee });
+      }}
+    >
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
         <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>{name}</span>
         <button className="add-btn" onClick={onAddClick}><Plus className="w-4 h-4" /></button>
@@ -4169,7 +4182,7 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
         
         <div className="mb-3">
           <div className="section-header-mini"><span>сьогодні ({tasks.today.length})</span></div>
-          <DroppableDateSection assignee={columnAssignee} date={todayStr}>
+          <DroppableDateSection assignee={columnAssignee} date={todayStr} onTaskDrop={onTaskDrop}>
             {tasks.today.length > 0 ? [...tasks.today].sort((a, b) => getTaskOrder(a) - getTaskOrder(b) || (a.completed ? 1 : 0) - (b.completed ? 1 : 0)).map((t) => (
               <TaskRenderer key={getTaskDragKey({ ...t, task_id: t.task_id || t.reminder_id })} task={t} />
             )) : <p className="text-center text-secondary text-sm py-2">все зроблено!</p>}
@@ -4195,7 +4208,7 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
                       {formatDateUkrainian(date)}
                       {announcementOverlaps[date] && <span className="ml-1.5 text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">перетин</span>}
                     </p>
-                    <DroppableDateSection assignee={columnAssignee} date={date}>
+                    <DroppableDateSection assignee={columnAssignee} date={date} onTaskDrop={onTaskDrop}>
                       {dateTasks.map((t) => (
                         <TaskRenderer key={getTaskDragKey({ ...t, task_id: t.task_id || t.reminder_id })} task={t} />
                       ))}
@@ -4315,7 +4328,7 @@ const DesktopDashboard = () => {
         const reminderInfo = reminderMap[reminderId]; if (!reminderInfo) return;
         const reminderDate = new Date(reminderDateStr); reminderDate.setHours(0, 0, 0, 0);
         const ov = (event.task_overrides || {})[reminderId] || {};
-        const task = { event_id: event.id, event_title: event.title, reminder_id: reminderId, reminder_name: ov.title || reminderInfo.name, reminder_date: reminderDateStr, icon: ov.icon || reminderInfo.icon, completed: !!(event.completed_tasks || {})[reminderId], is_standalone: false, color: ov.color, assignee: ov.assignee };
+        const task = { event_id: event.id, event_title: event.title, reminder_id: reminderId, reminder_name: ov.title || reminderInfo.name, reminder_date: reminderDateStr, icon: ov.icon || reminderInfo.icon, completed: !!(event.completed_tasks || {})[reminderId], is_standalone: false, color: ov.color, assignee: ov.assignee, order: ov.order || 0 };
         
         if (reminderDateStr === todayStr) todayTasks.push(task);
         else if (reminderDate < today && !task.completed) overdueTasks.push(task);
@@ -4539,12 +4552,9 @@ const DesktopDashboard = () => {
     if (fullTask) { setSelectedStandaloneTask(fullTask); setShowStandaloneTaskPopup(true); }
   };
 
-  // Drag-and-drop between assignee columns. PointerSensor with 8px activation
-  // distance avoids competing with click handlers (toggle/open detail).
-  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const [activeDragTask, setActiveDragTask] = useState(null);
-  const handleTaskDragStart = ({ active }) => {
-    setActiveDragTask(active?.data?.current?.task || null);
+  const handleTaskDragStart = (task) => {
+    setActiveDragTask(task);
   };
 
   const persistTaskPlacement = async (task, assignee, date, order) => {
@@ -4568,14 +4578,11 @@ const DesktopDashboard = () => {
     await api.updateEventTask(task.event_id, taskId, { date, assignee, order });
   };
 
-  const handleTaskDragEnd = async ({ active, over }) => {
-    setActiveDragTask(null);
-    if (!over) return;
-    const task = active?.data?.current?.task;
+  const handleTaskDrop = async (overData) => {
+    const task = activeDragTask;
     if (!task) return;
-    const overData = over.data?.current || {};
     const targetTask = overData.type === "task" ? overData.task : null;
-    const newAssignee = targetTask?.assignee || overData.assignee || over.id; // "karolina" | "kasya" | "vo"
+    const newAssignee = targetTask?.assignee || overData.assignee; // "karolina" | "kasya" | "vo"
     const newDate = targetTask ? getTaskDate(targetTask) : (overData.date || getTaskDate(task));
     if (!["karolina", "kasya", "vo"].includes(newAssignee)) return;
     if (overData.type === "task" || overData.type === "date") {
@@ -4634,6 +4641,10 @@ const DesktopDashboard = () => {
         refreshEvents();
       }
     } catch { toast.error("не вдалось перенести"); }
+  };
+
+  const handleTaskDragEnd = () => {
+    setActiveDragTask(null);
   };
   
   const handleTaskEdit = (task) => {
@@ -4935,8 +4946,7 @@ const DesktopDashboard = () => {
             </div>
           </div>
           
-          {/* МЕНЕДЖМЕНТ + SMM + МАРКЕТИНГ — drag between columns to swap assignee */}
-          <DndContext sensors={dndSensors} onDragStart={handleTaskDragStart} onDragEnd={handleTaskDragEnd} onDragCancel={() => setActiveDragTask(null)}>
+          {/* МЕНЕДЖМЕНТ + SMM + МАРКЕТИНГ — drag between days/columns */}
           <TeamColumn
             name="МЕНЕДЖМЕНТ"
             tasks={tasksByTeam.karolina}
@@ -4960,6 +4970,9 @@ const DesktopDashboard = () => {
             smmTasksDefinition={smmTasksDefinition}
             columnAssignee="karolina"
             todayStr={todayStr}
+            onTaskDragStart={handleTaskDragStart}
+            onTaskDragEnd={handleTaskDragEnd}
+            onTaskDrop={handleTaskDrop}
           />
           
           {/* SMM Column - Second */}
@@ -4982,6 +4995,9 @@ const DesktopDashboard = () => {
             todayStr={todayStr}
             announcementOverlaps={announcementOverlaps}
             onOverlapClick={setOverlapResolverTask}
+            onTaskDragStart={handleTaskDragStart}
+            onTaskDragEnd={handleTaskDragEnd}
+            onTaskDrop={handleTaskDrop}
           />
 
           {/* МАРКЕТИНГ Column (orange) - Third */}
@@ -5002,19 +5018,10 @@ const DesktopDashboard = () => {
             smmTasksDefinition={smmTasksDefinition}
             columnAssignee="vo"
             todayStr={todayStr}
+            onTaskDragStart={handleTaskDragStart}
+            onTaskDragEnd={handleTaskDragEnd}
+            onTaskDrop={handleTaskDrop}
           />
-          <DragOverlay dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }}>
-            {activeDragTask ? (
-              <div className="px-3 py-2 rounded-xl bg-white shadow-[0_16px_40px_-8px_rgba(0,0,0,0.25)] ring-1 ring-black/10 cursor-grabbing select-none max-w-xs"
-                style={{ transform: 'rotate(-2deg)' }}>
-                <p className="text-sm font-medium truncate">{activeDragTask.task_name || activeDragTask.reminder_name || 'задача'}</p>
-                {activeDragTask.event_title && (
-                  <p className="text-xs text-secondary truncate mt-0.5">{activeDragTask.event_title}</p>
-                )}
-              </div>
-            ) : null}
-          </DragOverlay>
-          </DndContext>
         </div>
       ) : (
         <div className="desktop-columns">
