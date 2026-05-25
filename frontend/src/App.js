@@ -4070,7 +4070,7 @@ const getTaskDate = (task) => task.task_date || task.reminder_date || task.date 
 const getTaskOrder = (task) => Number(task.order || 0);
 
 // Wraps a task render in a draggable handle.
-const DraggableTask = ({ task, children, onDragStart, onDragEnd, onDropAtPointer }) => {
+const DraggableTask = ({ task, children, onDragStart, onDragMove, onDragEnd, onDropAtPointer }) => {
   const dragStateRef = useRef(null);
   const suppressClickRef = useRef(false);
 
@@ -4100,8 +4100,9 @@ const DraggableTask = ({ task, children, onDragStart, onDragEnd, onDropAtPointer
       suppressClickRef.current = true;
       document.body.style.cursor = "grabbing";
       document.body.style.userSelect = "none";
-      onDragStart(task);
+      onDragStart(task, { x: e.clientX, y: e.clientY });
     }
+    if (state.dragging) onDragMove({ x: e.clientX, y: e.clientY, over: buildDropData(e.clientX, e.clientY) });
   };
 
   const handlePointerUp = (e) => {
@@ -4141,23 +4142,25 @@ const DraggableTask = ({ task, children, onDragStart, onDragEnd, onDropAtPointer
   );
 };
 
-const DroppableTaskTarget = ({ task, children }) => {
+const DroppableTaskTarget = ({ task, children, isOver }) => {
   return (
     <div
       data-task-drop-type="task"
       data-task-key={getTaskDragKey(task)}
+      className={isOver ? "rounded-xl ring-2 ring-[#1A1717]/30" : ""}
     >
       {children}
     </div>
   );
 };
 
-const DroppableDateSection = ({ assignee, date, children }) => {
+const DroppableDateSection = ({ assignee, date, children, isOver }) => {
   return (
     <div
       data-task-drop-type="date"
       data-assignee={assignee}
       data-date={date}
+      className={isOver ? "rounded-xl bg-[#1A1717]/[0.05]" : ""}
     >
       {children}
     </div>
@@ -4165,7 +4168,7 @@ const DroppableDateSection = ({ assignee, date, children }) => {
 };
 
 // Team Column Component - reusable for КАСЯ, КАРОЛІНА, ВО
-const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick, onStandaloneClick, onTaskEdit, onAddClick, overdueExpanded, setOverdueExpanded, soonExpanded, setSoonExpanded, smmTasksDefinition, columnAssignee, announcementOverlaps = {}, onOverlapClick, todayStr, onTaskDragStart, onTaskDragEnd, onTaskDrop }) => {
+const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick, onStandaloneClick, onTaskEdit, onAddClick, overdueExpanded, setOverdueExpanded, soonExpanded, setSoonExpanded, smmTasksDefinition, columnAssignee, announcementOverlaps = {}, onOverlapClick, todayStr, onTaskDragStart, onTaskDragMove, onTaskDragEnd, onTaskDrop, dragOver }) => {
   const TaskRenderer = ({ task }) => {
     const colAssignee = columnAssignee || (colorClass === 'emerald' ? 'kasya' : colorClass === 'orange' ? 'vo' : 'karolina');
     const taskDate = task.task_date || task.reminder_date;
@@ -4181,8 +4184,8 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
       isOverlapping
     };
     return (
-      <DroppableTaskTarget task={normalizedTask}>
-        <DraggableTask task={normalizedTask} onDragStart={onTaskDragStart} onDragEnd={onTaskDragEnd} onDropAtPointer={onTaskDrop}>
+      <DroppableTaskTarget task={normalizedTask} isOver={dragOver?.type === "task" && dragOver.taskKey === getTaskDragKey(normalizedTask)}>
+        <DraggableTask task={normalizedTask} onDragStart={onTaskDragStart} onDragMove={onTaskDragMove} onDragEnd={onTaskDragEnd} onDropAtPointer={onTaskDrop}>
           <SMMTaskItem
             key={`${normalizedTask.event_id}-${normalizedTask.task_id}`}
             task={normalizedTask}
@@ -4200,7 +4203,7 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
 
   return (
     <div
-      className="desktop-column transition-all duration-150"
+      className={`desktop-column transition-all duration-150 ${dragOver?.type === "column" && dragOver.assignee === columnAssignee ? "ring-2 ring-[#1A1717]/20" : ""}`}
       data-task-drop-type="column"
       data-assignee={columnAssignee}
     >
@@ -4221,7 +4224,7 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
         
         <div className="mb-3">
           <div className="section-header-mini"><span>сьогодні ({tasks.today.length})</span></div>
-          <DroppableDateSection assignee={columnAssignee} date={todayStr}>
+          <DroppableDateSection assignee={columnAssignee} date={todayStr} isOver={dragOver?.type === "date" && dragOver.assignee === columnAssignee && dragOver.date === todayStr}>
             {tasks.today.length > 0 ? [...tasks.today].sort((a, b) => getTaskOrder(a) - getTaskOrder(b) || (a.completed ? 1 : 0) - (b.completed ? 1 : 0)).map((t) => (
               <TaskRenderer key={getTaskDragKey({ ...t, task_id: t.task_id || t.reminder_id })} task={t} />
             )) : <p className="text-center text-secondary text-sm py-2">все зроблено!</p>}
@@ -4247,7 +4250,7 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
                       {formatDateUkrainian(date)}
                       {announcementOverlaps[date] && <span className="ml-1.5 text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">перетин</span>}
                     </p>
-                    <DroppableDateSection assignee={columnAssignee} date={date}>
+                    <DroppableDateSection assignee={columnAssignee} date={date} isOver={dragOver?.type === "date" && dragOver.assignee === columnAssignee && dragOver.date === date}>
                       {dateTasks.map((t) => (
                         <TaskRenderer key={getTaskDragKey({ ...t, task_id: t.task_id || t.reminder_id })} task={t} />
                       ))}
@@ -4592,8 +4595,15 @@ const DesktopDashboard = () => {
   };
 
   const [activeDragTask, setActiveDragTask] = useState(null);
-  const handleTaskDragStart = (task) => {
+  const [dragPosition, setDragPosition] = useState(null);
+  const [dragOver, setDragOver] = useState(null);
+  const handleTaskDragStart = (task, point) => {
     setActiveDragTask(task);
+    setDragPosition(point || null);
+  };
+  const handleTaskDragMove = ({ x, y, over }) => {
+    setDragPosition({ x, y });
+    setDragOver(over || null);
   };
 
   const persistTaskPlacement = async (task, assignee, date, order) => {
@@ -4689,6 +4699,8 @@ const DesktopDashboard = () => {
 
   const handleTaskDragEnd = () => {
     setActiveDragTask(null);
+    setDragPosition(null);
+    setDragOver(null);
   };
   
   const handleTaskEdit = (task) => {
@@ -5015,8 +5027,10 @@ const DesktopDashboard = () => {
             columnAssignee="karolina"
             todayStr={todayStr}
             onTaskDragStart={handleTaskDragStart}
+            onTaskDragMove={handleTaskDragMove}
             onTaskDragEnd={handleTaskDragEnd}
             onTaskDrop={handleTaskDrop}
+            dragOver={dragOver}
           />
           
           {/* SMM Column - Second */}
@@ -5040,8 +5054,10 @@ const DesktopDashboard = () => {
             announcementOverlaps={announcementOverlaps}
             onOverlapClick={setOverlapResolverTask}
             onTaskDragStart={handleTaskDragStart}
+            onTaskDragMove={handleTaskDragMove}
             onTaskDragEnd={handleTaskDragEnd}
             onTaskDrop={handleTaskDrop}
+            dragOver={dragOver}
           />
 
           {/* МАРКЕТИНГ Column (orange) - Third */}
@@ -5063,9 +5079,22 @@ const DesktopDashboard = () => {
             columnAssignee="vo"
             todayStr={todayStr}
             onTaskDragStart={handleTaskDragStart}
+            onTaskDragMove={handleTaskDragMove}
             onTaskDragEnd={handleTaskDragEnd}
             onTaskDrop={handleTaskDrop}
+            dragOver={dragOver}
           />
+          {activeDragTask && dragPosition && (
+            <div
+              className="fixed z-[9999] pointer-events-none px-3 py-2 rounded-xl bg-white shadow-[0_16px_40px_-8px_rgba(0,0,0,0.25)] ring-1 ring-black/10 select-none max-w-xs"
+              style={{ left: dragPosition.x + 12, top: dragPosition.y + 12, transform: "rotate(-2deg)" }}
+            >
+              <p className="text-sm font-medium truncate">{activeDragTask.task_name || activeDragTask.reminder_name || "задача"}</p>
+              {activeDragTask.event_title && (
+                <p className="text-xs text-secondary truncate mt-0.5">{activeDragTask.event_title}</p>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="desktop-columns">
