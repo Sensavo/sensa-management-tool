@@ -89,10 +89,10 @@ const ACTION_BASE =
 
 const ACTION_VARIANTS = {
   primary: "bg-[#1A1717] text-[#F0EEE6] hover:bg-[#333333]",
-  danger: "bg-[#DC2626] text-white hover:bg-[#B91C1C]",
-  warning: "bg-[#C4703D] text-white hover:bg-[#A8602F]",
-  ghost: "bg-transparent text-[#1A1717] hover:bg-black/5",
-  outline: "bg-transparent text-[#1A1717] border border-[#1A1717]/15 hover:bg-black/5",
+  danger: "bg-[#DC2626] text-[#F0EEE6] hover:bg-[#B91C1C]",
+  warning: "bg-[#C4703D] text-[#F0EEE6] hover:bg-[#A8602F]",
+  ghost: "bg-transparent text-[#1A1717] hover:bg-[#ECE8DE]",
+  outline: "bg-transparent text-[#1A1717] border border-[#1A1717]/15 hover:bg-[#ECE8DE]",
 }
 
 const AlertDialogAction = React.forwardRef(({ className, variant = "primary", ...props }, ref) => (

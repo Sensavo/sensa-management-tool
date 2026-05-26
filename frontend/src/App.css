@@ -18,7 +18,7 @@
 .btn-dark { @apply h-12 px-6 rounded-full font-medium transition-all flex items-center justify-center gap-2 text-base; background: #1A1717; color: #F0EEE6; }
 .btn-dark:hover { background: #333333; }
 .btn-subtle { @apply h-10 px-5 rounded-full font-medium transition-all flex items-center justify-center gap-2; background: transparent; color: #6B6B6B; border: 1px dashed rgba(0, 0, 0, 0.15); }
-.btn-subtle:hover { background: rgba(0, 0, 0, 0.03); }
+.btn-subtle:hover { background: var(--surface-soft); }
 
 .form-field { @apply space-y-3; }
 .form-input { @apply w-full h-12 px-4 rounded-lg border transition-colors text-base; background: rgba(240, 238, 230, 0.72); border-color: rgba(0, 0, 0, 0.1); }
@@ -78,12 +78,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--surface-mid);
   transition: background 0.2s;
 }
 .fullscreen-modal-back:hover,
 .fullscreen-modal-close:hover {
-  background: rgba(0, 0, 0, 0.1);
+  background: var(--surface-strong);
 }
 .fullscreen-modal-content {
   flex: 1;
@@ -245,7 +245,7 @@
 .calendar-minimal .rdp-head_cell { color: #6B6B6B; font-weight: 400; font-size: 0.7rem; text-transform: lowercase; width: auto; text-align: center; }
 .calendar-minimal .rdp-cell { width: auto; text-align: center; padding: 0 !important; }
 .calendar-minimal .rdp-day { background: transparent !important; border-radius: 50%; width: 30px; height: 30px; margin: 0 auto; display: flex; align-items: center; justify-content: center; padding: 0 !important; }
-.calendar-minimal .rdp-day:hover { background: rgba(0, 0, 0, 0.05) !important; }
+.calendar-minimal .rdp-day:hover { background: var(--surface-mid) !important; }
 .calendar-minimal .rdp-day_selected { background: rgba(0, 0, 0, 0.08) !important; color: #1A1717 !important; }
 .calendar-today-hidden { font-weight: normal !important; background: transparent !important; border: none !important; }
 .calendar-today-visible { font-weight: 700 !important; background: #1A1717 !important; color: #fff !important; border-radius: 50% !important; }
@@ -385,7 +385,7 @@
 
 /* Settings tabs */
 .settings-tabs { @apply flex gap-2; }
-.settings-tab { @apply flex-1 py-2 px-3 rounded-xl font-medium text-sm transition-colors text-center; background: rgba(0, 0, 0, 0.05); }
+.settings-tab { @apply flex-1 py-2 px-3 rounded-xl font-medium text-sm transition-colors text-center; background: var(--surface-mid); }
 .settings-tab.active { background: #1A1717; color: #F0EEE6; }
 
 /* Desktop */
@@ -399,8 +399,8 @@
 .desktop-header-left { @apply flex items-center; }
 .desktop-date-label { align-self: flex-start; padding-top: 9px; line-height: 1.2; }
 .desktop-header-right { @apply flex items-center gap-3; }
-.desktop-header-btn { @apply w-10 h-10 rounded-full flex items-center justify-center transition-colors; background: rgba(0, 0, 0, 0.04); color: #6B6B6B; }
-.desktop-header-btn:hover { background: rgba(0, 0, 0, 0.08); }
+.desktop-header-btn { @apply w-10 h-10 rounded-full flex items-center justify-center transition-colors; background: var(--surface-mid); color: #6B6B6B; }
+.desktop-header-btn:hover { background: var(--surface-strong); }
 
 
 .desktop-columns { @apply grid grid-cols-3 gap-4 p-4; min-height: calc(100vh - 72px); }
@@ -498,7 +498,7 @@
   min-height: 36px !important;
   padding: 0 !important;
   border-radius: 9999px !important;
-  background: rgba(0, 0, 0, 0.06) !important;
+  background: var(--surface-mid) !important;
   color: #1A1717 !important;
   display: inline-flex !important;
   align-items: center !important;
@@ -509,7 +509,7 @@
   border: none !important;
 }
 [data-radix-dialog-close]:hover {
-  background: rgba(0, 0, 0, 0.12) !important;
+  background: var(--surface-strong) !important;
   transform: scale(1.04);
 }
 [data-radix-dialog-close] svg {

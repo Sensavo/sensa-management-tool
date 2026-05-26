@@ -108,11 +108,11 @@ body {
 
 .back-btn {
     @apply w-10 h-10 rounded-full flex items-center justify-center transition-colors;
-    background: rgba(0, 0, 0, 0.05);
+    background: var(--surface-mid);
 }
 
 .back-btn:hover {
-    background: rgba(0, 0, 0, 0.1);
+    background: var(--surface-strong);
 }
 
 .page-title {
@@ -229,16 +229,16 @@ body {
     min-width: 40px;
     min-height: 40px;
     flex-shrink: 0;
-    background: rgba(0, 0, 0, 0.05);
+    background: var(--surface-mid);
 }
 
 .icon-btn.active {
     background: #1A1A1A;
-    color: white;
+    color: #F0EEE6;
 }
 
 .icon-btn:hover:not(.active) {
-    background: rgba(0, 0, 0, 0.1);
+    background: var(--surface-strong);
 }
 
 ::-webkit-scrollbar {
