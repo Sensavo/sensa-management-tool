@@ -60,12 +60,36 @@ PORIADOK_APP_URL = (os.environ.get("FRONTEND_URL") or "https://app.sensa.events"
 
 telegram_app = None
 telegram_summary_task = None
-TEAM_USERS = ("karolina", "kasya", "vo")
+TEAM_USERS = ("manager", "smm", "marketer")
 TEAM_USER_LABELS = {
-    "karolina": "karolina",
-    "kasya": "kasya",
-    "vo": "vo",
+    "manager": "Manager",
+    "smm": "SMM",
+    "marketer": "Marketer",
 }
+LEGACY_ASSIGNEE_ALIASES = {
+    "manager": "manager",
+    "management": "manager",
+    "karolina": "manager",
+    "smm": "smm",
+    "kasya": "smm",
+    "marketer": "marketer",
+    "marketing": "marketer",
+    "vo": "marketer",
+}
+ASSIGNEE_STORAGE_ALIASES = {
+    "manager": ["manager", "karolina"],
+    "smm": ["smm", "kasya"],
+    "marketer": ["marketer", "vo"],
+}
+
+
+def normalize_assignee(value: Optional[str], default: str = "manager") -> str:
+    raw = (value or "").strip().lower()
+    return LEGACY_ASSIGNEE_ALIASES.get(raw, default)
+
+
+def assignee_storage_aliases(value: str) -> List[str]:
+    return ASSIGNEE_STORAGE_ALIASES.get(normalize_assignee(value), [normalize_assignee(value)])
 
 async def altegio_auto_sync():
     """Background task to sync Altegio data every 60 minutes"""
@@ -181,10 +205,10 @@ async def lifespan(app: FastAPI):
             existing = await db.generated_months.find_one({"month_key": month_key})
             if not existing:
                 calculated = calculate_monthly_tasks(y, m)
-                column_to_assignee = {"management": "karolina", "smm": "kasya", "marketing": "vo"}
+                column_to_assignee = {"management": "manager", "smm": "smm", "marketing": "marketer"}
                 count = 0
                 for task_id, task_info in calculated.items():
-                    assignee = column_to_assignee.get(task_info["column"], "karolina")
+                    assignee = column_to_assignee.get(task_info["column"], "manager")
                     standalone = {
                         "id": f"monthly-{month_key}-{task_id}",
                         "title": task_info["name"],
@@ -223,7 +247,7 @@ async def lifespan(app: FastAPI):
         await asyncio.sleep(4)
         now = datetime.now(timezone.utc)
         today_str = now.strftime("%Y-%m-%d")
-        column_to_assignee = {"management": "karolina", "smm": "kasya", "marketing": "vo"}
+        column_to_assignee = {"management": "manager", "smm": "smm", "marketing": "marketer"}
         for task in DAILY_TASKS:
             task_id = f"daily-{today_str}-{task['id']}"
             existing = await db.standalone_tasks.find_one({"id": task_id})
@@ -235,7 +259,7 @@ async def lifespan(app: FastAPI):
                     "icon": "coffee" if task["column"] == "management" else "hash",
                     "type": "daily",
                     "color": "standard",
-                    "assignee": column_to_assignee.get(task["column"], "karolina"),
+                    "assignee": column_to_assignee.get(task["column"], "manager"),
                     "completed": False,
                     "completed_at": None,
                     "created_at": now.isoformat(),
@@ -362,7 +386,7 @@ class StandaloneTask(BaseModel):
     icon: str = "coffee"
     type: str = "regular"  # "regular" or "smm"
     color: str = "standard"  # cosmetic color for icon
-    assignee: str = "karolina"  # "kasya", "karolina", "vo" - determines column
+    assignee: str = "manager"  # "smm", "manager", "marketer" - determines column
     completed: bool = False
     completed_at: Optional[str] = None
     event_id: Optional[str] = ""  # optional link to existing event (metadata only)
@@ -376,7 +400,7 @@ class DayOff(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    assignee: str  # "karolina" | "kasya" | "vo"
+    assignee: str  # "manager" | "smm" | "marketer"
     date: str  # YYYY-MM-DD
     note: str = ""
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -400,7 +424,7 @@ class StandaloneTaskCreate(BaseModel):
     icon: str = "coffee"
     type: str = "regular"
     color: str = "standard"
-    assignee: str = "karolina"
+    assignee: str = "manager"
     event_id: Optional[str] = ""  # optional link to an existing event
     order: Optional[float] = 0
 
@@ -475,7 +499,7 @@ def check_teamwork_conflict(dt, existing_teamwork_dates):
         attempts += 1
     return dt
 
-# MANAGEMENT event tasks (column: karolina)
+# MANAGEMENT event tasks (column: manager)
 # series_master_only: True = task created ONLY for the master (first) instance
 # of a recurring series; series children skip it. Used for one-off prep work
 # that doesn't repeat per session (gathering info, designing announcement, etc.)
@@ -501,7 +525,7 @@ MANAGEMENT_TASKS = [
     {"id": "mgmt_lucky_ticket", "name": "щасливий квиточок в групу", "days_before": 2, "condition": {"type": "booking_below", "threshold": 80}, "weight": 0.05, "shift_kind": "easy"},
 ]
 
-# SMM event tasks (column: kasya)
+# SMM event tasks (column: smm)
 # Markers:
 #   series_master_only: True       — only on series master, never on children
 #   _series_only: "child"          — only on series children
@@ -553,10 +577,10 @@ MONTHLY_TASKS = [
     {"id": "monthly_content_plan_tw", "name": "контент-план тімворк", "days_before": 40, "column": "smm", "is_teamwork": True, "calendar_event": {"title_template": "контент-план на {month}", "start_time": "14:00", "end_time": "16:00"}},
     {"id": "monthly_mktg_plan_tw", "name": "план подій тімворк", "days_before": 50, "column": "marketing", "is_teamwork": True},
     {"id": "monthly_mktg_content_tw", "name": "контент-план тімворк", "days_before": 40, "column": "marketing", "is_teamwork": True},
-    # Менеджер
+    # Manager
     {"id": "monthly_mgmt_check_mktg", "name": "перевірити маркетинг план", "days_before": 39, "column": "management"},
     {"id": "monthly_mgmt_next_month_info", "name": "підготувати інфу для посту «Події наступного місяця»", "days_before": 38, "column": "management"},
-    # Маркетолог
+    # Marketer
     {"id": "monthly_influencers", "name": "вибрати 10 інфлюенсерів", "days_before": 40, "column": "marketing"},
     {"id": "monthly_ambassadors", "name": "написати амбасадорам", "days_before": 27, "column": "marketing"},
     {"id": "monthly_mktg_info_posts", "name": "обговорення інфо-постів", "days_before": 40, "column": "marketing"},
@@ -822,6 +846,7 @@ def _format_task_date(date_str: str) -> str:
 
 
 async def _ensure_user_setting(user_id: str) -> dict:
+    user_id = normalize_assignee(user_id, "")
     if user_id not in TEAM_USERS:
         raise HTTPException(status_code=404, detail="User not found")
     defaults = {
@@ -842,10 +867,14 @@ async def _ensure_user_setting(user_id: str) -> dict:
 
 
 async def _find_user_by_chat(chat_id: int) -> Optional[dict]:
-    return await db.user_settings.find_one({"telegram_chat_id": chat_id}, {"_id": 0})
+    doc = await db.user_settings.find_one({"telegram_chat_id": chat_id}, {"_id": 0})
+    if doc and doc.get("user_id"):
+        doc["user_id"] = normalize_assignee(doc["user_id"])
+    return doc
 
 
 async def _telegram_status_payload(user_id: str) -> dict:
+    user_id = normalize_assignee(user_id, "")
     doc = await _ensure_user_setting(user_id)
     linked = bool(doc.get("telegram_chat_id"))
     expires_at = doc.get("link_expires_at")
@@ -869,14 +898,15 @@ def _task_def_for_event_task(column: str, task_id: str) -> dict:
 
 def _event_task_owner(column: str, override: dict) -> str:
     owner_by_column = {
-        "management": "karolina",
-        "smm": "kasya",
-        "marketing": "vo",
+        "management": "manager",
+        "smm": "smm",
+        "marketing": "marketer",
     }
-    return override.get("assignee") or owner_by_column.get(column, "karolina")
+    return normalize_assignee(override.get("assignee") or owner_by_column.get(column, "manager"))
 
 
 async def _collect_user_tasks(user_id: str, *, target_date: Optional[str] = None, overdue: bool = False) -> List[dict]:
+    user_id = normalize_assignee(user_id, "")
     column = ASSIGNEE_TO_COLUMN.get(user_id)
     if not column:
         return []
@@ -884,7 +914,7 @@ async def _collect_user_tasks(user_id: str, *, target_date: Optional[str] = None
     today = _today_kyiv()
     tasks: List[dict] = []
 
-    standalone_filter = {"assignee": user_id, "completed": {"$ne": True}}
+    standalone_filter = {"assignee": {"$in": assignee_storage_aliases(user_id)}, "completed": {"$ne": True}}
     standalone = await db.standalone_tasks.find(standalone_filter, {"_id": 0}).to_list(2000)
     for task in standalone:
         task_date = (task.get("date") or "")[:10]
@@ -944,9 +974,10 @@ def _format_task_list(tasks: List[dict], empty_text: str) -> str:
 
 
 async def send_telegram(user_id: str, text: str) -> bool:
+    user_id = normalize_assignee(user_id, "")
     if not telegram_app:
         return False
-    doc = await db.user_settings.find_one({"user_id": user_id}, {"_id": 0})
+    doc = await db.user_settings.find_one({"user_id": {"$in": assignee_storage_aliases(user_id)}}, {"_id": 0})
     if not doc or not doc.get("telegram_chat_id") or doc.get("muted"):
         return False
     try:
@@ -969,6 +1000,7 @@ def enqueue_telegram(user_id: str, text: str) -> None:
 
 def _actor_from_request(request: Request) -> str:
     actor = (request.headers.get("X-Actor-User") or "").strip().lower()
+    actor = normalize_assignee(actor, "")
     return actor if actor in TEAM_USERS else ""
 
 
@@ -986,6 +1018,7 @@ def _notify_team(actor: str, text: str) -> None:
 
 
 def _notify_assignee(actor: str, assignee: str, text: str) -> None:
+    assignee = normalize_assignee(assignee, "")
     if actor and assignee in TEAM_USERS and assignee != actor:
         enqueue_telegram(assignee, text)
 
@@ -1084,7 +1117,7 @@ async def telegram_link_command(update, context):
     chat = update.effective_chat
     username = update.effective_user.username if update.effective_user else ""
     await db.user_settings.update_one(
-        {"user_id": doc["user_id"]},
+        {"user_id": normalize_assignee(doc["user_id"])},
         {"$set": {
             "telegram_chat_id": chat.id,
             "telegram_username": username or "",
@@ -1139,6 +1172,7 @@ async def get_telegram_status(user_id: str):
 
 @api_router.post("/users/{user_id}/telegram/link-code")
 async def create_telegram_link_code(user_id: str):
+    user_id = normalize_assignee(user_id, "")
     await _ensure_user_setting(user_id)
     code = f"{random.randint(0, 999999):06d}"
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
@@ -1159,6 +1193,7 @@ async def create_telegram_link_code(user_id: str):
 
 @api_router.post("/users/{user_id}/telegram/mute")
 async def mute_telegram_user(user_id: str):
+    user_id = normalize_assignee(user_id, "")
     await _ensure_user_setting(user_id)
     await db.user_settings.update_one({"user_id": user_id}, {"$set": {"muted": True}})
     return await _telegram_status_payload(user_id)
@@ -1166,6 +1201,7 @@ async def mute_telegram_user(user_id: str):
 
 @api_router.post("/users/{user_id}/telegram/unmute")
 async def unmute_telegram_user(user_id: str):
+    user_id = normalize_assignee(user_id, "")
     await _ensure_user_setting(user_id)
     await db.user_settings.update_one({"user_id": user_id}, {"$set": {"muted": False}})
     return await _telegram_status_payload(user_id)
@@ -1702,7 +1738,7 @@ async def _create_cancellation_tasks(event: dict, series_count: int = 0) -> None
     1. Notify the master that their event is off.
     2. Refund participants or move payments to deposit.
 
-    Both go to Karolina (management column), dated today, linked to the
+    Both go to Manager (management column), dated today, linked to the
     cancelled event so the popup can show context.
     """
     title = event.get("title") or "подія"
@@ -1726,8 +1762,8 @@ async def _create_cancellation_tasks(event: dict, series_count: int = 0) -> None
             date=today_str,
             icon=spec["icon"],
             type="regular",
-            color="karolina",
-            assignee="karolina",
+            color="manager",
+            assignee="manager",
             event_id=event.get("id") or "",
         )
         await db.standalone_tasks.insert_one(standalone.model_dump())
@@ -1969,6 +2005,7 @@ async def delete_event(event_id: str, request: Request):
 
 @api_router.post("/tasks/standalone", response_model=StandaloneTask)
 async def create_standalone_task(task_data: StandaloneTaskCreate, request: Request):
+    task_data.assignee = normalize_assignee(task_data.assignee)
     task = StandaloneTask(**task_data.model_dump())
     await db.standalone_tasks.insert_one(task.model_dump())
     actor = _actor_from_request(request)
@@ -1987,9 +2024,9 @@ async def get_standalone_tasks():
 # ==================== DAY-OFFS ====================
 
 ASSIGNEE_TO_COLUMN = {
-    "karolina": "management",
-    "kasya":    "smm",
-    "vo":       "marketing",
+    "manager": "management",
+    "smm":    "smm",
+    "marketer":       "marketing",
 }
 COLUMN_TO_FIELD = {
     "management": "reminders",
@@ -2012,6 +2049,7 @@ async def _suggest_redistribution(assignee: str, day_off_date: str) -> Dict:
           "needs_review":  items the user must decide (fixed / chain / no slot)
         }
     """
+    assignee = normalize_assignee(assignee)
     column = ASSIGNEE_TO_COLUMN.get(assignee)
     if not column:
         return {"auto_shifts": [], "needs_review": []}
@@ -2177,7 +2215,7 @@ async def update_standalone_task_full(task_id: str, task_data: StandaloneTaskCre
         "icon": task_data.icon,
         "type": task_data.type,
         "color": task_data.color,
-        "assignee": task_data.assignee,
+        "assignee": normalize_assignee(task_data.assignee),
         "event_id": task_data.event_id or "",
         "order": task_data.order or 0,
     }
@@ -2188,7 +2226,7 @@ async def update_standalone_task_full(task_id: str, task_data: StandaloneTaskCre
     if (existing.get("date") or "")[:10] != (task_data.date or "")[:10]:
         _notify_assignee(
             actor,
-            task_data.assignee,
+            normalize_assignee(task_data.assignee),
             f"🔄 таск перенесено: <b>{_html_escape(task_data.title)}</b> — {_format_task_date(existing.get('date', ''))} → {_format_task_date(task_data.date)}\n{_poriadok_link()}",
         )
     return updated
@@ -2319,6 +2357,8 @@ async def update_event_task(event_id: str, task_id: str, data: dict, request: Re
             break
     overrides = event.get("task_overrides", {})
     previous_override = overrides.get(task_id, {}) or {}
+    if "assignee" in data:
+        data["assignee"] = normalize_assignee(data.get("assignee"))
     overrides[task_id] = {**previous_override, **{k: v for k, v in data.items() if k in ("color", "icon", "title", "assignee", "order")}}
     update = {"task_overrides": overrides}
     # Update date in smm_tasks, reminders, or marketing_tasks if provided
@@ -2333,7 +2373,7 @@ async def update_event_task(event_id: str, task_id: str, data: dict, request: Re
     await db.events.update_one({"id": event_id}, {"$set": update})
     if new_date and old_date and old_date[:10] != new_date[:10] and task_column:
         actor = _actor_from_request(request)
-        assignee = overrides[task_id].get("assignee") or _event_task_owner(task_column, previous_override)
+        assignee = normalize_assignee(overrides[task_id].get("assignee") or _event_task_owner(task_column, previous_override))
         definition = _task_def_for_event_task(task_column, task_id)
         title = overrides[task_id].get("title") or definition.get("name") or task_id
         _notify_assignee(
@@ -2768,10 +2808,10 @@ async def generate_monthly_tasks(year: int = None, month: int = None):
     
     calculated = calculate_monthly_tasks(year, month)
     created = 0
-    column_to_assignee = {"management": "karolina", "smm": "kasya", "marketing": "vo"}
+    column_to_assignee = {"management": "manager", "smm": "smm", "marketing": "marketer"}
     
     for task_id, task_info in calculated.items():
-        assignee = column_to_assignee.get(task_info["column"], "karolina")
+        assignee = column_to_assignee.get(task_info["column"], "manager")
         standalone = {
             "id": f"monthly-{month_key}-{task_id}",
             "title": task_info["name"],

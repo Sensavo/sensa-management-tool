@@ -3,8 +3,8 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { Toaster, toast } from "sonner";
-import { 
-  Plus, 
+import {
+  Plus,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -72,14 +72,32 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 const ACTOR_USER_STORAGE_KEY = "poriadok_actor_user";
 const TEAM_USER_OPTIONS = [
-  { id: "karolina", label: "Karolina" },
-  { id: "kasya", label: "Kasya" },
-  { id: "vo", label: "Vo" },
+  { id: "manager", label: "Manager" },
+  { id: "smm", label: "SMM" },
+  { id: "marketer", label: "Marketer" },
 ];
+const ASSIGNEE_OPTIONS = TEAM_USER_OPTIONS;
+const ASSIGNEE_LABELS = Object.fromEntries(ASSIGNEE_OPTIONS.map(({ id, label }) => [id, label]));
+const normalizeAssignee = (value, fallback = "manager") => {
+  const raw = String(value || "").trim().toLowerCase();
+  const aliases = {
+    manager: "manager",
+    management: "manager",
+    smm: "smm",
+    marketer: "marketer",
+    marketing: "marketer",
+    karolina: "manager",
+    kasya: "smm",
+    vo: "marketer",
+  };
+  return aliases[raw] || fallback;
+};
+const getAssigneeLabel = (value) => ASSIGNEE_LABELS[normalizeAssignee(value)] || ASSIGNEE_LABELS.manager;
 
 const getActorUser = () => {
   try {
-    return localStorage.getItem(ACTOR_USER_STORAGE_KEY) || "";
+    const actor = localStorage.getItem(ACTOR_USER_STORAGE_KEY) || "";
+    return actor ? normalizeAssignee(actor, "") : "";
   } catch {
     return "";
   }
@@ -146,28 +164,28 @@ const api = {
 // Helper function to get booking status color
 const getBookingStatusColor = (event) => {
   if (!event.altegio_booked_count && event.altegio_booked_count !== 0) return 'default';
-  
+
   const eventDate = new Date(event.date);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const daysUntil = Math.ceil((eventDate - today) / (1000 * 60 * 60 * 24));
-  
+
   const bookedPercent = (event.altegio_booked_count / (event.spots || 10)) * 100;
-  
+
   // < 4 days logic (higher priority)
   if (daysUntil < 4 && daysUntil >= 0) {
     if (bookedPercent >= 70) return 'green';
     if (bookedPercent >= 50) return 'orange';
     return 'red';
   }
-  
+
   // < 7 days logic
   if (daysUntil < 7 && daysUntil >= 0) {
     if (bookedPercent >= 50) return 'green';
     if (bookedPercent >= 20) return 'orange';
     return 'red';
   }
-  
+
   return 'default';
 };
 
@@ -237,18 +255,19 @@ const SMM_ICONS = {
 const getTaskColor = (taskId, smmTasksDefinition, standaloneTask) => {
   if (standaloneTask?.color) return standaloneTask.color;
   const smmTask = smmTasksDefinition?.find(t => t.id === taskId);
-  return smmTask?.color || "karolina";
+  return smmTask?.color || "manager";
 };
 
-// Color class mapping (no special-case for SMM/Kasya — neutral across all assignees)
+// Color class mapping (no special-case for SMM/SMM — neutral across all assignees)
 const getColorClass = (color) => {
-  if (color === "vo" || color === "orange") return "orange";
+  const normalizedColor = normalizeAssignee(color, color);
+  if (normalizedColor === "marketer" || color === "orange") return "orange";
   if (color === "red") return "red";
   if (color === "purple") return "purple";
   if (color === "blue") return "blue";
   if (color === "pink") return "pink";
   if (color === "teal") return "teal";
-  return "karolina";
+  return "manager";
 };
 
 // Text-related SMM tasks (use file icon)
@@ -389,9 +408,9 @@ const FullscreenModal = ({ isOpen, onClose, title, children }) => {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose, isOpen]);
-  
+
   if (!isOpen) return null;
-  
+
   return (
     <div className="fixed inset-0 z-50 bg-white">
       <div className="desktop-dashboard">
@@ -422,9 +441,9 @@ const TaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, showDate = 
   const IconComponent = task.icon ? getIconComponent(task.icon) : Circle;
   const [localCompleted, setLocalCompleted] = useState(task.completed);
   const [isExiting, setIsExiting] = useState(false);
-  
+
   useEffect(() => { setLocalCompleted(task.completed); setIsExiting(false); }, [task.completed, task.event_id, task.reminder_id]);
-  
+
   const handleToggle = (checked) => {
     setLocalCompleted(checked);
     if (isOverdue && checked) {
@@ -434,12 +453,12 @@ const TaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, showDate = 
       onToggle(task.event_id, task.reminder_id, checked, task.is_standalone);
     }
   };
-  
+
   const handleClick = () => {
     if (task.is_standalone && onStandaloneClick) onStandaloneClick(task);
     else if (!task.is_standalone && onEventClick) onEventClick(task.event_id);
   };
-  
+
   return (
     <div className={`task-item transition-all duration-500 ${localCompleted ? "opacity-40" : ""} ${isExiting ? "opacity-0 -translate-x-4 h-0 py-0 overflow-hidden" : ""}`}>
       <div className={`task-icon ${task.color || ""}`}><IconComponent /></div>
@@ -461,13 +480,13 @@ const TaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, showDate = 
 const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, onTaskEdit, onOverlapClick, showDate = false, smmTasksDefinition = [] }) => {
   // Determine icon - text work tasks get file icon
   const isTextWork = TEXT_WORK_SMM_TASKS.has(task.task_id);
-  const iconName = task.icon || (task.is_standalone 
-    ? "instagram" 
+  const iconName = task.icon || (task.is_standalone
+    ? "instagram"
     : (isTextWork ? "file" : (SMM_ICONS[task.task_id] || "circle")));
   const IconComponent = getIconComponent(iconName);
-  
+
   // Get task color - directly from task object (set by getSMMTasks)
-  const taskColor = task.color || "karolina";
+  const taskColor = task.color || "manager";
   const colorClass = getColorClass(taskColor);
 
   const [localCompleted, setLocalCompleted] = useState(task.completed);
@@ -479,13 +498,13 @@ const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, 
     setLocalCompleted(newCompleted);
     onToggle(task.event_id, task.task_id, newCompleted, task.is_standalone);
   };
-  
+
   const handleClick = () => {
     if (onTaskEdit) onTaskEdit(task);
     else if (task.is_standalone && onStandaloneClick) onStandaloneClick(task);
     else if (!task.is_standalone && onEventClick) onEventClick(task.event_id);
   };
-  
+
   return (
     <div className={`task-item cursor-pointer ${localCompleted ? "opacity-40" : ""}`} onClick={handleClick} data-testid={`task-item-${task.task_id || task.event_id}`}>
       <div className={`task-icon ${colorClass}`}><IconComponent /></div>
@@ -541,8 +560,8 @@ const OverlapResolverDialog = ({ task, open, onClose, onResolved }) => {
     });
     (standaloneTasks || []).forEach(t => {
       if (t.date === dateStr && !t.completed) {
-        if (t.assignee === 'kasya') smm++;
-        else if (t.assignee === 'vo') mktg++;
+        if (t.assignee === 'smm') smm++;
+        else if (t.assignee === 'marketer') mktg++;
         else mgmt++;
       }
     });
@@ -706,13 +725,13 @@ const Dashboard = () => {
   const [newTaskData, setNewTaskData] = useState(null);
   const [showNewTaskCalendar, setShowNewTaskCalendar] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  
+
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
   const todayFormatted = formatDateWithWeekday(today);
   const todayStr = formatDateLocal(today);
   const twoWeeksFromNow = new Date(today); twoWeeksFromNow.setDate(twoWeeksFromNow.getDate() + 14);
   const twoWeeksStr = formatDateLocal(twoWeeksFromNow);
-  
+
   const smmTasksMap = useMemo(() => { const map = {}; smmTasksDefinition.forEach(t => { map[t.id] = t; }); return map; }, [smmTasksDefinition]);
 
   // Regular tasks (reminders + non-SMM standalone)
@@ -728,7 +747,7 @@ const Dashboard = () => {
         const reminderInfo = reminderMap[reminderId]; if (!reminderInfo) return;
         const reminderDate = new Date(reminderDateStr); reminderDate.setHours(0, 0, 0, 0);
         const ov = (event.task_overrides || {})[reminderId] || {};
-        const task = { event_id: event.id, event_title: event.title, reminder_id: reminderId, reminder_name: ov.title || reminderInfo.name, reminder_date: reminderDateStr, icon: ov.icon || reminderInfo.icon, completed: !!(event.completed_tasks || {})[reminderId], is_standalone: false, color: ov.color, assignee: ov.assignee, order: ov.order || 0 };
+        const task = { event_id: event.id, event_title: event.title, reminder_id: reminderId, reminder_name: ov.title || reminderInfo.name, reminder_date: reminderDateStr, icon: ov.icon || reminderInfo.icon, completed: !!(event.completed_tasks || {})[reminderId], is_standalone: false, color: ov.color, assignee: normalizeAssignee(ov.assignee, ""), order: ov.order || 0 };
         if (reminderDateStr === todayStr) todayTasks.push(task);
         else if (reminderDate < today && !task.completed) overdueTasks.push(task);
         else if (reminderDate > today && reminderDateStr <= twoWeeksStr) soonTasks.push(task);
@@ -737,7 +756,7 @@ const Dashboard = () => {
     standaloneTasks.filter(t => t.type !== "smm").forEach(task => {
       const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
       const monthLabel = task.target_month ? UK_MONTHS[parseInt(task.target_month.split('-')[1]) - 1] : '';
-      const t = { event_id: task.id, event_title: task.type === 'monthly' ? '' : task.title, reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "karolina", assignee: task.assignee || "karolina", target_month: task.target_month };
+      const t = { event_id: task.id, event_title: task.type === 'monthly' ? '' : task.title, reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "manager", assignee: normalizeAssignee(task.assignee), target_month: task.target_month };
       if (task.date === todayStr) todayTasks.push(t);
       else if (taskDate < today && !task.completed) overdueTasks.push(t);
       else if (taskDate > today && task.date <= twoWeeksStr) soonTasks.push(t);
@@ -758,7 +777,7 @@ const Dashboard = () => {
         const taskInfo = smmTasksMap[taskId]; if (!taskInfo) return;
         const taskDate = new Date(taskDateStr); taskDate.setHours(0, 0, 0, 0);
         const ov = (event.task_overrides || {})[taskId] || {};
-        const task = { event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov.title || taskInfo.name, task_date: taskDateStr, completed: !!(event.completed_smm_tasks || {})[taskId], color: ov.color || taskInfo.color || "standard", icon: ov.icon || taskInfo.icon, assignee: ov.assignee };
+        const task = { event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov.title || taskInfo.name, task_date: taskDateStr, completed: !!(event.completed_smm_tasks || {})[taskId], color: ov.color || taskInfo.color || "standard", icon: ov.icon || taskInfo.icon, assignee: normalizeAssignee(ov.assignee, "") };
         if (taskDateStr === todayStr) todayTasks.push(task);
         else if (taskDate < today && !task.completed) overdueTasks.push(task);
         else if (taskDate > today && taskDateStr <= twoWeeksStr) soonTasks.push(task);
@@ -766,7 +785,7 @@ const Dashboard = () => {
     });
     standaloneTasks.filter(t => t.type === "smm").forEach(task => {
       const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
-      const t = { event_id: task.id, event_title: task.title, task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "karolina", assignee: task.assignee || "kasya", target_month: task.target_month };
+      const t = { event_id: task.id, event_title: task.title, task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "manager", assignee: normalizeAssignee(task.assignee, "smm"), target_month: task.target_month };
       if (task.date === todayStr) todayTasks.push(t);
       else if (taskDate < today && !task.completed) overdueTasks.push(t);
       else if (taskDate > today && task.date <= twoWeeksStr) soonTasks.push(t);
@@ -781,17 +800,22 @@ const Dashboard = () => {
 
   // Team-based distribution (same as desktop)
   const tasksByTeam = useMemo(() => {
-    const isKarolina = (t) => t.assignee === "karolina";
-    const isKasya = (t) => { if (t.assignee) return t.assignee === "kasya"; if (t.is_standalone) return false; return t.color === "kasya"; };
-    const isVo = (t) => { if (t.assignee) return t.assignee === "vo"; if (t.is_standalone) return false; return !isKasya(t) && !isKarolina(t); };
-    const kasyaR = { overdue: [], today: [], soon: [] }, karolinaR = { overdue: [], today: [], soon: [] }, voR = { overdue: [], today: [], soon: [] };
+    const isManager = (t) => normalizeAssignee(t.assignee, "") === "manager";
+    const isSMM = (t) => { if (t.assignee) return normalizeAssignee(t.assignee, "") === "smm"; if (t.is_standalone) return false; return normalizeAssignee(t.color, "") === "smm"; };
+    const isMarketer = (t) => { if (t.assignee) return normalizeAssignee(t.assignee, "") === "marketer"; if (t.is_standalone) return false; return !isSMM(t) && !isManager(t); };
+    const smmR = { overdue: [], today: [], soon: [] }, managerR = { overdue: [], today: [], soon: [] }, marketerR = { overdue: [], today: [], soon: [] };
     ['overdue', 'today', 'soon'].forEach(k => {
-      regularTasks[k].forEach(t => { if (t.assignee === 'kasya') kasyaR[k].push(t); else if (t.assignee === 'vo') voR[k].push(t); else karolinaR[k].push(t); });
+      regularTasks[k].forEach(t => {
+        const assignee = normalizeAssignee(t.assignee);
+        if (assignee === 'smm') smmR[k].push(t);
+        else if (assignee === 'marketer') marketerR[k].push(t);
+        else managerR[k].push(t);
+      });
     });
     return {
-      kasya: { overdue: [...allSmmTasks.overdue.filter(isKasya), ...kasyaR.overdue], today: [...allSmmTasks.today.filter(isKasya), ...kasyaR.today], soon: [...allSmmTasks.soon.filter(isKasya), ...kasyaR.soon] },
-      karolina: { overdue: [...allSmmTasks.overdue.filter(isKarolina), ...karolinaR.overdue], today: [...allSmmTasks.today.filter(isKarolina), ...karolinaR.today], soon: [...allSmmTasks.soon.filter(isKarolina), ...karolinaR.soon] },
-      vo: { overdue: [...allSmmTasks.overdue.filter(isVo), ...voR.overdue], today: [...allSmmTasks.today.filter(isVo), ...voR.today], soon: [...allSmmTasks.soon.filter(isVo), ...voR.soon] },
+      smm: { overdue: [...allSmmTasks.overdue.filter(isSMM), ...smmR.overdue], today: [...allSmmTasks.today.filter(isSMM), ...smmR.today], soon: [...allSmmTasks.soon.filter(isSMM), ...smmR.soon] },
+      manager: { overdue: [...allSmmTasks.overdue.filter(isManager), ...managerR.overdue], today: [...allSmmTasks.today.filter(isManager), ...managerR.today], soon: [...allSmmTasks.soon.filter(isManager), ...managerR.soon] },
+      marketer: { overdue: [...allSmmTasks.overdue.filter(isMarketer), ...marketerR.overdue], today: [...allSmmTasks.today.filter(isMarketer), ...marketerR.today], soon: [...allSmmTasks.soon.filter(isMarketer), ...marketerR.soon] },
     };
   }, [allSmmTasks, regularTasks]);
 
@@ -810,17 +834,17 @@ const Dashboard = () => {
     } catch { toast.error("помилка"); }
   };
   const handleEventClick = (eventId) => { navigate(`/event/${eventId}/view`); };
-  
+
   const handleTaskEdit = (task) => {
     if (task.is_standalone) {
       const fullTask = standaloneTasks.find(t => t.id === task.event_id);
       if (fullTask) {
-        setEditingTask({...fullTask, _isStandalone: true, assignee: fullTask.assignee || task.assignee || 'karolina'});
+        setEditingTask({...fullTask, _isStandalone: true, assignee: fullTask.assignee || task.assignee || 'manager'});
         setShowEditDialog(true);
       }
     } else {
       const currentAssignee = task.assignee || activeTab;
-      setEditingTask({ _isStandalone: false, _eventId: task.event_id, _taskId: task.task_id || task.reminder_id, assignee: currentAssignee, id: task.event_id, title: task.task_name || task.reminder_name, date: task.task_date || task.reminder_date, icon: task.icon || "circle", color: task.color || "karolina", type: "smm", completed: task.completed, eventTitle: task.event_title });
+      setEditingTask({ _isStandalone: false, _eventId: task.event_id, _taskId: task.task_id || task.reminder_id, assignee: currentAssignee, id: task.event_id, title: task.task_name || task.reminder_name, date: task.task_date || task.reminder_date, icon: task.icon || "circle", color: task.color || "manager", type: "smm", completed: task.completed, eventTitle: task.event_title });
       setShowEditDialog(true);
     }
   };
@@ -838,7 +862,7 @@ const Dashboard = () => {
           icon: editingTask.icon,
           type: editingTask.type,
           color: editingTask.color,
-          assignee: editingTask.assignee || 'karolina',
+          assignee: editingTask.assignee || 'manager',
           event_id: editingTask.event_id || "",
         });
         toast.success("збережено!"); refreshStandaloneTasks();
@@ -848,8 +872,8 @@ const Dashboard = () => {
   };
 
   const handleNewTaskOpen = () => {
-    const isSMM = activeTab === 'kasya' || activeTab === 'vo';
-    setNewTaskData({ title: '', date: todayStr, icon: isSMM ? 'instagram' : 'coffee', color: 'karolina', assignee: activeTab, type: isSMM ? 'smm' : 'regular' });
+    const isSMM = activeTab === 'smm' || activeTab === 'marketer';
+    setNewTaskData({ title: '', date: todayStr, icon: isSMM ? 'instagram' : 'coffee', color: 'manager', assignee: activeTab, type: isSMM ? 'smm' : 'regular' });
     setShowNewTaskCalendar(false);
     setShowNewTask(true);
   };
@@ -883,7 +907,7 @@ const Dashboard = () => {
             <div className="pt-3 space-y-1">
               {[...sectionTasks].sort((a, b) => (a.completed ? 1 : 0) - (b.completed ? 1 : 0)).map((t, i) => {
                 const nt = normalizeTask(t);
-                return <SMMTaskItem key={`${nt.event_id}-${nt.task_id}-${i}`} task={nt} onToggle={activeTab === 'karolina' ? handleToggleTask : handleToggleSMMTask} onEventClick={handleEventClick} onTaskEdit={handleTaskEdit} smmTasksDefinition={smmTasksDefinition} showDate={isOverdue || title === 'незабаром'} />;
+                return <SMMTaskItem key={`${nt.event_id}-${nt.task_id}-${i}`} task={nt} onToggle={activeTab === 'manager' ? handleToggleTask : handleToggleSMMTask} onEventClick={handleEventClick} onTaskEdit={handleTaskEdit} smmTasksDefinition={smmTasksDefinition} showDate={isOverdue || title === 'незабаром'} />;
               })}
             </div>
           ) : <p className="text-secondary py-4 text-center text-sm">все зроблено!</p>
@@ -895,9 +919,9 @@ const Dashboard = () => {
   const currentTasks = activeTab === 'events' ? null : tasksByTeam[activeTab] || { overdue: [], today: [], soon: [] };
   const tabs = [
     { id: 'events', label: 'Події' },
-    { id: 'karolina', label: 'Менеджмент' },
-    { id: 'kasya', label: 'SMM' },
-    { id: 'vo', label: 'Маркетинг' },
+    { id: 'manager', label: 'Manager' },
+    { id: 'smm', label: 'SMM' },
+    { id: 'marketer', label: 'Marketer' },
   ];
 
   return (
@@ -965,7 +989,7 @@ const Dashboard = () => {
 
       {/* Edit task dialog */}
       {showEditDialog && editingTask && (() => {
-        const COLOR_MAP = {'karolina':'#1A1717','red':'#DC2626','purple':'#9333EA','blue':'#3B82F6','orange':'#C4703D','emerald':'#059669','teal':'#14B8A6','kasya':'#059669','pink':'#EC4899'};
+        const COLOR_MAP = {'manager':'#1A1717','red':'#DC2626','purple':'#9333EA','blue':'#3B82F6','orange':'#C4703D','emerald':'#059669','teal':'#14B8A6','smm':'#059669','pink':'#EC4899'};
         const selectedHex = COLOR_MAP[editingTask.color] || '#1A1717';
         return (
         <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
@@ -973,8 +997,8 @@ const Dashboard = () => {
             <DialogHeader><DialogTitle className="text-sm">
               <span>завдання для </span>
               <span className="relative inline-block">
-                <select value={editingTask.assignee || 'karolina'} onChange={(e) => setEditingTask({...editingTask, assignee: e.target.value})} className="appearance-none bg-transparent font-semibold outline-none cursor-pointer pr-4">
-                  <option value="kasya">SMM</option><option value="karolina">Менеджмент</option><option value="vo">Маркетинг</option>
+                <select value={editingTask.assignee || 'manager'} onChange={(e) => setEditingTask({...editingTask, assignee: e.target.value})} className="appearance-none bg-transparent font-semibold outline-none cursor-pointer pr-4">
+                  <option value="smm">SMM</option><option value="manager">Manager</option><option value="marketer">Marketer</option>
                 </select>
                 <ChevronDown className="w-2.5 h-2.5 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-secondary" />
               </span>
@@ -984,7 +1008,7 @@ const Dashboard = () => {
               <div className="flex items-center gap-2">
                 <button className="text-xs px-3 py-1.5 rounded-full bg-[rgba(0,0,0,0.05)]" onClick={() => setShowEditCalendar(!showEditCalendar)}>{formatDateUkrainian(editingTask.date)}</button>
                 <div className="flex gap-1.5 ml-auto">
-                  {["karolina", "red", "purple", "blue", "orange", "emerald", "teal"].map(c => (
+                  {["manager", "red", "purple", "blue", "orange", "emerald", "teal"].map(c => (
                     <button key={c} onClick={() => setEditingTask({...editingTask, color: c})} className={`color-circle-perfect ${editingTask.color === c ? 'ring-2 ring-offset-1 ring-current' : ''}`} style={{ background: COLOR_MAP[c] || '#1A1717' }} />
                   ))}
                 </div>
@@ -1009,7 +1033,7 @@ const Dashboard = () => {
 
       {/* New task dialog */}
       {showNewTask && newTaskData && (() => {
-        const COLOR_MAP = {'karolina':'#1A1717','red':'#DC2626','purple':'#9333EA','blue':'#3B82F6','orange':'#C4703D','emerald':'#059669','teal':'#14B8A6','kasya':'#059669','pink':'#EC4899'};
+        const COLOR_MAP = {'manager':'#1A1717','red':'#DC2626','purple':'#9333EA','blue':'#3B82F6','orange':'#C4703D','emerald':'#059669','teal':'#14B8A6','smm':'#059669','pink':'#EC4899'};
         const selectedHex = COLOR_MAP[newTaskData.color] || '#1A1717';
         return (
         <Dialog open={showNewTask} onOpenChange={setShowNewTask}>
@@ -1018,7 +1042,7 @@ const Dashboard = () => {
               <span>нове завдання для </span>
               <span className="relative inline-block">
                 <select value={newTaskData.assignee} onChange={(e) => setNewTaskData({...newTaskData, assignee: e.target.value})} className="appearance-none bg-transparent font-semibold outline-none cursor-pointer pr-4">
-                  <option value="kasya">SMM</option><option value="karolina">Менеджмент</option><option value="vo">Маркетинг</option>
+                  <option value="smm">SMM</option><option value="manager">Manager</option><option value="marketer">Marketer</option>
                 </select>
                 <ChevronDown className="w-2.5 h-2.5 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-secondary" />
               </span>
@@ -1028,7 +1052,7 @@ const Dashboard = () => {
               <div className="flex items-center gap-2">
                 <button className="text-xs px-3 py-1.5 rounded-full bg-[rgba(0,0,0,0.05)]" onClick={() => setShowNewTaskCalendar(!showNewTaskCalendar)}>{formatDateUkrainian(newTaskData.date)}</button>
                 <div className="flex gap-1.5 ml-auto">
-                  {["karolina", "red", "purple", "blue", "orange", "emerald", "teal"].map(c => (
+                  {["manager", "red", "purple", "blue", "orange", "emerald", "teal"].map(c => (
                     <button key={c} onClick={() => setNewTaskData({...newTaskData, color: c})} className={`color-circle-perfect ${newTaskData.color === c ? 'ring-2 ring-offset-1 ring-current' : ''}`} style={{ background: COLOR_MAP[c] || '#1A1717' }} />
                   ))}
                 </div>
@@ -1057,7 +1081,7 @@ const NewTaskPage = () => {
   const [showCalendar, setShowCalendar] = useState(false);
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [loading, setLoading] = useState(false);
-  
+
   const handleCreateTask = async () => {
     if (!newTask.title.trim()) return;
     setLoading(true);
@@ -1072,11 +1096,11 @@ const NewTaskPage = () => {
       setLoading(false);
     }
   };
-  
+
   const SelectedIcon = getIconComponent(newTask.icon);
-  
+
   return (
-    <div className="animate-fade-in min-h-screen bg-[#F5F5F0]">
+    <div className="animate-fade-in min-h-screen bg-[#F0EEE6]">
       <header className="page-header-back">
         <button className="back-btn" onClick={() => navigate(-1)}>
           <ArrowLeft className="w-5 h-5" />
@@ -1084,37 +1108,37 @@ const NewTaskPage = () => {
         <h1 className="page-title text-center flex-1">нове завдання</h1>
         <div className="w-10" />
       </header>
-      
+
       <div className="page-content pt-8 space-y-6">
         <div className="space-y-4">
           <div className="form-field">
             <Label className="text-sm text-secondary">що треба зробити?</Label>
-            <Input 
-              placeholder="назва завдання" 
-              value={newTask.title} 
-              onChange={(e) => setNewTask({ ...newTask, title: e.target.value })} 
+            <Input
+              placeholder="назва завдання"
+              value={newTask.title}
+              onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
               className="form-input text-lg"
               autoFocus
             />
           </div>
-          
+
           <div className="form-field">
             <Label className="text-sm text-secondary">іконка</Label>
-            <button 
+            <button
               type="button"
               className="form-input w-full text-left flex items-center gap-3"
               onClick={() => setShowIconPicker(true)}
             >
               <div className="w-8 h-8 rounded-full bg-[#1A1717] flex items-center justify-center">
-                <SelectedIcon className="w-4 h-4 text-[#F5F5F0]" />
+                <SelectedIcon className="w-4 h-4 text-[#F0EEE6]" />
               </div>
               <span className="text-secondary">змінити іконку</span>
             </button>
           </div>
-          
+
           <div className="form-field">
             <Label className="text-sm text-secondary">дата</Label>
-            <button 
+            <button
               type="button"
               className="form-input w-full text-left flex items-center justify-between"
               onClick={() => setShowCalendar(true)}
@@ -1124,8 +1148,8 @@ const NewTaskPage = () => {
             </button>
           </div>
         </div>
-        
-        <button 
+
+        <button
           className="btn-dark w-full h-14 text-lg"
           onClick={handleCreateTask}
           disabled={loading || !newTask.title.trim()}
@@ -1133,23 +1157,23 @@ const NewTaskPage = () => {
           {loading ? "додаю..." : "додати завдання"}
         </button>
       </div>
-      
+
       <Dialog open={showCalendar} onOpenChange={setShowCalendar}>
         <DialogContent className="dialog-content">
-          <Calendar 
-            mode="single" 
-            locale={uk} 
-            weekStartsOn={1} 
-            selected={new Date(newTask.date)} 
-            onSelect={(d) => { 
-              if (d) setNewTask({ ...newTask, date: formatDateLocal(d) }); 
-              setShowCalendar(false); 
-            }} 
-            className="w-full" 
+          <Calendar
+            mode="single"
+            locale={uk}
+            weekStartsOn={1}
+            selected={new Date(newTask.date)}
+            onSelect={(d) => {
+              if (d) setNewTask({ ...newTask, date: formatDateLocal(d) });
+              setShowCalendar(false);
+            }}
+            className="w-full"
           />
         </DialogContent>
       </Dialog>
-      
+
       <Dialog open={showIconPicker} onOpenChange={setShowIconPicker}>
         <DialogContent className="dialog-content">
           <DialogHeader><DialogTitle>обери іконку</DialogTitle></DialogHeader>
@@ -1178,7 +1202,7 @@ const NewSMMTaskPage = () => {
   const [showCalendar, setShowCalendar] = useState(false);
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [loading, setLoading] = useState(false);
-  
+
   const handleCreateTask = async () => {
     if (!newTask.title.trim()) return;
     setLoading(true);
@@ -1193,11 +1217,11 @@ const NewSMMTaskPage = () => {
       setLoading(false);
     }
   };
-  
+
   const SelectedIcon = getIconComponent(newTask.icon);
-  
+
   return (
-    <div className="animate-fade-in min-h-screen bg-[#F5F5F0]">
+    <div className="animate-fade-in min-h-screen bg-[#F0EEE6]">
       <header className="page-header-back">
         <button className="back-btn" onClick={() => navigate(-1)}>
           <ArrowLeft className="w-5 h-5" />
@@ -1205,29 +1229,29 @@ const NewSMMTaskPage = () => {
         <h1 className="page-title text-center flex-1">нове smm завдання</h1>
         <div className="w-10" />
       </header>
-      
+
       <div className="page-content pt-8 space-y-6">
         <div className="space-y-4">
           <div className="form-field">
             <Label className="text-sm text-secondary">що треба зробити?</Label>
-            <Input 
-              placeholder="назва завдання" 
-              value={newTask.title} 
-              onChange={(e) => setNewTask({ ...newTask, title: e.target.value })} 
+            <Input
+              placeholder="назва завдання"
+              value={newTask.title}
+              onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
               className="form-input text-lg"
               autoFocus
             />
           </div>
-          
+
           <div className="form-field">
             <Label className="text-sm text-secondary">іконка</Label>
-            <button 
+            <button
               type="button"
               className="form-input w-full text-left flex items-center gap-3"
               onClick={() => setShowIconPicker(true)}
             >
               <div className="w-8 h-8 rounded-full flex items-center justify-center bg-[#1A1717]">
-                <SelectedIcon className="w-4 h-4 text-[#F5F5F0]" />
+                <SelectedIcon className="w-4 h-4 text-[#F0EEE6]" />
               </div>
               <span className="text-secondary">змінити іконку</span>
             </button>
@@ -1235,7 +1259,7 @@ const NewSMMTaskPage = () => {
 
           <div className="form-field">
             <Label className="text-sm text-secondary">дата</Label>
-            <button 
+            <button
               type="button"
               className="form-input w-full text-left flex items-center justify-between"
               onClick={() => setShowCalendar(true)}
@@ -1245,32 +1269,32 @@ const NewSMMTaskPage = () => {
             </button>
           </div>
         </div>
-        
-        <button 
-          className="w-full h-14 text-lg rounded-full font-medium transition-colors flex items-center justify-center gap-2 bg-[#1A1717] hover:bg-[#333333] text-[#F5F5F0]"
+
+        <button
+          className="w-full h-14 text-lg rounded-full font-medium transition-colors flex items-center justify-center gap-2 bg-[#1A1717] hover:bg-[#333333] text-[#F0EEE6]"
           onClick={handleCreateTask}
           disabled={loading || !newTask.title.trim()}
         >
           {loading ? "додаю..." : "додати завдання"}
         </button>
       </div>
-      
+
       <Dialog open={showCalendar} onOpenChange={setShowCalendar}>
         <DialogContent className="dialog-content">
-          <Calendar 
-            mode="single" 
-            locale={uk} 
-            weekStartsOn={1} 
-            selected={new Date(newTask.date)} 
-            onSelect={(d) => { 
-              if (d) setNewTask({ ...newTask, date: formatDateLocal(d) }); 
-              setShowCalendar(false); 
-            }} 
-            className="w-full" 
+          <Calendar
+            mode="single"
+            locale={uk}
+            weekStartsOn={1}
+            selected={new Date(newTask.date)}
+            onSelect={(d) => {
+              if (d) setNewTask({ ...newTask, date: formatDateLocal(d) });
+              setShowCalendar(false);
+            }}
+            className="w-full"
           />
         </DialogContent>
       </Dialog>
-      
+
       <Dialog open={showIconPicker} onOpenChange={setShowIconPicker}>
         <DialogContent className="dialog-content">
           <DialogHeader><DialogTitle>обери іконку</DialogTitle></DialogHeader>
@@ -1297,11 +1321,11 @@ const EventsPage = () => {
   const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showArchive, setShowArchive] = useState(false);
-  
+
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const eventDates = new Set(events.filter(e => !e.cancelled && !e.archived).map(e => e.date.split('T')[0]));
   const allEvents = [...events].filter(e => !e.cancelled && !e.archived && new Date(e.date) >= today).sort((a, b) => new Date(a.date) - new Date(b.date));
-  
+
   // Archive: cancelled events + past events + archived events
   const archivedEvents = events.filter(e => {
     const eventDate = new Date(e.date);
@@ -1323,11 +1347,11 @@ const EventsPage = () => {
     try { await api.completeTask({ event_id: selectedEvent.id, reminder_id: reminderId, completed }); refreshEvents(); const r = await axios.get(`${API}/events/${selectedEvent.id}`); setSelectedEvent(r.data); }
     catch { toast.error("помилка"); }
   };
-  
+
   const handleRestoreEvent = async (eventId) => {
-    try { 
-      await axios.patch(`${API}/events/${eventId}`, { cancelled: false }); 
-      toast.success("подію відновлено"); 
+    try {
+      await axios.patch(`${API}/events/${eventId}`, { cancelled: false });
+      toast.success("подію відновлено");
       refreshEvents();
     } catch { toast.error("помилка"); }
   };
@@ -1337,7 +1361,7 @@ const EventsPage = () => {
       <header className="page-header">
         <h1 className="logo">події</h1>
       </header>
-      
+
       <div className="page-content pt-4">
         <div className="calendar-container mb-6">
           <Calendar mode="single" locale={uk} weekStartsOn={1} onSelect={handleDateSelect} month={currentMonth} onMonthChange={setCurrentMonth} className="w-full calendar-minimal"
@@ -1348,7 +1372,7 @@ const EventsPage = () => {
             }}}
           />
         </div>
-        
+
         <section>
           <div className="section-header mb-3"><span className="section-title">всі події</span></div>
           {allEvents.length > 0 ? (
@@ -1371,12 +1395,12 @@ const EventsPage = () => {
             ))}</div>
           ) : <div className="text-center py-12"><p className="text-secondary text-sm">поки подій немає</p><button className="btn-dark mt-4" onClick={() => navigate("/event/new")}><Plus className="w-4 h-4 mr-2" />створити</button></div>}
         </section>
-        
+
         <button className="archive-btn" onClick={() => setShowArchive(true)}><Archive className="w-4 h-4 inline mr-2" />архів подій</button>
       </div>
-      
+
       <button className="fab" onClick={() => navigate("/event/new")}><Plus className="w-6 h-6" /></button>
-      
+
       <Dialog open={showArchive} onOpenChange={setShowArchive}>
         <DialogContent className="dialog-content"><DialogHeader><DialogTitle>архів подій</DialogTitle></DialogHeader>
           {archivedEvents.length > 0 ? <div className="space-y-3">{archivedEvents.map(event => (
@@ -1394,7 +1418,7 @@ const EventsPage = () => {
           ))}</div> : <p className="text-center text-secondary py-8 text-sm">порожньо</p>}
         </DialogContent>
       </Dialog>
-      
+
       <BottomNav />
     </div>
   );
@@ -1407,14 +1431,14 @@ const SMMPage = () => {
   const [overdueExpanded, setOverdueExpanded] = useState(false);
   const [soonExpanded, setSoonExpanded] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
-  
+
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
   const todayStr = formatDateLocal(today);
   const weekFromNow = new Date(today); weekFromNow.setDate(weekFromNow.getDate() + 7);
   const weekFromNowStr = formatDateLocal(weekFromNow);
-  
+
   const smmTasksMap = useMemo(() => { const map = {}; smmTasksDefinition.forEach(t => { map[t.id] = t; }); return map; }, [smmTasksDefinition]);
-  
+
   // Collect completed SMM tasks from events
   const completedSMMTasks = useMemo(() => {
     const completed = [];
@@ -1436,21 +1460,21 @@ const SMMPage = () => {
     });
     return completed;
   }, [events, smmTasksMap]);
-  
+
   const getAllSMMTasks = useCallback(() => {
     const overdueTasks = [], todayTasks = [], soonTasks = [];
     events.forEach(event => {
       if (event.cancelled) return;
       const eventDate = new Date(event.date); eventDate.setHours(0, 0, 0, 0);
       if (eventDate < today) return;
-      
+
       Object.entries(event.smm_tasks || {}).forEach(([taskId, taskDateStr]) => {
         const taskInfo = smmTasksMap[taskId]; if (!taskInfo) return;
         const taskDate = new Date(taskDateStr); taskDate.setHours(0, 0, 0, 0);
         const ov1 = (event.task_overrides || {})[taskId] || {};
         const taskColor = ov1.color || taskInfo.color || "standard";
         const task = { event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov1.title || taskInfo.name, task_date: taskDateStr, completed: !!(event.completed_smm_tasks || {})[taskId], color: taskColor, icon: ov1.icon || taskInfo.icon, assignee: ov1.assignee };
-        
+
         if (taskDateStr === todayStr) todayTasks.push(task);
         else if (taskDate < today && !task.completed) overdueTasks.push(task);
         else if (taskDate > today && taskDateStr <= weekFromNowStr) soonTasks.push(task);
@@ -1460,16 +1484,16 @@ const SMMPage = () => {
     overdueTasks.sort((a, b) => new Date(a.task_date) - new Date(b.task_date));
     return { overdue: overdueTasks, today: todayTasks, soon: soonTasks };
   }, [events, smmTasksMap, todayStr, weekFromNowStr, today]);
-  
+
   const allTasks = getAllSMMTasks();
-  
-  // Split SMM tasks (kasya) from other (vo)
-  const tasksKasya = useMemo(() => ({
-    overdue: allTasks.overdue.filter(t => t.assignee === "kasya" || t.color === "kasya"),
-    today: allTasks.today.filter(t => t.assignee === "kasya" || t.color === "kasya"),
-    soon: allTasks.soon.filter(t => t.assignee === "kasya" || t.color === "kasya"),
+
+  // Split SMM tasks (smm) from other (marketer)
+  const tasksSMM = useMemo(() => ({
+    overdue: allTasks.overdue.filter(t => t.assignee === "smm" || t.color === "smm"),
+    today: allTasks.today.filter(t => t.assignee === "smm" || t.color === "smm"),
+    soon: allTasks.soon.filter(t => t.assignee === "smm" || t.color === "smm"),
   }), [allTasks]);
-  
+
   const tasks = useMemo(() => ({
     overdue: allTasks.overdue.filter(t => t.color !== "emerald"),
     today: allTasks.today.filter(t => t.color !== "emerald"),
@@ -1477,7 +1501,7 @@ const SMMPage = () => {
   }), [allTasks]);
   const handleToggleSMMTask = async (eventId, taskId, completed) => { try { await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed }); refreshEvents(); } catch { toast.error("помилка"); } };
   const handleEventClick = (eventId) => { navigate(`/event/${eventId}`); };
-  
+
   const handleRestoreSMMTask = async (item) => {
     try {
       await api.completeSMMTask({ event_id: item.event_id, task_id: item.task_id, completed: false });
@@ -1491,51 +1515,51 @@ const SMMPage = () => {
       <header className="page-header">
         <h1 className="logo">smm</h1>
       </header>
-      
+
       <div className="page-content space-y-4 pt-4">
-        {/* SMM Kasya Block (Emerald tasks) */}
+        {/* SMM SMM Block (Emerald tasks) */}
         <div className="pb-4">
           <h2 className="text-sm font-semibold tracking-wide text-[#1A1717]/70 mb-3 px-1">SMM</h2>
-          
-          {tasksKasya.overdue.length > 0 && (
+
+          {tasksSMM.overdue.length > 0 && (
             <section className="mobile-section mb-3">
               <button className="mobile-section-header overdue w-full text-left" onClick={() => setOverdueExpanded(!overdueExpanded)}>
                 <span>протерміновано</span>
-                <span className="mobile-section-count">({tasksKasya.overdue.length})</span>
+                <span className="mobile-section-count">({tasksSMM.overdue.length})</span>
                 <ChevronDown className={`w-5 h-5 ml-auto transition-transform ${overdueExpanded ? "rotate-180" : ""}`} style={{ color: "#DC2626" }} />
               </button>
-              {overdueExpanded && <div className="animate-fade-in pt-4 space-y-3">{tasksKasya.overdue.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} showDate />)}</div>}
+              {overdueExpanded && <div className="animate-fade-in pt-4 space-y-3">{tasksSMM.overdue.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} showDate />)}</div>}
             </section>
           )}
-          
+
           <section className="mobile-section mb-3">
             <div className="mobile-section-header">
               <span>сьогодні</span>
-              <span className="mobile-section-count">({tasksKasya.today.length})</span>
+              <span className="mobile-section-count">({tasksSMM.today.length})</span>
             </div>
-            {tasksKasya.today.length > 0 ? <div className="pt-4 space-y-3">{tasksKasya.today.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} />)}</div>
+            {tasksSMM.today.length > 0 ? <div className="pt-4 space-y-3">{tasksSMM.today.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} />)}</div>
               : <p className="text-secondary py-4 text-center text-sm">все зроблено! 🎉</p>}
           </section>
-          
-          {tasksKasya.soon.length > 0 && (
+
+          {tasksSMM.soon.length > 0 && (
             <section className="mobile-section">
               <button className="mobile-section-header w-full text-left" onClick={() => setSoonExpanded(!soonExpanded)}>
                 <span>незабаром</span>
-                <span className="mobile-section-count">({tasksKasya.soon.length})</span>
+                <span className="mobile-section-count">({tasksSMM.soon.length})</span>
                 <ChevronDown className={`w-5 h-5 ml-auto transition-transform text-secondary ${soonExpanded ? "rotate-180" : ""}`} />
               </button>
-              {soonExpanded && <div className="animate-fade-in pt-4 space-y-3">{tasksKasya.soon.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} showDate />)}</div>}
+              {soonExpanded && <div className="animate-fade-in pt-4 space-y-3">{tasksSMM.soon.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} showDate />)}</div>}
             </section>
           )}
         </div>
-        
+
         {/* Divider */}
         <div className="border-t-2 border-gray-300 my-5"></div>
-        
+
         {/* SMM Block (Standard tasks) */}
         <div className="pt-1">
           <h2 className="text-sm font-semibold tracking-wide text-secondary mb-3 px-1">SMM</h2>
-          
+
           {tasks.overdue.length > 0 && (
             <section className="mobile-section mb-3">
               <button className="mobile-section-header overdue w-full text-left" onClick={() => setOverdueExpanded(!overdueExpanded)}>
@@ -1546,7 +1570,7 @@ const SMMPage = () => {
               {overdueExpanded && <div className="animate-fade-in pt-4 space-y-3">{tasks.overdue.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} showDate />)}</div>}
             </section>
           )}
-          
+
           <section className="mobile-section mb-3">
             <div className="mobile-section-header">
               <span>сьогодні</span>
@@ -1555,7 +1579,7 @@ const SMMPage = () => {
             {tasks.today.length > 0 ? <div className="pt-4 space-y-3">{tasks.today.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} />)}</div>
               : <p className="text-secondary py-4 text-center text-sm">все зроблено! 🎉</p>}
           </section>
-          
+
           {tasks.soon.length > 0 && (
             <section className="mobile-section">
               <button className="mobile-section-header w-full text-left" onClick={() => setSoonExpanded(!soonExpanded)}>
@@ -1567,14 +1591,14 @@ const SMMPage = () => {
             </section>
           )}
         </div>
-        
+
         {allTasks.overdue.length === 0 && allTasks.today.length === 0 && allTasks.soon.length === 0 && <div className="text-center py-12"><p className="text-secondary text-sm">поки SMM завдань немає</p></div>}
-        
+
         <button className="archive-btn" onClick={() => setShowArchive(true)}><Archive className="w-4 h-4 inline mr-2" />архів smm</button>
       </div>
-      
+
       <button className="fab" onClick={() => navigate('/smm/task/new')}><Plus className="w-6 h-6" /></button>
-      
+
       <Dialog open={showArchive} onOpenChange={setShowArchive}>
         <DialogContent className="dialog-content max-h-[80vh] overflow-y-auto"><DialogHeader><DialogTitle>архів smm</DialogTitle></DialogHeader>
           {completedSMMTasks.length > 0 ? <div className="space-y-1">{completedSMMTasks.map((item, idx) => {
@@ -1594,7 +1618,7 @@ const SMMPage = () => {
           })}</div> : <p className="text-center text-secondary py-8 text-sm">порожньо</p>}
         </DialogContent>
       </Dialog>
-      
+
       <BottomNav />
     </div>
   );
@@ -1612,9 +1636,9 @@ const EventDetailPage = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [exporting, setExporting] = useState(false);
-  
+
   useEffect(() => { loadEvent(); }, [eventId]);
-  
+
   const loadEvent = async () => {
     try {
       const r = await axios.get(`${API}/events/${eventId}`);
@@ -1626,7 +1650,7 @@ const EventDetailPage = () => {
       setLoading(false);
     }
   };
-  
+
   const handleToggleTask = async (reminderId, completed) => {
     try {
       await api.completeTask({ event_id: eventId, reminder_id: reminderId, completed });
@@ -1642,59 +1666,59 @@ const EventDetailPage = () => {
       loadEvent();
     } catch { toast.error("помилка"); }
   };
-  
+
   const handleCancel = async () => {
     try {
       await axios.patch(`${API}/events/${eventId}`, { cancelled: true });
       toast.success("скасовано"); refreshEvents(); navigate(-1);
     } catch { toast.error("помилка"); }
   };
-  
+
   const handleRestore = async () => {
     try {
       await axios.patch(`${API}/events/${eventId}`, { cancelled: false });
       toast.success("відновлено"); refreshEvents(); loadEvent();
     } catch { toast.error("помилка"); }
   };
-  
+
   const handleDelete = async () => {
     try {
       await api.deleteEvent(eventId);
       toast.success("видалено!"); refreshEvents(); navigate(-1);
     } catch { toast.error("помилка"); }
   };
-  
+
   const handleSyncAltegio = async () => {
     setSyncing(true);
     try { await api.syncEventFromAltegio(eventId); toast.success("синхронізовано"); loadEvent(); refreshEvents(); }
     catch { toast.error("помилка синхронізації"); }
     finally { setSyncing(false); }
   };
-  
+
   const handleExportCalendar = async () => {
     setExporting(true);
     try { await api.exportEventToCalendar(eventId); toast.success("додано до календаря"); loadEvent(); }
     catch { toast.error("помилка експорту"); }
     finally { setExporting(false); }
   };
-  
+
   // ESC to go back
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') navigate(-1); };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
   }, [navigate]);
-  
+
   if (loading) return <div className="animate-fade-in p-4"><p className="text-secondary text-center py-12">завантажую...</p></div>;
   if (!event) return null;
-  
+
   const bookingColor = getBookingStatusColor(event);
   const colorClass = getBookingColorClass(bookingColor);
 
   // Build task lists for 3 columns from this event
   const smmMap = {};
   smmTasksDefinition.forEach(t => { smmMap[t.id] = t; });
-  
+
   const mgmtDefs = allTaskDefs.management || [];
   const smmDefs = allTaskDefs.smm || [];
   const mktgDefs = allTaskDefs.marketing || [];
@@ -1801,14 +1825,14 @@ const EventDetailPage = () => {
           </div>
         </div>
 
-        {/* Column 2: МЕНЕДЖМЕНТ */}
-        <TaskColumn title="МЕНЕДЖМЕНТ" tasks={managementTasks} colorCls="" onToggle={handleToggleTask} />
+        {/* Column 2: MANAGER */}
+        <TaskColumn title="MANAGER" tasks={managementTasks} colorCls="" onToggle={handleToggleTask} />
 
         {/* Column 3: SMM */}
         <TaskColumn title="SMM" tasks={smmTasks} colorCls="emerald" onToggle={handleToggleSMMTask} />
 
-        {/* Column 4: МАРКЕТИНГ */}
-        <TaskColumn title="МАРКЕТИНГ" tasks={marketingTasks} colorCls="orange" onToggle={(id, completed) => {
+        {/* Column 4: MARKETER */}
+        <TaskColumn title="MARKETER" tasks={marketingTasks} colorCls="orange" onToggle={(id, completed) => {
           // Marketing tasks use smm completion endpoint with marketing prefix
           handleToggleSMMTask(id, completed);
         }} />
@@ -1831,7 +1855,7 @@ const EventForm = () => {
   const location = useLocation();
   const isNew = location.pathname === "/event/new";
   const eventId = !isNew ? location.pathname.split("/").pop() : null;
-  
+
   // AI parsing state
   const [aiInput, setAiInput] = useState("");
   const [aiParsing, setAiParsing] = useState(false);
@@ -1841,7 +1865,7 @@ const EventForm = () => {
   const [clarificationMessage, setClarificationMessage] = useState("");
   const [showParsedResults, setShowParsedResults] = useState(false);
   const [showAiInput, setShowAiInput] = useState(false);
-  
+
   // Manual form state (for editing)
   const [formData, setFormData] = useState({ title: "", date: "", price: "", description: "", spots: "10", start_time: "", end_time: "", event_type: "new", repeat_days: [0] });
   const [loading, setLoading] = useState(false);
@@ -1849,7 +1873,7 @@ const EventForm = () => {
   const [selectedDate, setSelectedDate] = useState(null);
   const [showPastEvents, setShowPastEvents] = useState(false);
   const [pastEvents, setPastEvents] = useState([]);
-  
+
   // Get recent prices from existing events (ordered by creation date, newest first)
   const recentPrices = useMemo(() => {
     if (!allEvents || allEvents.length === 0) return [];
@@ -1863,7 +1887,7 @@ const EventForm = () => {
     const fields = ['_showPriceDropdown', '_showSpotsDropdown', '_showStartDropdown', '_showEndDropdown', '_showCalendar', '_showTitleDropdown'];
     fields.forEach(f => { if (f !== except) updateParsedEvent(index, f, false); });
   };
-  
+
   // Auto-calculate end_time when start_time changes
   const handleStartTimeChange = (time, updateFn) => {
     if (time) {
@@ -1875,26 +1899,26 @@ const EventForm = () => {
       updateFn({ start_time: time });
     }
   };
-  
+
   // ESC to close
   useEffect(() => {
     const handleKey = (e) => { if (e.key === 'Escape' && isNew) navigate("/"); };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
   }, [isNew, navigate]);
-  
+
   // Price focus handler — clear default "0"
   const handlePriceFocus = (e) => { if (e.target.value === "0" || e.target.value === 0) e.target.value = ""; };
-  
+
   useEffect(() => { if (eventId) loadEvent(); }, [eventId]);
-  
+
   const loadEvent = async () => {
     try { const r = await axios.get(`${API}/events/${eventId}`); const e = r.data;
-      setFormData({ 
-        title: e.title, 
-        date: e.date.split("T")[0], 
-        price: e.price.toString(), 
-        description: e.description, 
+      setFormData({
+        title: e.title,
+        date: e.date.split("T")[0],
+        price: e.price.toString(),
+        description: e.description,
         spots: (e.spots || 10).toString(),
         start_time: e.start_time || "",
         end_time: e.end_time || ""
@@ -1902,7 +1926,7 @@ const EventForm = () => {
       setSelectedDate(new Date(e.date));
     } catch { toast.error("помилка"); navigate("/"); }
   };
-  
+
   // AI parsing function
   const handleAiParse = async () => {
     if (!aiInput.trim()) return;
@@ -1911,11 +1935,11 @@ const EventForm = () => {
     try {
       const response = await api.parseEvents(aiInput);
       const data = response.data;
-      
+
       if (data.clarification_needed) {
         setClarificationMessage(data.clarification_message);
       }
-      
+
       setParsedEvents(data.events || []);
       setShowParsedResults(true);
     } catch (e) {
@@ -1925,7 +1949,7 @@ const EventForm = () => {
       setAiParsing(false);
     }
   };
-  
+
   // Confirm and create parsed event
   const handleConfirmEvent = async (event, index) => {
     try {
@@ -1947,11 +1971,11 @@ const EventForm = () => {
       } else {
         toast.success(`"${event.title}" створено!`);
       }
-      
+
       // Remove from list
       setParsedEvents(prev => prev.filter((_, i) => i !== index));
       await refreshEvents();
-      
+
       // If no more events, go back
       if (parsedEvents.length <= 1) {
         navigate("/");
@@ -1960,7 +1984,7 @@ const EventForm = () => {
       toast.error("помилка створення");
     }
   };
-  
+
   // Update parsed event field
   const updateParsedEvent = (index, field, value) => {
     setParsedEvents(prev => prev.map((ev, i) => {
@@ -1975,7 +1999,7 @@ const EventForm = () => {
       return { ...ev, [field]: value };
     }));
   };
-  
+
   // Manual submit (for editing)
   const handleSubmit = async (e) => {
     e.preventDefault(); setLoading(true);
@@ -1995,27 +2019,27 @@ const EventForm = () => {
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="rounded-full"><ChevronLeft className="w-5 h-5" /></Button>
           <h1 className="text-xl font-bold">редагувати</h1>
         </header>
-        
+
         <form onSubmit={handleSubmit} className="page-content pt-4 space-y-6">
           <div className="form-field"><Label>назва</Label><Input placeholder="як назвемо?" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} required className="form-input" /></div>
           <div className="form-field"><Label>дата</Label><Button type="button" variant="outline" className="form-input justify-start" onClick={() => setShowCalendar(true)}>{formData.date ? `${new Date(formData.date).getDate()} ${UK_MONTHS_NOMINATIVE[new Date(formData.date).getMonth()]}` : "обери дату"}</Button></div>
           <div className="grid grid-cols-2 gap-4">
             <div className="form-field">
               <Label>початок</Label>
-              <Input 
-                type="time" 
-                value={formData.start_time} 
-                onChange={(e) => handleStartTimeChange(e.target.value, (updates) => setFormData({ ...formData, ...updates }))} 
-                className="form-input" 
+              <Input
+                type="time"
+                value={formData.start_time}
+                onChange={(e) => handleStartTimeChange(e.target.value, (updates) => setFormData({ ...formData, ...updates }))}
+                className="form-input"
               />
             </div>
             <div className="form-field">
               <Label>кінець</Label>
-              <Input 
-                type="time" 
-                value={formData.end_time} 
-                onChange={(e) => setFormData({ ...formData, end_time: e.target.value })} 
-                className="form-input" 
+              <Input
+                type="time"
+                value={formData.end_time}
+                onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
+                className="form-input"
               />
             </div>
           </div>
@@ -2027,7 +2051,7 @@ const EventForm = () => {
           <button type="submit" className="btn-dark w-full" disabled={loading}>{loading ? "зберігаю..." : "зберегти"}</button>
           <div className="h-12" />
         </form>
-        
+
         <Dialog open={showCalendar} onOpenChange={setShowCalendar}>
           <DialogContent className="dialog-content">
             <Calendar mode="single" locale={uk} weekStartsOn={1} selected={selectedDate} onSelect={(d) => { if (d) { setSelectedDate(d); setFormData({ ...formData, date: formatDateLocal(d) }); } setShowCalendar(false); }} className="w-full" />
@@ -2039,7 +2063,7 @@ const EventForm = () => {
 
   // New event with AI parsing
   return (
-    <div className="fixed inset-0 z-50 bg-[#F5F5F0]">
+    <div className="fixed inset-0 z-50 bg-[#F0EEE6]">
       <div className="desktop-dashboard">
         <header className="desktop-header" style={{position: 'relative'}}>
           <div className="desktop-header-left">
@@ -2063,7 +2087,7 @@ const EventForm = () => {
                 <p className="font-medium">{clarificationMessage}</p>
               </div>
             )}
-            
+
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">
                 {parsedEvents.length > 1 ? `розпізнано ${parsedEvents.length} подій` : "нова подія"}
@@ -2072,14 +2096,14 @@ const EventForm = () => {
                 <Sparkles className="w-4 h-4" /> заповнити з ШІ
               </button>
             </div>
-            
+
             {parsedEvents.map((event, index) => {
               const TIME_OPTIONS = [];
               for (let h = 8; h <= 23; h++) {
                 TIME_OPTIONS.push(`${String(h).padStart(2,'0')}:00`);
                 TIME_OPTIONS.push(`${String(h).padStart(2,'0')}:30`);
               }
-              
+
               return (
               <div key={index} className="p-6 rounded-2xl bg-black/5 space-y-4" data-testid={`parsed-event-${index}`}>
                 <div className="flex-1 space-y-4">
@@ -2161,7 +2185,7 @@ const EventForm = () => {
                         onMouseDown={() => closeAllDropdowns(index, null)}
                         onFocus={() => closeAllDropdowns(index, null)}
                         onChange={(e) => updateParsedEvent(index, "event_type", e.target.value)}
-                        className="form-input w-full bg-[#E8E5DF] font-medium cursor-pointer text-sm"
+                        className="form-input w-full bg-[#E3DACC] font-medium cursor-pointer text-sm"
                         style={{paddingRight: '36px', backgroundPosition: 'right 14px center'}}
                         data-testid={`event-type-select-${index}`}
                       >
@@ -2170,7 +2194,7 @@ const EventForm = () => {
                       </select>
                     </div>
                   </div>
-                  
+
                   {/* Regular → weekday selector horizontal (replaces date) */}
                   {event.event_type === "regular" && (
                     <div className="form-field">
@@ -2232,8 +2256,8 @@ const EventForm = () => {
                           <input
                             type="text"
                             inputMode="numeric"
-                            value={event.price || ""} 
-                            onFocus={(e) => { 
+                            value={event.price || ""}
+                            onFocus={(e) => {
                               if (e.target.value === "0") updateParsedEvent(index, "price", "");
                               closeAllDropdowns(index, '_showPriceDropdown');
                               updateParsedEvent(index, "_showPriceDropdown", true);
@@ -2305,7 +2329,7 @@ const EventForm = () => {
                   </div>
 
                   {/* Calendar is now in Popover above */}
-                  
+
                   {/* Time inputs with dropdown */}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="form-field relative">
@@ -2424,7 +2448,7 @@ const EventForm = () => {
                 </div>
 
                 <div className="flex gap-3 pt-2">
-                  <button 
+                  <button
                     className="btn-dark flex-1"
                     onClick={() => handleConfirmEvent(event, index)}
                     disabled={!event.title || !event.date}
@@ -2437,16 +2461,16 @@ const EventForm = () => {
               </div>
               );
             })}
-            
+
             {parsedEvents.length === 0 && (
               <div className="text-center py-12">
                 <p className="text-secondary mb-4">всі події створено!</p>
                 <Button onClick={() => navigate("/")}>повернутися</Button>
               </div>
             )}
-            
+
             <div className="h-24" />
-            
+
           </div>
         ) : (
           /* AI input view */
@@ -2456,14 +2480,14 @@ const EventForm = () => {
               <button className="text-sm text-secondary hover:text-primary transition-colors underline" onClick={() => { setShowAiInput(false); if (parsedEvents.length === 0) { setParsedEvents([{ title: "", date: formatDateLocal(new Date()), price: 0, spots: 10, description: "", start_time: "12:00", end_time: "14:30", event_type: "new", repeat_days: [0] }]); } }}>← вручну</button>
             </div>
             <p className="text-secondary text-sm">напиши інформацію про подію своїми словами — AI розпізнає назву, дату, ціну та кількість місць</p>
-            <Textarea 
+            <Textarea
               placeholder="наприклад: Bodyart Light 15 лютого, 700 грн, 10 місць. або встав список кількох подій..."
               value={aiInput}
               onChange={(e) => setAiInput(e.target.value)}
               className="form-input min-h-40 resize-none text-lg"
               autoFocus
             />
-            <button 
+            <button
               className="btn-dark w-full text-lg h-14"
               onClick={handleAiParse}
               disabled={aiParsing || !aiInput.trim()}
@@ -2487,22 +2511,22 @@ const StatsPage = () => {
   const { events } = useApp();
   const [stats, setStats] = useState([]);
   const [loading, setLoading] = useState(true);
-  
-  useEffect(() => { 
+
+  useEffect(() => {
     api.getStatistics().then(r => {
       // Add demo data for previous months with proper analytics
       const currentMonth = new Date();
       const prev1 = new Date(currentMonth); prev1.setMonth(prev1.getMonth() - 1);
       const prev2 = new Date(currentMonth); prev2.setMonth(prev2.getMonth() - 2);
-      
+
       const demoData = [
         { month: `${prev2.getFullYear()}-${String(prev2.getMonth() + 1).padStart(2, '0')}`, events_count: 5, cancelled_count: 0, planned_revenue: 70000, actual_revenue: 70000, deadlines_percent: 100, cancelled_percent: 0, badges: ["perfect"] },
         { month: `${prev1.getFullYear()}-${String(prev1.getMonth() + 1).padStart(2, '0')}`, events_count: 7, cancelled_count: 1, planned_revenue: 98000, actual_revenue: 84000, deadlines_percent: 92, cancelled_percent: 14, badges: ["excellent"] },
         ...r.data.map(s => ({ ...s, deadlines_percent: 100 - s.missed_deadlines_percent, actual_revenue: s.planned_revenue }))
       ];
       setStats(demoData);
-      setLoading(false); 
-    }).catch(() => setLoading(false)); 
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, []);
 
   return (
@@ -2510,7 +2534,7 @@ const StatsPage = () => {
       <header className="page-header">
         <h1 className="logo">аналітика</h1>
       </header>
-      
+
       <div className="page-content pt-4 space-y-4">
         {loading ? <p className="text-center py-12 text-secondary text-sm">завантажую...</p> : (
           <>
@@ -2544,7 +2568,7 @@ const StatsPage = () => {
           </>
         )}
       </div>
-      
+
       <BottomNav />
     </div>
   );
@@ -2557,7 +2581,7 @@ const AltegioSyncSection = () => {
   const [altegioEvents, setAltegioEvents] = useState([]);
   const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
-  
+
   useEffect(() => {
     const fetchStatus = async () => {
       try {
@@ -2575,7 +2599,7 @@ const AltegioSyncSection = () => {
     };
     fetchStatus();
   }, []);
-  
+
   const handleSync = async () => {
     setSyncing(true);
     try {
@@ -2591,7 +2615,7 @@ const AltegioSyncSection = () => {
       setSyncing(false);
     }
   };
-  
+
   if (loading) {
     return (
       <div className="section-card">
@@ -2599,7 +2623,7 @@ const AltegioSyncSection = () => {
       </div>
     );
   }
-  
+
   return (
     <div className="section-card mt-4">
       <p className="text-xs text-secondary mb-4">синхронізація з Altegio</p>
@@ -2616,8 +2640,8 @@ const AltegioSyncSection = () => {
           </div>
         </div>
         {altegioStatus.connected && (
-          <button 
-            className="btn-dark text-sm px-3 py-1" 
+          <button
+            className="btn-dark text-sm px-3 py-1"
             onClick={handleSync}
             disabled={syncing}
           >
@@ -2625,7 +2649,7 @@ const AltegioSyncSection = () => {
           </button>
         )}
       </div>
-      
+
       {altegioStatus.connected && altegioEvents.length > 0 && (
         <div className="mt-4 space-y-2">
           <p className="text-xs text-secondary">події в Altegio:</p>
@@ -2793,7 +2817,7 @@ const TelegramSettingsSection = ({ compact = false }) => {
 const CalendarFullPage = () => {
   const { events } = useApp();
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  
+
   return (
     <div style={{ background: '#0A0A0A', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px' }}>
       <div style={{ maxWidth: 420, width: '100%' }}>
@@ -3288,7 +3312,7 @@ const ContentPage = () => {
                     <span className="date-badge-month" style={{color: 'rgba(255,255,255,0.8)'}}>{UK_MONTHS_SHORT[new Date(post.date).getMonth()]}</span>
                     <span className="date-badge-day">{new Date(post.date).getDate()}</span>
                   </div>
-                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { 
+                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => {
                     setEditingTask({ id: post.id, post_id: post.id, task_name: post.title, date: post.date, event_title: isInfo ? 'інфо' : 'мем', type: 'post' });
                     setShowTaskEditCalendar(false);
                     setShowTaskEditDialog(true);
@@ -3411,9 +3435,9 @@ const TaskDefEditor = ({ draft, setDraft }) => {
   const [showDetails, setShowDetails] = useState(false);
   if (!draft) return null;
   const COLS = [
-    { v: "management", l: "Менеджер" },
+    { v: "management", l: "Manager" },
     { v: "smm",        l: "SMM" },
-    { v: "marketing",  l: "Маркетолог" },
+    { v: "marketing",  l: "Marketer" },
   ];
   // Backwards-compat: treat missing frequency as "event" (legacy hardcoded tasks)
   const freq = draft.frequency || "event";
@@ -3469,7 +3493,7 @@ const TaskDefEditor = ({ draft, setDraft }) => {
           {COLS.map(c => (
             <button key={c.v} type="button"
               onClick={() => setDraft({ ...draft, column: c.v })}
-              className={`h-10 rounded-full text-sm font-medium transition-colors ${draft.column === c.v ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white ring-1 ring-black/8 hover:bg-black/5'}`}
+              className={`h-10 rounded-full text-sm font-medium transition-colors ${draft.column === c.v ? 'bg-[#1A1717] text-[#F0EEE6]' : 'bg-white ring-1 ring-black/8 hover:bg-black/5'}`}
             >{c.l}</button>
           ))}
         </div>
@@ -3508,7 +3532,7 @@ const TaskDefEditor = ({ draft, setDraft }) => {
                 ].map(o => (
                   <button key={o.v} type="button"
                     onClick={() => setCondition(o.v, condThreshold)}
-                    className={`h-9 rounded-full text-[12px] font-medium transition-colors ${condType === o.v ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white ring-1 ring-black/8 hover:bg-black/5'}`}
+                    className={`h-9 rounded-full text-[12px] font-medium transition-colors ${condType === o.v ? 'bg-[#1A1717] text-[#F0EEE6]' : 'bg-white ring-1 ring-black/8 hover:bg-black/5'}`}
                   >{o.l}</button>
                 ))}
               </div>
@@ -3563,14 +3587,14 @@ const SettingsPage = () => {
   const [showEditSMMDialog, setShowEditSMMDialog] = useState(false);
   // Google Calendar state
   const [exportingAll, setExportingAll] = useState(false);
-  
+
   useEffect(() => { if (settings?.reminder_types) setReminderTypes([...settings.reminder_types].sort((a, b) => b.days_before - a.days_before)); }, [settings]);
-  
+
   const groupedSMMTasks = useMemo(() => {
     const groups = {}; smmTasksDefinition.forEach(t => { if (!groups[t.days_before]) groups[t.days_before] = []; groups[t.days_before].push(t); });
     return Object.entries(groups).sort(([a], [b]) => parseInt(b) - parseInt(a));
   }, [smmTasksDefinition]);
-  
+
   const handleAddReminder = async () => { if (!newReminder.name.trim()) return; try { await api.createTaskDef({ ...newReminder, column: "management", days_before: newReminder.days_before || 7 }); toast.success("додано!"); refreshSMMTasksDefinition(); refreshEvents(); setShowAddDialog(false); setNewReminder({ name: "", days_before: 7, icon: "bell" }); } catch { toast.error("помилка"); } };
   const handleSaveTaskDef = async () => {
     if (!editingReminder?.name?.trim()) return;
@@ -3596,7 +3620,7 @@ const SettingsPage = () => {
   };
 
   const iconOptions = TASK_ICONS;
-  
+
   const handleGoogleConnect = async () => {
     try {
       const response = await axios.get(`${API}/oauth/calendar/login`);
@@ -3605,7 +3629,7 @@ const SettingsPage = () => {
       toast.error("помилка підключення");
     }
   };
-  
+
   const handleGoogleDisconnect = async () => {
     try {
       await axios.post(`${API}/oauth/calendar/disconnect`);
@@ -3615,7 +3639,7 @@ const SettingsPage = () => {
       toast.error("помилка");
     }
   };
-  
+
   const handleExportAllEvents = async () => {
     setExportingAll(true);
     try {
@@ -3637,7 +3661,7 @@ const SettingsPage = () => {
       <header className="page-header">
         <h1 className="logo">налаштування</h1>
       </header>
-      
+
       <div className="page-content pt-4 space-y-4">
         <div className="settings-tabs">
           <button className={`settings-tab ${activeTab === "management" ? "active" : ""}`} onClick={() => setActiveTab("management")}>менеджмент</button>
@@ -3645,7 +3669,7 @@ const SettingsPage = () => {
           <button className={`settings-tab ${activeTab === "marketing" ? "active" : ""}`} onClick={() => setActiveTab("marketing")}>маркетинг</button>
           <button className={`settings-tab ${activeTab === "sync" ? "active" : ""}`} onClick={() => setActiveTab("sync")}>інше</button>
         </div>
-        
+
         {activeTab === "sync" && (
           <div className="section-card">
             <p className="text-xs text-secondary mb-4">синхронізація з Google Calendar</p>
@@ -3666,8 +3690,8 @@ const SettingsPage = () => {
             {googleCalendarStatus.connected && (
               <>
                 <p className="text-xs text-green-600 mt-2">✓ Нові події автоматично синхронізуються</p>
-                <button 
-                  className="btn-subtle w-full mt-4" 
+                <button
+                  className="btn-subtle w-full mt-4"
                   onClick={handleExportAllEvents}
                   disabled={exportingAll}
                 >
@@ -3681,7 +3705,7 @@ const SettingsPage = () => {
             )}
           </div>
         )}
-        
+
         {activeTab === "sync" && (
           <AltegioSyncSection />
         )}
@@ -3689,7 +3713,7 @@ const SettingsPage = () => {
         {activeTab === "sync" && (
           <TelegramSettingsSection />
         )}
-        
+
         {activeTab === "management" && (
           <div className="section-card">
             <p className="text-xs text-secondary mb-4">завдання менеджменту для кожної події</p>
@@ -3761,7 +3785,7 @@ const SettingsPage = () => {
           </div>
         )}
       </div>
-      
+
       {/* Add Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent className="sm:max-w-md">
@@ -3801,7 +3825,7 @@ const SettingsPage = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      
+
       {/* Edit Dialog (management) — full editor with column / flags / delete */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent className="sm:max-w-md">
@@ -3829,7 +3853,7 @@ const SettingsPage = () => {
           <AlertDialogFooter><AlertDialogCancel>скасувати</AlertDialogCancel><AlertDialogAction onClick={handleDeleteReminder} variant="danger">видалити</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      
+
       {/* SMM/Marketing Edit Dialog — full editor */}
       <Dialog open={showEditSMMDialog} onOpenChange={setShowEditSMMDialog}>
         <DialogContent className="sm:max-w-md">
@@ -3872,7 +3896,7 @@ const SettingsPage = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      
+
       <BottomNav />
     </div>
   );
@@ -3881,7 +3905,7 @@ const SettingsPage = () => {
 // Archive Content Component - 4 columns with week/month accordions
 const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, standaloneTasks, handleRestoreTask, handleRestoreEvent, refreshEvents }) => {
   const [expandedWeeks, setExpandedWeeks] = useState({});
-  
+
   // Helper to get week key from date
   const getWeekKey = (dateStr) => {
     const date = new Date(dateStr);
@@ -3889,10 +3913,10 @@ const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, sta
     startOfWeek.setDate(date.getDate() - date.getDay() + 1); // Monday
     return startOfWeek.toISOString().split('T')[0];
   };
-  
+
   // Helper to get current week key
   const currentWeekKey = getWeekKey(new Date().toISOString());
-  
+
   // Group items by week
   const groupByWeek = (items, dateField) => {
     const groups = {};
@@ -3905,7 +3929,7 @@ const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, sta
     });
     return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
   };
-  
+
   // Format week range
   const formatWeekRange = (weekKey) => {
     const start = new Date(weekKey);
@@ -3920,28 +3944,28 @@ const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, sta
     }
     return `${startDay} ${month} — ${endDay} ${endMonth}`;
   };
-  
+
   const toggleWeek = (columnKey, weekKey) => {
     const key = `${columnKey}-${weekKey}`;
     setExpandedWeeks(prev => ({ ...prev, [key]: !prev[key] }));
   };
-  
+
   const isExpanded = (columnKey, weekKey) => {
     const key = `${columnKey}-${weekKey}`;
     return expandedWeeks[key] ?? (weekKey === currentWeekKey);
   };
-  
-  // Filter by team member color
-  const kasyaTasks = completedSMMTasksDesktop.filter(t => t.color === 'kasya' || t.assignee === 'kasya');
-  const karolinaTasks = [...archive.filter(item => !item.is_standalone || standaloneTasks.find(t => t.id === item.event_id)?.type !== "smm"), 
-    ...completedSMMTasksDesktop.filter(t => t.color === 'karolina' || t.color === 'standard' || (!t.color && !['kasya', 'emerald', 'vo', 'orange'].includes(t.color)))];
-  const voTasks = completedSMMTasksDesktop.filter(t => t.color === 'vo' || t.color === 'orange');
-  
-  const kasyaByWeek = groupByWeek(kasyaTasks, 'completed_at');
-  const karolinaByWeek = groupByWeek(karolinaTasks, 'completed_at');
-  const voByWeek = groupByWeek(voTasks, 'completed_at');
+
+  // Filter by team role
+  const smmTasks = completedSMMTasksDesktop.filter(t => normalizeAssignee(t.assignee || t.color, "") === 'smm');
+  const managerTasks = [...archive.filter(item => !item.is_standalone || standaloneTasks.find(t => t.id === item.event_id)?.type !== "smm"),
+    ...completedSMMTasksDesktop.filter(t => normalizeAssignee(t.assignee || t.color, "manager") === 'manager' || t.color === 'standard')];
+  const marketerTasks = completedSMMTasksDesktop.filter(t => normalizeAssignee(t.assignee || t.color, "") === 'marketer' || t.color === 'orange');
+
+  const smmByWeek = groupByWeek(smmTasks, 'completed_at');
+  const managerByWeek = groupByWeek(managerTasks, 'completed_at');
+  const marketerByWeek = groupByWeek(marketerTasks, 'completed_at');
   const eventsByWeek = groupByWeek(archivedEvents, 'date');
-  
+
   const renderArchiveColumn = (title, colorHex, weekGroups, columnKey, renderItem) => (
     <div className="desktop-column">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
@@ -3953,7 +3977,7 @@ const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, sta
         ) : (
           weekGroups.map(([weekKey, items]) => (
             <div key={weekKey} className="mb-3">
-              <button 
+              <button
                 className="flex items-center justify-between w-full text-left py-2 text-sm font-medium text-secondary hover:text-primary"
                 onClick={() => toggleWeek(columnKey, weekKey)}
               >
@@ -3974,7 +3998,7 @@ const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, sta
       </div>
     </div>
   );
-  
+
   return (
     <div className="desktop-columns-4">
       {/* ПОДІЇ */}
@@ -3997,9 +4021,9 @@ const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, sta
           )}
         </div>
       ))}
-      
-      {/* МЕНЕДЖМЕНТ */}
-      {renderArchiveColumn("МЕНЕДЖМЕНТ", null, karolinaByWeek, "karolina", (item, idx) => {
+
+      {/* MANAGER */}
+      {renderArchiveColumn("MANAGER", null, managerByWeek, "manager", (item, idx) => {
         const IconComponent = getIconComponent(item.icon || "check");
         return (
           <div key={idx} className="task-item">
@@ -4014,9 +4038,9 @@ const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, sta
           </div>
         );
       })}
-      
+
       {/* SMM */}
-      {renderArchiveColumn("SMM", null, kasyaByWeek, "kasya", (item, idx) => {
+      {renderArchiveColumn("SMM", null, smmByWeek, "smm", (item, idx) => {
         const IconComponent = getIconComponent(item.icon || "instagram");
         return (
           <div key={idx} className="task-item">
@@ -4025,21 +4049,21 @@ const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, sta
               <p className="text-sm font-medium">{item.task_name || item.reminder_name}</p>
               <p className="text-xs text-secondary">{item.event_title}</p>
             </div>
-            <button className="restore-btn" onClick={async () => { 
-              try { 
-                await api.completeSMMTask({ event_id: item.event_id, task_id: item.task_id, completed: false }); 
-                refreshEvents(); 
-                toast.success("відновлено"); 
-              } catch { toast.error("помилка"); } 
+            <button className="restore-btn" onClick={async () => {
+              try {
+                await api.completeSMMTask({ event_id: item.event_id, task_id: item.task_id, completed: false });
+                refreshEvents();
+                toast.success("відновлено");
+              } catch { toast.error("помилка"); }
             }} title="відновити">
               <RotateCcw className="w-4 h-4" />
             </button>
           </div>
         );
       })}
-      
-      {/* ВО */}
-      {renderArchiveColumn("МАРКЕТИНГ", "#C4703D", voByWeek, "vo", (item, idx) => {
+
+      {/* Marketer */}
+      {renderArchiveColumn("MARKETER", "#C4703D", marketerByWeek, "marketer", (item, idx) => {
         const IconComponent = getIconComponent(item.icon || "instagram");
         return (
           <div key={idx} className="task-item">
@@ -4048,12 +4072,12 @@ const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, sta
               <p className="text-sm font-medium">{item.task_name || item.reminder_name}</p>
               <p className="text-xs text-secondary">{item.event_title}</p>
             </div>
-            <button className="restore-btn" onClick={async () => { 
-              try { 
-                await api.completeSMMTask({ event_id: item.event_id, task_id: item.task_id, completed: false }); 
-                refreshEvents(); 
-                toast.success("відновлено"); 
-              } catch { toast.error("помилка"); } 
+            <button className="restore-btn" onClick={async () => {
+              try {
+                await api.completeSMMTask({ event_id: item.event_id, task_id: item.task_id, completed: false });
+                refreshEvents();
+                toast.success("відновлено");
+              } catch { toast.error("помилка"); }
             }} title="відновити">
               <RotateCcw className="w-4 h-4" />
             </button>
@@ -4167,10 +4191,10 @@ const DroppableDateSection = ({ assignee, date, children, isOver }) => {
   );
 };
 
-// Team Column Component - reusable for КАСЯ, КАРОЛІНА, ВО
+// Team Column Component - reusable for SMM, Manager, Marketer
 const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick, onStandaloneClick, onTaskEdit, onAddClick, overdueExpanded, setOverdueExpanded, soonExpanded, setSoonExpanded, smmTasksDefinition, columnAssignee, announcementOverlaps = {}, onOverlapClick, todayStr, onTaskDragStart, onTaskDragMove, onTaskDragEnd, onTaskDrop, dragOver }) => {
   const TaskRenderer = ({ task }) => {
-    const colAssignee = columnAssignee || (colorClass === 'emerald' ? 'kasya' : colorClass === 'orange' ? 'vo' : 'karolina');
+    const colAssignee = columnAssignee || (colorClass === 'emerald' ? 'smm' : colorClass === 'orange' ? 'marketer' : 'manager');
     const taskDate = task.task_date || task.reminder_date;
     const isOverlapping = !!(taskDate && announcementOverlaps[taskDate]);
     const normalizedTask = {
@@ -4178,8 +4202,8 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
       task_id: task.task_id || task.reminder_id,
       task_name: task.task_name || task.reminder_name,
       task_date: task.task_date || task.reminder_date,
-      color: task.color || (colorClass === 'emerald' ? 'kasya' : colorClass === 'orange' ? 'vo' : 'karolina'),
-      assignee: task.assignee || colAssignee,
+      color: task.color || (colorClass === 'emerald' ? 'smm' : colorClass === 'orange' ? 'marketer' : 'manager'),
+      assignee: normalizeAssignee(task.assignee, colAssignee),
       order: getTaskOrder(task),
       isOverlapping
     };
@@ -4221,7 +4245,7 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
             {overdueExpanded && tasks.overdue.map((t, i) => <TaskRenderer key={i} task={t} />)}
           </div>
         )}
-        
+
         <div className="mb-3">
           <div className="section-header-mini"><span>сьогодні ({tasks.today.length})</span></div>
           <DroppableDateSection assignee={columnAssignee} date={todayStr} isOver={dragOver?.type === "date" && dragOver.assignee === columnAssignee && dragOver.date === todayStr}>
@@ -4230,7 +4254,7 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
             )) : <p className="text-center text-secondary text-sm py-2">все зроблено!</p>}
           </DroppableDateSection>
         </div>
-        
+
         {tasks.soon.length > 0 && (
           <div>
             <button className="section-header-mini" onClick={() => setSoonExpanded(!soonExpanded)}>
@@ -4285,7 +4309,7 @@ const DesktopDashboard = () => {
   const [seriesPickerOpen, setSeriesPickerOpen] = useState(false);
   // Day-off creation flow
   const [showDayOffDialog, setShowDayOffDialog] = useState(false);
-  const [dayOffForm, setDayOffForm] = useState({ assignee: "karolina", date: formatDateLocal(new Date()) });
+  const [dayOffForm, setDayOffForm] = useState({ assignee: "manager", date: formatDateLocal(new Date()) });
   const [dayOffPlan, setDayOffPlan] = useState(null); // {day_off, auto_shifts, needs_review}
   const [reviewChoices, setReviewChoices] = useState({}); // task_id -> chosen new_date or null=skip
   const [dayOffSubmitting, setDayOffSubmitting] = useState(false);
@@ -4295,8 +4319,8 @@ const DesktopDashboard = () => {
   const [dialogColumnName, setDialogColumnName] = useState("");
   const [showTaskCalendar, setShowTaskCalendar] = useState(false);
   const [showSMMCalendar, setShowSMMCalendar] = useState(false);
-  const [newTask, setNewTask] = useState(() => ({ title: "", date: formatDateLocal(new Date()), icon: "coffee", color: "karolina" }));
-  const [newSMMTask, setNewSMMTask] = useState(() => ({ title: "", date: formatDateLocal(new Date()), icon: "instagram", color: "karolina" }));
+  const [newTask, setNewTask] = useState(() => ({ title: "", date: formatDateLocal(new Date()), icon: "coffee", color: "manager" }));
+  const [newSMMTask, setNewSMMTask] = useState(() => ({ title: "", date: formatDateLocal(new Date()), icon: "instagram", color: "manager" }));
   const [selectedStandaloneTask, setSelectedStandaloneTask] = useState(null);
   const [showStandaloneTaskPopup, setShowStandaloneTaskPopup] = useState(false);
   const [editingStandaloneTask, setEditingStandaloneTask] = useState(null);
@@ -4311,21 +4335,21 @@ const DesktopDashboard = () => {
   useEffect(() => {
     axios.get(`${API}/smm/announcement-overlaps`).then(r => setAnnouncementOverlaps(r.data || {})).catch(() => {});
   }, [events]);
-  
+
   // Expand states for each team column
-  const [kasyaOverdue, setKasyaOverdue] = useState(false);
-  const [kasyaSoon, setKasyaSoon] = useState(true);
-  const [karolinaOverdue, setKarolinaOverdue] = useState(false);
-  const [karolinaSoon, setKarolinaSoon] = useState(true);
-  const [voOverdue, setVoOverdue] = useState(false);
-  const [voSoon, setVoSoon] = useState(true);
-  
+  const [smmOverdue, setSMMOverdue] = useState(false);
+  const [smmSoon, setSMMSoon] = useState(true);
+  const [managerOverdue, setManagerOverdue] = useState(false);
+  const [managerSoon, setManagerSoon] = useState(true);
+  const [marketerOverdue, setVoOverdue] = useState(false);
+  const [marketerSoon, setVoSoon] = useState(true);
+
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
   const todayFormatted = formatDateWithWeekday(today);
   const todayStr = formatDateLocal(today);
   const twoWeeksFromNow = new Date(today); twoWeeksFromNow.setDate(twoWeeksFromNow.getDate() + 14);
   const twoWeeksStr = formatDateLocal(twoWeeksFromNow);
-  
+
   // Archived events: cancelled OR past
   const archivedEvents = useMemo(() => {
     return events.filter(e => {
@@ -4334,7 +4358,7 @@ const DesktopDashboard = () => {
       return e.cancelled || eventDate < today;
     }).sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [events, today]);
-  
+
   // Completed SMM tasks from events
   const completedSMMTasksDesktop = useMemo(() => {
     const completed = [];
@@ -4354,46 +4378,46 @@ const DesktopDashboard = () => {
     });
     return completed;
   }, [events, smmTasksDefinition]);
-  
+
   // Tasks
   const getTasks = useCallback(() => {
     if (!settings?.reminder_types) return { overdue: [], today: [], soon: [] };
     const overdueTasks = [], todayTasks = [], soonTasks = [];
     const reminderMap = {}; settings.reminder_types.forEach(rt => { reminderMap[rt.id] = rt; });
-    
+
     events.forEach(event => {
       if (event.cancelled) return;
       const eventDate = new Date(event.date); eventDate.setHours(0, 0, 0, 0);
       if (eventDate < today) return;
-      
+
       Object.entries(event.reminders || {}).forEach(([reminderId, reminderDateStr]) => {
         const reminderInfo = reminderMap[reminderId]; if (!reminderInfo) return;
         const reminderDate = new Date(reminderDateStr); reminderDate.setHours(0, 0, 0, 0);
         const ov = (event.task_overrides || {})[reminderId] || {};
-        const task = { event_id: event.id, event_title: event.title, reminder_id: reminderId, reminder_name: ov.title || reminderInfo.name, reminder_date: reminderDateStr, icon: ov.icon || reminderInfo.icon, completed: !!(event.completed_tasks || {})[reminderId], is_standalone: false, color: ov.color, assignee: ov.assignee, order: ov.order || 0 };
-        
+        const task = { event_id: event.id, event_title: event.title, reminder_id: reminderId, reminder_name: ov.title || reminderInfo.name, reminder_date: reminderDateStr, icon: ov.icon || reminderInfo.icon, completed: !!(event.completed_tasks || {})[reminderId], is_standalone: false, color: ov.color, assignee: normalizeAssignee(ov.assignee, ""), order: ov.order || 0 };
+
         if (reminderDateStr === todayStr) todayTasks.push(task);
         else if (reminderDate < today && !task.completed) overdueTasks.push(task);
         else if (reminderDate > today && reminderDateStr <= twoWeeksStr) soonTasks.push(task);
       });
     });
-    
+
     standaloneTasks.filter(t => t.type !== "smm").forEach(task => {
       const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
-      const t = { event_id: task.id, event_title: task.title, reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "karolina", assignee: task.assignee || "karolina", type: task.type, event_id_link: task.event_id || "", order: task.order || 0 };
+      const t = { event_id: task.id, event_title: task.title, reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "manager", assignee: normalizeAssignee(task.assignee), type: task.type, event_id_link: task.event_id || "", order: task.order || 0 };
       if (task.date === todayStr) todayTasks.push(t);
       else if (taskDate < today && !task.completed) overdueTasks.push(t);
       else if (taskDate > today && task.date <= twoWeeksStr) soonTasks.push(t);
     });
-    
+
     soonTasks.sort((a, b) => new Date(a.reminder_date) - new Date(b.reminder_date));
     overdueTasks.sort((a, b) => new Date(a.reminder_date) - new Date(b.reminder_date));
     return { overdue: overdueTasks, today: todayTasks, soon: soonTasks };
   }, [events, settings, standaloneTasks, today, todayStr, twoWeeksStr]);
-  
+
   // SMM Tasks
   const smmTasksMap = useMemo(() => { const map = {}; smmTasksDefinition.forEach(t => { map[t.id] = t; }); return map; }, [smmTasksDefinition]);
-  
+
   const getSMMTasks = useCallback(() => {
     const overdueTasks = [], todayTasks = [], soonTasks = [];
     const processTasksDict = (event, tasksDict, completedDict) => {
@@ -4401,7 +4425,7 @@ const DesktopDashboard = () => {
         const taskInfo = smmTasksMap[taskId]; if (!taskInfo) return;
         const taskDate = new Date(taskDateStr); taskDate.setHours(0, 0, 0, 0);
         const ov2 = (event.task_overrides || {})[taskId] || {};
-        const task = { event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov2.title || taskInfo.name, task_date: taskDateStr, completed: !!(completedDict || {})[taskId], color: ov2.color || taskInfo.color || "standard", icon: ov2.icon || taskInfo.icon, assignee: ov2.assignee, order: ov2.order || 0 };
+        const task = { event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov2.title || taskInfo.name, task_date: taskDateStr, completed: !!(completedDict || {})[taskId], color: ov2.color || taskInfo.color || "standard", icon: ov2.icon || taskInfo.icon, assignee: normalizeAssignee(ov2.assignee, ""), order: ov2.order || 0 };
         if (taskDateStr === todayStr) todayTasks.push(task);
         else if (taskDate < today && !task.completed) overdueTasks.push(task);
         else if (taskDate > today && taskDateStr <= twoWeeksStr) soonTasks.push(task);
@@ -4414,53 +4438,55 @@ const DesktopDashboard = () => {
       processTasksDict(event, event.smm_tasks, event.completed_smm_tasks);
       processTasksDict(event, event.marketing_tasks, event.completed_smm_tasks);
     });
-    
+
     // Add standalone tasks
     standaloneTasks.filter(t => t.type === "smm").forEach(task => {
       const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
-      const t = { event_id: task.id, event_title: task.title, task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "karolina", assignee: task.assignee || "kasya", type: task.type, event_id_link: task.event_id || "", order: task.order || 0 };
+      const t = { event_id: task.id, event_title: task.title, task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "manager", assignee: normalizeAssignee(task.assignee, "smm"), type: task.type, event_id_link: task.event_id || "", order: task.order || 0 };
       if (task.date === todayStr) todayTasks.push(t);
       else if (taskDate < today && !task.completed) overdueTasks.push(t);
       else if (taskDate > today && task.date <= twoWeeksStr) soonTasks.push(t);
     });
-    
+
     soonTasks.sort((a, b) => new Date(a.task_date) - new Date(b.task_date));
     overdueTasks.sort((a, b) => new Date(a.task_date) - new Date(b.task_date));
     return { overdue: overdueTasks, today: todayTasks, soon: soonTasks };
   }, [events, smmTasksMap, standaloneTasks, today, todayStr, twoWeeksStr]);
-  
+
   const regularTasks = getTasks();
   const allSmmTasks = getSMMTasks();
-  
+
   // Split tasks by team member
   const tasksByTeam = useMemo(() => {
     // Task column assignment by ID prefix or explicit assignee
     const getColumn = (t) => {
-      if (t.assignee) return t.assignee === 'kasya' ? 'smm' : t.assignee === 'vo' ? 'marketing' : 'management';
+      const assignee = normalizeAssignee(t.assignee, "");
+      if (assignee) return assignee === 'smm' ? 'smm' : assignee === 'marketer' ? 'marketing' : 'management';
       const id = t.task_id || '';
       if (id.startsWith('mgmt_')) return 'management';
       if (id.startsWith('smm_')) return 'smm';
       if (id.startsWith('mktg_')) return 'marketing';
       // Fallback to old color-based logic
-      if (t.color === 'kasya') return 'smm';
+      if (normalizeAssignee(t.color, "") === 'smm') return 'smm';
       return 'management';
     };
-    const isKasya = (t) => getColumn(t) === 'smm';
-    const isKarolina = (t) => getColumn(t) === 'management';
-    const isVo = (t) => getColumn(t) === 'marketing';
-    
+    const isSMM = (t) => getColumn(t) === 'smm';
+    const isManager = (t) => getColumn(t) === 'management';
+    const isMarketer = (t) => getColumn(t) === 'marketing';
+
     // Regular tasks: split by assignee
-    const kasyaRegular = { overdue: [], today: [], soon: [] };
-    const karolinaRegular = { overdue: [], today: [], soon: [] };
-    const voRegular = { overdue: [], today: [], soon: [] };
+    const smmRegular = { overdue: [], today: [], soon: [] };
+    const managerRegular = { overdue: [], today: [], soon: [] };
+    const marketerRegular = { overdue: [], today: [], soon: [] };
     ['overdue', 'today', 'soon'].forEach(k => {
       regularTasks[k].forEach(t => {
-        if (t.assignee === 'kasya') kasyaRegular[k].push(t);
-        else if (t.assignee === 'vo') voRegular[k].push(t);
-        else karolinaRegular[k].push(t);
+        const assignee = normalizeAssignee(t.assignee);
+        if (assignee === 'smm') smmRegular[k].push(t);
+        else if (assignee === 'marketer') marketerRegular[k].push(t);
+        else managerRegular[k].push(t);
       });
     });
-    
+
     // Sort tasks: daily first, then event-based, then monthly
     const sortByType = (tasks) => {
       return tasks.sort((a, b) => {
@@ -4482,37 +4508,37 @@ const DesktopDashboard = () => {
     };
 
     return {
-      kasya: {
-        overdue: sortByType([...allSmmTasks.overdue.filter(t => isKasya(t)), ...kasyaRegular.overdue]),
-        today: sortByType([...allSmmTasks.today.filter(t => isKasya(t)), ...kasyaRegular.today]),
-        soon: sortByType([...allSmmTasks.soon.filter(t => isKasya(t)), ...kasyaRegular.soon]),
+      smm: {
+        overdue: sortByType([...allSmmTasks.overdue.filter(t => isSMM(t)), ...smmRegular.overdue]),
+        today: sortByType([...allSmmTasks.today.filter(t => isSMM(t)), ...smmRegular.today]),
+        soon: sortByType([...allSmmTasks.soon.filter(t => isSMM(t)), ...smmRegular.soon]),
       },
-      karolina: {
-        overdue: sortByType([...allSmmTasks.overdue.filter(t => isKarolina(t)), ...karolinaRegular.overdue]),
-        today: sortByType([...allSmmTasks.today.filter(t => isKarolina(t)), ...karolinaRegular.today]),
-        soon: sortByType([...allSmmTasks.soon.filter(t => isKarolina(t)), ...karolinaRegular.soon]),
+      manager: {
+        overdue: sortByType([...allSmmTasks.overdue.filter(t => isManager(t)), ...managerRegular.overdue]),
+        today: sortByType([...allSmmTasks.today.filter(t => isManager(t)), ...managerRegular.today]),
+        soon: sortByType([...allSmmTasks.soon.filter(t => isManager(t)), ...managerRegular.soon]),
       },
-      vo: {
-        overdue: sortByType([...allSmmTasks.overdue.filter(t => isVo(t)), ...voRegular.overdue]),
-        today: sortByType([...allSmmTasks.today.filter(t => isVo(t)), ...voRegular.today]),
-        soon: sortByType([...allSmmTasks.soon.filter(t => isVo(t)), ...voRegular.soon]),
+      marketer: {
+        overdue: sortByType([...allSmmTasks.overdue.filter(t => isMarketer(t)), ...marketerRegular.overdue]),
+        today: sortByType([...allSmmTasks.today.filter(t => isMarketer(t)), ...marketerRegular.today]),
+        soon: sortByType([...allSmmTasks.soon.filter(t => isMarketer(t)), ...marketerRegular.soon]),
       }
     };
   }, [allSmmTasks, regularTasks]);
-  
+
   const eventDates = new Set(events.filter(e => !e.cancelled && !e.archived).map(e => e.date.split('T')[0]));
   const allEvents = [...events].filter(e => !e.cancelled && !e.archived).sort((a, b) => new Date(a.date) - new Date(b.date));
-  
+
   const handleToggleTask = async (eventId, reminderId, completed, isStandalone) => {
     try { if (isStandalone) { await api.updateStandaloneTask(eventId, completed); refreshStandaloneTasks(); } else { await api.completeTask({ event_id: eventId, reminder_id: reminderId, completed }); refreshEvents(); } }
     catch { toast.error("помилка"); }
   };
-  
-  const handleToggleSMMTask = async (eventId, taskId, completed, isStandalone) => { 
-    try { 
+
+  const handleToggleSMMTask = async (eventId, taskId, completed, isStandalone) => {
+    try {
       if (isStandalone) { await api.updateStandaloneTask(eventId, completed); refreshStandaloneTasks(); }
       else { await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed }); refreshEvents(); }
-    } catch { toast.error("помилка"); } 
+    } catch { toast.error("помилка"); }
   };
   const loadArchive = async () => { try { const r = await api.getTaskArchive(); setArchive(r.data); setShowArchive(true); } catch { toast.error("помилка"); } };
   const handleRestoreTask = async (item) => {
@@ -4522,7 +4548,7 @@ const DesktopDashboard = () => {
       const r = await api.getTaskArchive(); setArchive(r.data);
     } catch { toast.error("помилка"); }
   };
-  
+
   const handleDateClick = (date) => {
     if (date) {
       const dateStr = formatDateLocal(date);
@@ -4538,7 +4564,7 @@ const DesktopDashboard = () => {
       }
     }
   };
-  
+
   const handleEventClick = async (eventId) => {
     try {
       const r = await axios.get(`${API}/events/${eventId}`);
@@ -4560,10 +4586,10 @@ const DesktopDashboard = () => {
   };
   const handleToggleTaskInPopup = async (reminderId, completed) => { try { await api.completeTask({ event_id: selectedEvent.id, reminder_id: reminderId, completed }); refreshEvents(); const r = await axios.get(`${API}/events/${selectedEvent.id}`); setSelectedEvent(r.data); } catch { toast.error("помилка"); } };
   const handleToggleSMMTaskInPopup = async (taskId, completed) => { try { await api.completeSMMTask({ event_id: selectedEvent.id, task_id: taskId, completed }); refreshEvents(); const r = await axios.get(`${API}/events/${selectedEvent.id}`); setSelectedEvent(r.data); } catch { toast.error("помилка"); } };
-  
+
   const [syncingEvent, setSyncingEvent] = useState(false);
   const [exportingEvent, setExportingEvent] = useState(false);
-  
+
   const handleSyncAltegioInPopup = async () => {
     if (!selectedEvent) return;
     setSyncingEvent(true);
@@ -4576,7 +4602,7 @@ const DesktopDashboard = () => {
     } catch { toast.error("помилка синхронізації"); }
     finally { setSyncingEvent(false); }
   };
-  
+
   const handleExportCalendarInPopup = async () => {
     if (!selectedEvent) return;
     setExportingEvent(true);
@@ -4588,7 +4614,7 @@ const DesktopDashboard = () => {
     } catch { toast.error("помилка експорту"); }
     finally { setExportingEvent(false); }
   };
-  
+
   const handleStandaloneTaskClick = (task) => {
     const fullTask = standaloneTasks.find(t => t.id === task.event_id);
     if (fullTask) { setSelectedStandaloneTask(fullTask); setShowStandaloneTaskPopup(true); }
@@ -4636,9 +4662,9 @@ const DesktopDashboard = () => {
         .find(t => getTaskDragKey({ ...t, task_id: t.task_id || t.reminder_id }) === taskKey) || null;
     };
     const targetTask = overData.type === "task" ? (overData.task || findTaskByKey(overData.taskKey)) : null;
-    const newAssignee = targetTask?.assignee || overData.assignee; // "karolina" | "kasya" | "vo"
+    const newAssignee = targetTask?.assignee || overData.assignee; // "manager" | "smm" | "marketer"
     const newDate = targetTask ? getTaskDate(targetTask) : (overData.date || getTaskDate(task));
-    if (!["karolina", "kasya", "vo"].includes(newAssignee)) return;
+    if (!["manager", "smm", "marketer"].includes(newAssignee)) return;
     if (overData.type === "task" || overData.type === "date") {
       const activeKey = getTaskDragKey(task);
       const targetKey = targetTask ? getTaskDragKey(targetTask) : null;
@@ -4668,7 +4694,7 @@ const DesktopDashboard = () => {
       }
       return;
     }
-    const labels = { karolina: "Менеджер", kasya: "SMM", vo: "Маркетолог" };
+    const labels = { manager: "Manager", smm: "SMM", marketer: "Marketer" };
     if (task.assignee === newAssignee) return;
     try {
       if (task.is_standalone) {
@@ -4702,18 +4728,18 @@ const DesktopDashboard = () => {
     setDragPosition(null);
     setDragOver(null);
   };
-  
+
   const handleTaskEdit = (task) => {
     if (task.is_standalone) {
       const fullTask = standaloneTasks.find(t => t.id === task.event_id);
       if (fullTask) {
-        setEditingStandaloneTask({...fullTask, _isStandalone: true, assignee: fullTask.assignee || task.assignee || 'karolina'});
+        setEditingStandaloneTask({...fullTask, _isStandalone: true, assignee: fullTask.assignee || task.assignee || 'manager'});
         setShowEditStandaloneDialog(true);
       }
     } else {
       // Event-based task
-      const taskColor = task.color || "karolina";
-      const currentAssignee = task.assignee || 'karolina';
+      const taskColor = task.color || "manager";
+      const currentAssignee = task.assignee || 'manager';
       setEditingStandaloneTask({
         _isStandalone: false,
         _eventId: task.event_id,
@@ -4732,13 +4758,13 @@ const DesktopDashboard = () => {
       setShowEditStandaloneDialog(true);
     }
   };
-  
+
   const handleDeleteStandaloneTask = async () => {
     if (!selectedStandaloneTask) return;
     try { await api.deleteStandaloneTask(selectedStandaloneTask.id); toast.success("видалено!"); refreshStandaloneTasks(); setShowStandaloneTaskPopup(false); }
     catch { toast.error("помилка"); }
   };
-  
+
   const handleCancelEvent = async (eventId) => {
     const ev = selectedEvent;
     const isSeries = !!ev?.source_event_id || ev?.event_type === "regular";
@@ -4778,40 +4804,40 @@ const DesktopDashboard = () => {
       refreshEvents();
     } catch { toast.error("помилка"); }
   };
-  
+
   const handleRestoreEvent = async (eventId) => {
-    try { 
-      await axios.patch(`${API}/events/${eventId}`, { cancelled: false }); 
-      toast.success("подію відновлено"); 
+    try {
+      await axios.patch(`${API}/events/${eventId}`, { cancelled: false });
+      toast.success("подію відновлено");
       refreshEvents();
       const r = await axios.get(`${API}/events/${eventId}`);
       setSelectedEvent(r.data);
     } catch { toast.error("помилка"); }
   };
-  
+
   const handleCreateTask = async () => {
     if (!newTask.title.trim()) return;
-    try { await api.createStandaloneTask({ ...newTask, type: "regular", assignee: newTask.assignee || (dialogColumnName === "SMM" ? "kasya" : dialogColumnName === "Маркетинг" ? "vo" : "karolina"), event_id: newTask.event_id || "" }); toast.success("додано!"); refreshStandaloneTasks(); setShowTaskDialog(false); setNewTask({ title: "", date: todayStr, icon: "coffee", color: "karolina", event_id: "", assignee: "karolina" }); }
+    try { await api.createStandaloneTask({ ...newTask, type: "regular", assignee: newTask.assignee || (dialogColumnName === "SMM" ? "smm" : dialogColumnName === "Marketer" ? "marketer" : "manager"), event_id: newTask.event_id || "" }); toast.success("додано!"); refreshStandaloneTasks(); setShowTaskDialog(false); setNewTask({ title: "", date: todayStr, icon: "coffee", color: "manager", event_id: "", assignee: "manager" }); }
     catch { toast.error("помилка"); }
   };
-  
+
   const handleCreateSMMTask = async () => {
     if (!newSMMTask.title.trim()) return;
     try {
       await api.createStandaloneTask({
         ...newSMMTask,
         type: "smm",
-        assignee: newSMMTask.assignee || (dialogColumnName === "SMM" ? "kasya" : dialogColumnName === "Маркетинг" ? "vo" : "karolina"),
+        assignee: newSMMTask.assignee || (dialogColumnName === "SMM" ? "smm" : dialogColumnName === "Marketer" ? "marketer" : "manager"),
         event_id: newSMMTask.event_id || "",
       });
       toast.success("додано!");
       refreshStandaloneTasks();
       setShowSMMTaskDialog(false);
-      setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "karolina", event_id: "", assignee: "kasya" });
+      setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "manager", event_id: "", assignee: "smm" });
     }
     catch { toast.error("помилка"); }
   };
-  
+
   const handleSaveStandaloneTask = async () => {
     if (!editingStandaloneTask?.title?.trim()) return;
     try {
@@ -4833,7 +4859,7 @@ const DesktopDashboard = () => {
           icon: editingStandaloneTask.icon,
           type: editingStandaloneTask.type,
           color: editingStandaloneTask.color,
-          assignee: editingStandaloneTask.assignee || 'karolina',
+          assignee: editingStandaloneTask.assignee || 'manager',
           event_id: editingStandaloneTask.event_id || "",
           order: editingStandaloneTask.order || 0,
         });
@@ -4867,7 +4893,7 @@ const DesktopDashboard = () => {
           icon: task.icon,
           type: task.type,
           color: task.color,
-          assignee: task.assignee || 'karolina',
+          assignee: task.assignee || 'manager',
           event_id: task.event_id || "",
           order: task.order || 0,
         });
@@ -4883,7 +4909,7 @@ const DesktopDashboard = () => {
       setReschedulingTaskDate(null);
     }
   };
-  
+
   // Keyboard shortcut for save (Ctrl/Cmd + Enter)
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -4946,7 +4972,7 @@ const DesktopDashboard = () => {
           <button className="desktop-header-btn" onClick={() => setShowSettings(true)} title="Налаштування"><Settings className="w-5 h-5" /></button>
         </div>
       </header>
-      
+
       {/* Main Content - 4 columns */}
       <div className="desktop-columns-4">
           {/* Events Column */}
@@ -5001,11 +5027,11 @@ const DesktopDashboard = () => {
               })}</div>
             </div>
           </div>
-          
-          {/* МЕНЕДЖМЕНТ + SMM + МАРКЕТИНГ — drag between days/columns */}
+
+          {/* MANAGER + SMM + MARKETER — drag between days/columns */}
           <TeamColumn
-            name="МЕНЕДЖМЕНТ"
-            tasks={tasksByTeam.karolina}
+            name="MANAGER"
+            tasks={tasksByTeam.manager}
             colorClass=""
             colorHex={null}
             onToggle={(eventId, taskId, completed, isStandalone) => {
@@ -5018,13 +5044,13 @@ const DesktopDashboard = () => {
             onEventClick={handleEventClick}
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
-            onAddClick={() => { setNewTask({ title: "", date: todayStr, icon: "coffee", color: "karolina", event_id: "", assignee: "karolina" }); setDialogColumnName("Менеджмент"); setShowTaskDialog(true); }}
-            overdueExpanded={karolinaOverdue}
-            setOverdueExpanded={setKarolinaOverdue}
-            soonExpanded={karolinaSoon}
-            setSoonExpanded={setKarolinaSoon}
+            onAddClick={() => { setNewTask({ title: "", date: todayStr, icon: "coffee", color: "manager", event_id: "", assignee: "manager" }); setDialogColumnName("Manager"); setShowTaskDialog(true); }}
+            overdueExpanded={managerOverdue}
+            setOverdueExpanded={setManagerOverdue}
+            soonExpanded={managerSoon}
+            setSoonExpanded={setManagerSoon}
             smmTasksDefinition={smmTasksDefinition}
-            columnAssignee="karolina"
+            columnAssignee="manager"
             todayStr={todayStr}
             onTaskDragStart={handleTaskDragStart}
             onTaskDragMove={handleTaskDragMove}
@@ -5032,24 +5058,24 @@ const DesktopDashboard = () => {
             onTaskDrop={handleTaskDrop}
             dragOver={dragOver}
           />
-          
+
           {/* SMM Column - Second */}
           <TeamColumn
             name="SMM"
-            tasks={tasksByTeam.kasya}
+            tasks={tasksByTeam.smm}
             colorClass=""
             colorHex={null}
             onToggle={handleToggleSMMTask}
             onEventClick={handleEventClick}
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
-            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "karolina", event_id: "", assignee: "kasya" }); setDialogColumnName("SMM"); setShowSMMTaskDialog(true); }}
-            overdueExpanded={kasyaOverdue}
-            setOverdueExpanded={setKasyaOverdue}
-            soonExpanded={kasyaSoon}
-            setSoonExpanded={setKasyaSoon}
+            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "manager", event_id: "", assignee: "smm" }); setDialogColumnName("SMM"); setShowSMMTaskDialog(true); }}
+            overdueExpanded={smmOverdue}
+            setOverdueExpanded={setSMMOverdue}
+            soonExpanded={smmSoon}
+            setSoonExpanded={setSMMSoon}
             smmTasksDefinition={smmTasksDefinition}
-            columnAssignee="kasya"
+            columnAssignee="smm"
             todayStr={todayStr}
             announcementOverlaps={announcementOverlaps}
             onOverlapClick={setOverlapResolverTask}
@@ -5060,23 +5086,23 @@ const DesktopDashboard = () => {
             dragOver={dragOver}
           />
 
-          {/* МАРКЕТИНГ Column (orange) - Third */}
-          <TeamColumn 
-            name="МАРКЕТИНГ"
-            tasks={tasksByTeam.vo}
+          {/* MARKETER Column (orange) - Third */}
+          <TeamColumn
+            name="MARKETER"
+            tasks={tasksByTeam.marketer}
             colorClass="orange"
             colorHex="#C4703D"
             onToggle={handleToggleSMMTask}
             onEventClick={handleEventClick}
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
-            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "karolina", event_id: "", assignee: "vo" }); setDialogColumnName("Маркетинг"); setShowSMMTaskDialog(true); }}
-            overdueExpanded={voOverdue}
+            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "manager", event_id: "", assignee: "marketer" }); setDialogColumnName("Marketer"); setShowSMMTaskDialog(true); }}
+            overdueExpanded={marketerOverdue}
             setOverdueExpanded={setVoOverdue}
-            soonExpanded={voSoon}
+            soonExpanded={marketerSoon}
             setSoonExpanded={setVoSoon}
             smmTasksDefinition={smmTasksDefinition}
-            columnAssignee="vo"
+            columnAssignee="marketer"
             todayStr={todayStr}
             onTaskDragStart={handleTaskDragStart}
             onTaskDragMove={handleTaskDragMove}
@@ -5145,14 +5171,14 @@ const DesktopDashboard = () => {
             </div>
           </div>
       </div>
-      
+
       {/* Dialogs */}
       <Dialog open={showTaskDialog} onOpenChange={setShowTaskDialog}>
         <DialogContent className="sm:max-w-[420px] !p-5 sm:!p-6">
           {(() => {
             const PALETTE = [
-              {c:'karolina',bg:'#1A1717'}, {c:'red',bg:'#EF4444'}, {c:'purple',bg:'#9333EA'},
-              {c:'kasya',bg:'#059669'}, {c:'blue',bg:'#3B82F6'}, {c:'orange',bg:'#C4703D'},
+              {c:'manager',bg:'#1A1717'}, {c:'red',bg:'#EF4444'}, {c:'purple',bg:'#9333EA'},
+              {c:'smm',bg:'#059669'}, {c:'blue',bg:'#3B82F6'}, {c:'orange',bg:'#C4703D'},
               {c:'pink',bg:'#EC4899'}, {c:'teal',bg:'#14B8A6'},
             ];
             const COLOR_MAP = Object.fromEntries(PALETTE.map(p => [p.c, p.bg]));
@@ -5174,17 +5200,17 @@ const DesktopDashboard = () => {
                   <span className="relative inline-flex items-center text-[11px] font-medium text-[#1A1717]/55">
                     <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: selectedHex }} />
                     <select
-                      value={newTask.assignee || "karolina"}
+                      value={newTask.assignee || "manager"}
                       onChange={(e) => {
                         const a = e.target.value;
                         setNewTask({ ...newTask, assignee: a });
-                        setDialogColumnName(a === "kasya" ? "SMM" : a === "vo" ? "Маркетинг" : "Менеджмент");
+                        setDialogColumnName(a === "smm" ? "SMM" : a === "marketer" ? "Marketer" : "Manager");
                       }}
                       className="appearance-none bg-transparent cursor-pointer outline-none border-none pr-3.5 text-[11px] uppercase tracking-wider"
                     >
-                      <option value="karolina">Менеджер</option>
-                      <option value="kasya">SMM</option>
-                      <option value="vo">Маркетолог</option>
+                      <option value="manager">Manager</option>
+                      <option value="smm">SMM</option>
+                      <option value="marketer">Marketer</option>
                     </select>
                     <ChevronDown className="w-3 h-3 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </span>
@@ -5229,7 +5255,7 @@ const DesktopDashboard = () => {
                         type="button"
                         onClick={() => setNewTask({ ...newTask, date: chip.value })}
                         className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-colors ${
-                          sel ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
+                          sel ? 'bg-[#1A1717] text-[#F0EEE6]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
                         }`}
                         data-testid={`new-task-date-${chip.label}`}
                       >{chip.label}</button>
@@ -5239,7 +5265,7 @@ const DesktopDashboard = () => {
                     type="button"
                     onClick={() => setShowTaskCalendar(true)}
                     className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-colors inline-flex items-center gap-1.5 ${
-                      isCustomDate ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
+                      isCustomDate ? 'bg-[#1A1717] text-[#F0EEE6]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
                     }`}
                     data-testid="new-task-date-custom"
                   >
@@ -5271,7 +5297,7 @@ const DesktopDashboard = () => {
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 self-center pl-3 border-l border-black/[0.06]">
                     {PALETTE.map(({c,bg}) => {
-                      const sel = newTask.color === c || (c === 'karolina' && (!newTask.color || newTask.color === 'standard'));
+                      const sel = newTask.color === c || (c === 'manager' && (!newTask.color || newTask.color === 'standard'));
                       return (
                         <button
                           key={c}
@@ -5299,7 +5325,7 @@ const DesktopDashboard = () => {
                 <button
                   onClick={handleCreateTask}
                   disabled={!newTask.title?.trim()}
-                  className="mt-4 w-full h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-[14px] transition-colors hover:bg-[#2a2424] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 active:scale-[0.98]"
+                  className="mt-4 w-full h-12 rounded-full bg-[#1A1717] text-[#F0EEE6] font-medium text-[14px] transition-colors hover:bg-[#2a2424] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 active:scale-[0.98]"
                   data-testid="new-task-create"
                 >
                   створити <ChevronRight className="w-4 h-4" />
@@ -5309,19 +5335,19 @@ const DesktopDashboard = () => {
           })()}
         </DialogContent>
       </Dialog>
-      
+
       <Dialog open={showTaskCalendar} onOpenChange={setShowTaskCalendar}>
         <DialogContent className="dialog-content">
           <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(newTask.date)} onSelect={(d) => { if (d) { setNewTask({ ...newTask, date: formatDateLocal(d) }); } setShowTaskCalendar(false); }} className="w-full" />
         </DialogContent>
       </Dialog>
-      
+
       <Dialog open={showSMMCalendar} onOpenChange={setShowSMMCalendar}>
         <DialogContent className="dialog-content">
           <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(newSMMTask.date)} onSelect={(d) => { if (d) { setNewSMMTask({ ...newSMMTask, date: formatDateLocal(d) }); } setShowSMMCalendar(false); }} className="w-full" />
         </DialogContent>
       </Dialog>
-      
+
       {/* Event Detail Fullscreen */}
       <FullscreenModal isOpen={showEventDetail} onClose={() => setShowEventDetail(false)} title={selectedEvent?.title || "подія"}>
         {selectedEvent && (
@@ -5362,7 +5388,7 @@ const DesktopDashboard = () => {
                               disabled={isCurrent}
                               className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-sm transition-colors ${
                                 isCurrent
-                                  ? 'bg-[#1A1717] text-[#F5F5F0] cursor-default'
+                                  ? 'bg-[#1A1717] text-[#F0EEE6] cursor-default'
                                   : isCancelled
                                     ? 'text-[#1A1717]/35 line-through hover:bg-black/5'
                                     : isPast
@@ -5372,7 +5398,7 @@ const DesktopDashboard = () => {
                               data-testid={`series-instance-${inst.id}`}
                             >
                               <span className="font-medium tabular-nums w-20">{dayLabel}</span>
-                              <span className={`text-[11px] uppercase ${isCurrent ? 'text-[#F5F5F0]/70' : 'text-secondary'}`}>{wd}</span>
+                              <span className={`text-[11px] uppercase ${isCurrent ? 'text-[#F0EEE6]/70' : 'text-secondary'}`}>{wd}</span>
                               {isMaster && <span className="text-[10px] uppercase tracking-wider opacity-60">батько</span>}
                               <span className="ml-auto text-xs tabular-nums">
                                 {bookings != null ? `${bookings}/${cap}` : `–/${cap}`}
@@ -5460,11 +5486,11 @@ const DesktopDashboard = () => {
                 </div>
               </div>
             </div>
-            
-            {/* Column 2 - МЕНЕДЖМЕНТ */}
+
+            {/* Column 2 - MANAGER */}
             <div className="desktop-column">
               <div className="px-4 py-3 border-b border-gray-100">
-                <span className="text-sm font-semibold tracking-wide">МЕНЕДЖМЕНТ</span>
+                <span className="text-sm font-semibold tracking-wide">MANAGER</span>
               </div>
               <div className="column-content">
                 <div className="space-y-2">
@@ -5531,10 +5557,10 @@ const DesktopDashboard = () => {
               </div>
             </div>
 
-            {/* Column 4 - МАРКЕТИНГ */}
+            {/* Column 4 - MARKETER */}
             <div className="desktop-column">
               <div className="px-4 py-3 border-b border-gray-100">
-                <span className="text-sm font-semibold tracking-wide">МАРКЕТИНГ</span>
+                <span className="text-sm font-semibold tracking-wide">MARKETER</span>
               </div>
               <div className="column-content">
                 <div className="space-y-2">
@@ -5574,13 +5600,13 @@ const DesktopDashboard = () => {
           </div>
         )}
       </FullscreenModal>
-      
+
       <Dialog open={showSMMTaskDialog} onOpenChange={setShowSMMTaskDialog}>
         <DialogContent className="sm:max-w-[420px] !p-5 sm:!p-6">
           {(() => {
             const PALETTE = [
-              {c:'karolina',bg:'#1A1717'}, {c:'red',bg:'#EF4444'}, {c:'purple',bg:'#9333EA'},
-              {c:'kasya',bg:'#059669'}, {c:'blue',bg:'#3B82F6'}, {c:'orange',bg:'#C4703D'},
+              {c:'manager',bg:'#1A1717'}, {c:'red',bg:'#EF4444'}, {c:'purple',bg:'#9333EA'},
+              {c:'smm',bg:'#059669'}, {c:'blue',bg:'#3B82F6'}, {c:'orange',bg:'#C4703D'},
               {c:'pink',bg:'#EC4899'}, {c:'teal',bg:'#14B8A6'},
             ];
             const COLOR_MAP = Object.fromEntries(PALETTE.map(p => [p.c, p.bg]));
@@ -5601,17 +5627,17 @@ const DesktopDashboard = () => {
                   <span className="relative inline-flex items-center text-[11px] font-medium text-[#1A1717]/55">
                     <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: selectedHex }} />
                     <select
-                      value={newSMMTask.assignee || "kasya"}
+                      value={newSMMTask.assignee || "smm"}
                       onChange={(e) => {
                         const a = e.target.value;
                         setNewSMMTask({ ...newSMMTask, assignee: a });
-                        setDialogColumnName(a === "kasya" ? "SMM" : a === "vo" ? "Маркетинг" : "Менеджмент");
+                        setDialogColumnName(a === "smm" ? "SMM" : a === "marketer" ? "Marketer" : "Manager");
                       }}
                       className="appearance-none bg-transparent cursor-pointer outline-none border-none pr-3.5 text-[11px] uppercase tracking-wider"
                     >
-                      <option value="karolina">Менеджер</option>
-                      <option value="kasya">SMM</option>
-                      <option value="vo">Маркетолог</option>
+                      <option value="manager">Manager</option>
+                      <option value="smm">SMM</option>
+                      <option value="marketer">Marketer</option>
                     </select>
                     <ChevronDown className="w-3 h-3 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </span>
@@ -5651,7 +5677,7 @@ const DesktopDashboard = () => {
                       <button key={chip.value} type="button"
                         onClick={() => setNewSMMTask({ ...newSMMTask, date: chip.value })}
                         className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-colors ${
-                          sel ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
+                          sel ? 'bg-[#1A1717] text-[#F0EEE6]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
                         }`}
                       >{chip.label}</button>
                     );
@@ -5659,7 +5685,7 @@ const DesktopDashboard = () => {
                   <button type="button"
                     onClick={() => setShowSMMCalendar(true)}
                     className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-colors inline-flex items-center gap-1.5 ${
-                      isCustomDate ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
+                      isCustomDate ? 'bg-[#1A1717] text-[#F0EEE6]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
                     }`}
                   >
                     <CalendarIcon className="w-3 h-3" />
@@ -5686,7 +5712,7 @@ const DesktopDashboard = () => {
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 self-center pl-3 border-l border-black/[0.06]">
                     {PALETTE.map(({c,bg}) => {
-                      const sel = newSMMTask.color === c || (c === 'karolina' && (!newSMMTask.color || newSMMTask.color === 'standard'));
+                      const sel = newSMMTask.color === c || (c === 'manager' && (!newSMMTask.color || newSMMTask.color === 'standard'));
                       return (
                         <button key={c} type="button"
                           onClick={() => setNewSMMTask({...newSMMTask, color: c})}
@@ -5710,7 +5736,7 @@ const DesktopDashboard = () => {
                 <button
                   onClick={handleCreateSMMTask}
                   disabled={!newSMMTask.title?.trim()}
-                  className="mt-4 w-full h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-[14px] transition-colors hover:bg-[#2a2424] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 active:scale-[0.98]"
+                  className="mt-4 w-full h-12 rounded-full bg-[#1A1717] text-[#F0EEE6] font-medium text-[14px] transition-colors hover:bg-[#2a2424] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 active:scale-[0.98]"
                 >
                   створити <ChevronRight className="w-4 h-4" />
                 </button>
@@ -5719,18 +5745,18 @@ const DesktopDashboard = () => {
           })()}
         </DialogContent>
       </Dialog>
-      
+
       <FullscreenModal isOpen={showSettings} onClose={() => setShowSettings(false)} title="налаштування">
         <SettingsContent />
       </FullscreenModal>
-      
+
       {/* Analytics Modal - no animation, custom header */}
       {showStats && (
         <div className="fixed inset-0 z-50 bg-white">
           <StatsContent onClose={() => setShowStats(false)} settings={settings} />
         </div>
       )}
-      
+
       <Dialog open={showStandaloneTaskPopup} onOpenChange={setShowStandaloneTaskPopup}>
         <DialogContent className="dialog-content">
           {selectedStandaloneTask && (
@@ -5754,23 +5780,23 @@ const DesktopDashboard = () => {
           )}
         </DialogContent>
       </Dialog>
-      
+
       {/* Edit Task Dialog (both standalone and event-based) */}
       <Dialog open={showEditStandaloneDialog} onOpenChange={setShowEditStandaloneDialog}>
         <DialogContent className="relative sm:max-w-[420px] !p-5 sm:!p-6" onOpenAutoFocus={(e) => e.preventDefault()}>
           {editingStandaloneTask && (() => {
             const getAssigneeName = () => {
               const a = editingStandaloneTask.assignee;
-              if (a === 'kasya') return 'SMM';
-              if (a === 'vo') return 'Маркетинг';
-              return 'Менеджмент';
+              if (a === 'smm') return 'SMM';
+              if (a === 'marketer') return 'Marketer';
+              return 'Manager';
             };
             const assigneeName = getAssigneeName();
             const isStandalone = editingStandaloneTask._isStandalone !== false;
             const iconSet = TASK_ICONS;
             const PALETTE = [
-              {c:'karolina',bg:'#1A1717'}, {c:'red',bg:'#EF4444'}, {c:'purple',bg:'#9333EA'},
-              {c:'kasya',bg:'#059669'}, {c:'blue',bg:'#3B82F6'}, {c:'orange',bg:'#C4703D'},
+              {c:'manager',bg:'#1A1717'}, {c:'red',bg:'#EF4444'}, {c:'purple',bg:'#9333EA'},
+              {c:'smm',bg:'#059669'}, {c:'blue',bg:'#3B82F6'}, {c:'orange',bg:'#C4703D'},
               {c:'pink',bg:'#EC4899'}, {c:'teal',bg:'#14B8A6'},
             ];
             const COLOR_MAP = Object.fromEntries(PALETTE.map(p => [p.c, p.bg]));
@@ -5803,13 +5829,13 @@ const DesktopDashboard = () => {
                   <DialogTitle className="text-[20px] font-semibold tracking-tight" data-testid="edit-task-title">завдання</DialogTitle>
                   <span className="relative inline-flex items-center text-[11px] font-medium text-[#1A1717]/55">
                     <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: selectedHex }} />
-                    <select data-testid="assignee-dropdown" value={editingStandaloneTask.assignee || "karolina"}
+                    <select data-testid="assignee-dropdown" value={editingStandaloneTask.assignee || "manager"}
                       onChange={(e) => setEditingStandaloneTask({...editingStandaloneTask, assignee: e.target.value})}
                       className="appearance-none bg-transparent cursor-pointer outline-none border-none pr-3.5 text-[11px] uppercase tracking-wider"
                     >
-                      <option value="karolina">Менеджер</option>
-                      <option value="kasya">SMM</option>
-                      <option value="vo">Маркетолог</option>
+                      <option value="manager">Manager</option>
+                      <option value="smm">SMM</option>
+                      <option value="marketer">Marketer</option>
                     </select>
                     <ChevronDown className="w-3 h-3 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </span>
@@ -5869,7 +5895,7 @@ const DesktopDashboard = () => {
                         onClick={() => handleRescheduleStandaloneTask(chip.value)}
                         disabled={!!reschedulingTaskDate}
                         className={`h-9 rounded-full text-[12.5px] font-medium transition-colors disabled:opacity-50 ${
-                          sel ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
+                          sel ? 'bg-[#1A1717] text-[#F0EEE6]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
                         }`}
                         data-testid={`edit-task-date-${chip.label}`}
                       >{isSavingThisDate ? "..." : chip.label}</button>
@@ -5931,7 +5957,7 @@ const DesktopDashboard = () => {
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 self-center pl-3 border-l border-black/[0.06]">
                     {PALETTE.map(({c,bg}) => {
-                      const sel = editingStandaloneTask.color === c || (c === 'karolina' && (!editingStandaloneTask.color || editingStandaloneTask.color === 'standard'));
+                      const sel = editingStandaloneTask.color === c || (c === 'manager' && (!editingStandaloneTask.color || editingStandaloneTask.color === 'standard'));
                       return (
                         <button key={c} type="button"
                           onClick={() => setEditingStandaloneTask({...editingStandaloneTask, color: c})}
@@ -5956,14 +5982,14 @@ const DesktopDashboard = () => {
                       <Trash2 className="w-4 h-4" />видалити
                     </button>
                   )}
-                  <button className="flex-1 h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-[14px] transition-colors hover:bg-[#2a2424] active:scale-[0.98]" data-testid="edit-task-save" onClick={handleSaveStandaloneTask}>зберегти</button>
+                  <button className="flex-1 h-12 rounded-full bg-[#1A1717] text-[#F0EEE6] font-medium text-[14px] transition-colors hover:bg-[#2a2424] active:scale-[0.98]" data-testid="edit-task-save" onClick={handleSaveStandaloneTask}>зберегти</button>
                 </div>
               </>
             );
           })()}
         </DialogContent>
       </Dialog>
-      
+
       {/* Edit Calendar for standalone task */}
       <Dialog open={showEditCalendar} onOpenChange={setShowEditCalendar}>
         <DialogContent className="dialog-content">
@@ -5997,12 +6023,12 @@ const DesktopDashboard = () => {
                 <div>
                   <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-2">хто</div>
                   <div className="grid grid-cols-3 gap-2">
-                    {[{v:'karolina',l:'Менеджер'},{v:'kasya',l:'SMM'},{v:'vo',l:'Маркетолог'}].map(opt => (
+                    {[{v:'manager',l:'Manager'},{v:'smm',l:'SMM'},{v:'marketer',l:'Marketer'}].map(opt => (
                       <button
                         key={opt.v}
                         type="button"
                         onClick={() => setDayOffForm({...dayOffForm, assignee: opt.v})}
-                        className={`h-11 rounded-full text-sm font-medium transition-colors ${dayOffForm.assignee === opt.v ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white ring-1 ring-black/8 hover:bg-black/5'}`}
+                        className={`h-11 rounded-full text-sm font-medium transition-colors ${dayOffForm.assignee === opt.v ? 'bg-[#1A1717] text-[#F0EEE6]' : 'bg-white ring-1 ring-black/8 hover:bg-black/5'}`}
                       >{opt.l}</button>
                     ))}
                   </div>
@@ -6041,7 +6067,7 @@ const DesktopDashboard = () => {
                   finally { setDayOffSubmitting(false); }
                 }}
                 disabled={dayOffSubmitting}
-                className="mt-7 w-full h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-sm hover:bg-[#333333] disabled:opacity-50 transition-colors inline-flex items-center justify-center gap-2"
+                className="mt-7 w-full h-12 rounded-full bg-[#1A1717] text-[#F0EEE6] font-medium text-sm hover:bg-[#333333] disabled:opacity-50 transition-colors inline-flex items-center justify-center gap-2"
               >
                 {dayOffSubmitting ? "рахуємо..." : "далі — побачити перерозподіл"}
               </button>
@@ -6051,7 +6077,7 @@ const DesktopDashboard = () => {
               <DialogHeader>
                 <DialogTitle>перерозподіл задач</DialogTitle>
                 <DialogDescription>
-                  вихідний {formatDateUkrainian(dayOffPlan.day_off.date)} • {dayOffPlan.day_off.assignee === "karolina" ? "Менеджер" : dayOffPlan.day_off.assignee === "kasya" ? "SMM" : "Маркетолог"}
+                  вихідний {formatDateUkrainian(dayOffPlan.day_off.date)} • {dayOffPlan.day_off.assignee === "manager" ? "Manager" : dayOffPlan.day_off.assignee === "smm" ? "SMM" : "Marketer"}
                 </DialogDescription>
               </DialogHeader>
               <div className="mt-5 space-y-4 max-h-[60vh] overflow-y-auto pr-1">
@@ -6092,12 +6118,12 @@ const DesktopDashboard = () => {
                                 {item.suggested_dates.map(d => (
                                   <button key={d} type="button"
                                     onClick={() => setReviewChoices({...reviewChoices, [key]: d})}
-                                    className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${choice === d ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-black/5 hover:bg-black/10'}`}
+                                    className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${choice === d ? 'bg-[#1A1717] text-[#F0EEE6]' : 'bg-black/5 hover:bg-black/10'}`}
                                   >{formatDateUkrainian(d)}</button>
                                 ))}
                                 <button type="button"
                                   onClick={() => setReviewChoices({...reviewChoices, [key]: null})}
-                                  className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${choice === null ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-black/5 hover:bg-black/10'}`}
+                                  className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${choice === null ? 'bg-[#1A1717] text-[#F0EEE6]' : 'bg-black/5 hover:bg-black/10'}`}
                                 >не зміщати</button>
                               </div>
                             )}
@@ -6137,7 +6163,7 @@ const DesktopDashboard = () => {
                   finally { setDayOffSubmitting(false); }
                 }}
                 disabled={dayOffSubmitting}
-                className="mt-6 w-full h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-sm hover:bg-[#333333] disabled:opacity-50 transition-colors"
+                className="mt-6 w-full h-12 rounded-full bg-[#1A1717] text-[#F0EEE6] font-medium text-sm hover:bg-[#333333] disabled:opacity-50 transition-colors"
               >
                 {dayOffSubmitting ? "застосовуємо..." : "застосувати перерозподіл"}
               </button>
@@ -6368,11 +6394,11 @@ const SettingsContent = () => {
         </div>
       </div>
 
-      {/* Column 2: МЕНЕДЖМЕНТ + daily + monthly */}
+      {/* Column 2: MANAGER + daily + monthly */}
       <div className="desktop-column">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <div>
-            <span className="text-sm font-semibold tracking-wide">МЕНЕДЖМЕНТ</span>
+            <span className="text-sm font-semibold tracking-wide">MANAGER</span>
             <span className="text-xs text-secondary ml-2">({allTasks.mgmt.length})</span>
           </div>
           <button className="add-btn" title="новий таск" onClick={() => { setNewTaskDraft({ name: "", days_before: 7, column: "management", is_announcement: false, is_teamwork: false, series_master_only: false }); setShowAddTaskDialog(true); }}>
@@ -6430,11 +6456,11 @@ const SettingsContent = () => {
         </div>
       </div>
 
-      {/* Column 4: МАРКЕТИНГ + daily + monthly */}
+      {/* Column 4: MARKETER + daily + monthly */}
       <div className="desktop-column">
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <div>
-            <span className="text-sm font-semibold tracking-wide">МАРКЕТИНГ</span>
+            <span className="text-sm font-semibold tracking-wide">MARKETER</span>
             <span className="text-xs text-secondary ml-2">({allTasks.mktg.length})</span>
           </div>
           <button className="add-btn" title="новий таск" onClick={() => { setNewTaskDraft({ name: "", days_before: 7, column: "marketing", is_announcement: false, is_teamwork: false, series_master_only: false }); setShowAddTaskDialog(true); }}>
@@ -6500,7 +6526,7 @@ const StatsContent = ({ onClose, settings }) => {
   const [periodType, setPeriodType] = useState('week'); // 'week' or 'month'
   const [currentPeriod, setCurrentPeriod] = useState(new Date());
   const [selectedTask, setSelectedTask] = useState(null);
-  
+
   // ESC key handler
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -6511,13 +6537,13 @@ const StatsContent = ({ onClose, settings }) => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
-  
+
   // SMM task name lookup
   const getSMMTaskName = (taskId) => {
     const task = smmTasksDefinition?.find(t => t.id === taskId);
     return task?.name || taskId;
   };
-  
+
   // Get week boundaries
   const getWeekStart = (date) => {
     const d = new Date(date);
@@ -6527,7 +6553,7 @@ const StatsContent = ({ onClose, settings }) => {
     d.setHours(0, 0, 0, 0);
     return d;
   };
-  
+
   const getWeekEnd = (date) => {
     const start = getWeekStart(date);
     const end = new Date(start);
@@ -6535,7 +6561,7 @@ const StatsContent = ({ onClose, settings }) => {
     end.setHours(23, 59, 59, 999);
     return end;
   };
-  
+
   // Get month boundaries
   const getMonthStart = (date) => {
     const d = new Date(date);
@@ -6543,7 +6569,7 @@ const StatsContent = ({ onClose, settings }) => {
     d.setHours(0, 0, 0, 0);
     return d;
   };
-  
+
   const getMonthEnd = (date) => {
     const d = new Date(date);
     d.setMonth(d.getMonth() + 1);
@@ -6551,7 +6577,7 @@ const StatsContent = ({ onClose, settings }) => {
     d.setHours(23, 59, 59, 999);
     return d;
   };
-  
+
   // Navigate periods
   const goToPrevPeriod = () => {
     const newDate = new Date(currentPeriod);
@@ -6562,7 +6588,7 @@ const StatsContent = ({ onClose, settings }) => {
     }
     setCurrentPeriod(newDate);
   };
-  
+
   const goToNextPeriod = () => {
     const newDate = new Date(currentPeriod);
     if (periodType === 'week') {
@@ -6572,7 +6598,7 @@ const StatsContent = ({ onClose, settings }) => {
     }
     setCurrentPeriod(newDate);
   };
-  
+
   // Format period label
   const getPeriodLabel = () => {
     if (periodType === 'week') {
@@ -6590,15 +6616,15 @@ const StatsContent = ({ onClose, settings }) => {
       return `${UK_MONTHS[currentPeriod.getMonth()]} ${currentPeriod.getFullYear()}`;
     }
   };
-  
+
   // Get period boundaries
   const periodStart = periodType === 'week' ? getWeekStart(currentPeriod) : getMonthStart(currentPeriod);
   const periodEnd = periodType === 'week' ? getWeekEnd(currentPeriod) : getMonthEnd(currentPeriod);
-  
+
   // Get completed tasks with full info - split into on-time and late
   const getCompletedOnTime = (color) => {
     const results = [];
-    
+
     events.forEach(event => {
       if (!event.completed_smm_tasks) return;
       Object.entries(event.completed_smm_tasks).forEach(([taskId, completedAt]) => {
@@ -6609,16 +6635,16 @@ const StatsContent = ({ onClose, settings }) => {
         if (date >= periodStart && date <= periodEnd) {
           const taskDef = smmTasksDefinition?.find(t => t.id === taskId);
           const taskColor = taskDef?.color || 'standard';
-          const isKasyaTask = taskColor === 'kasya';
-          const isMatch = (color === 'kasya' && isKasyaTask) ||
-                          (color === 'vo' && !isKasyaTask);
+          const isSMMTask = taskColor === 'smm';
+          const isMatch = (color === 'smm' && isSMMTask) ||
+                          (color === 'marketer' && !isSMMTask);
           if (isMatch) {
             const completedDate = new Date(typeof completedAt === 'string' ? completedAt : taskDate);
             const dueDate = new Date(taskDate);
             dueDate.setHours(23, 59, 59, 999);
             const isLate = completedDate > dueDate;
             if (!isLate) {
-              results.push({ 
+              results.push({
                 id: `${event.id}-${taskId}`, taskId, eventId: event.id,
                 date: taskDate, completedAt: typeof completedAt === 'string' ? completedAt : taskDate,
                 name: getSMMTaskName(taskId), event: event.title, type: 'smm', color: taskColor
@@ -6628,21 +6654,21 @@ const StatsContent = ({ onClose, settings }) => {
         }
       });
     });
-    
+
     standaloneTasks.filter(t => t.completed).forEach(task => {
       const date = new Date(task.date);
       if (date >= periodStart && date <= periodEnd) {
         const taskColor = task.color || 'standard';
-        const isKasyaTask = taskColor === 'kasya';
-        const isMatch = (color === 'kasya' && isKasyaTask) ||
-                        (color === 'vo' && !isKasyaTask && task.type === 'smm');
+        const isSMMTask = taskColor === 'smm';
+        const isMatch = (color === 'smm' && isSMMTask) ||
+                        (color === 'marketer' && !isSMMTask && task.type === 'smm');
         if (isMatch) {
           const completedDate = new Date(task.completed_at || task.date);
           const dueDate = new Date(task.date);
           dueDate.setHours(23, 59, 59, 999);
           const isLate = completedDate > dueDate;
           if (!isLate) {
-            results.push({ 
+            results.push({
               id: task.id, date: task.date, completedAt: task.completed_at || task.date,
               name: task.title, event: task.title, type: 'standalone', color: taskColor
             });
@@ -6650,13 +6676,13 @@ const StatsContent = ({ onClose, settings }) => {
         }
       }
     });
-    
+
     return results;
   };
-  
+
   const getCompletedLate = (color) => {
     const results = [];
-    
+
     events.forEach(event => {
       if (!event.completed_smm_tasks) return;
       Object.entries(event.completed_smm_tasks).forEach(([taskId, completedAt]) => {
@@ -6667,16 +6693,16 @@ const StatsContent = ({ onClose, settings }) => {
         if (date >= periodStart && date <= periodEnd) {
           const taskDef = smmTasksDefinition?.find(t => t.id === taskId);
           const taskColor = taskDef?.color || 'standard';
-          const isKasyaTask = taskColor === 'kasya';
-          const isMatch = (color === 'kasya' && isKasyaTask) ||
-                          (color === 'vo' && !isKasyaTask);
+          const isSMMTask = taskColor === 'smm';
+          const isMatch = (color === 'smm' && isSMMTask) ||
+                          (color === 'marketer' && !isSMMTask);
           if (isMatch) {
             const completedDate = new Date(typeof completedAt === 'string' ? completedAt : taskDate);
             const dueDate = new Date(taskDate);
             dueDate.setHours(23, 59, 59, 999);
             const isLate = completedDate > dueDate;
             if (isLate) {
-              results.push({ 
+              results.push({
                 id: `${event.id}-${taskId}`, taskId, eventId: event.id,
                 date: taskDate, completedAt: typeof completedAt === 'string' ? completedAt : taskDate,
                 name: getSMMTaskName(taskId), event: event.title, type: 'smm', color: taskColor
@@ -6686,21 +6712,21 @@ const StatsContent = ({ onClose, settings }) => {
         }
       });
     });
-    
+
     standaloneTasks.filter(t => t.completed).forEach(task => {
       const date = new Date(task.date);
       if (date >= periodStart && date <= periodEnd) {
         const taskColor = task.color || 'standard';
-        const isKasyaTask = taskColor === 'kasya';
-        const isMatch = (color === 'kasya' && isKasyaTask) ||
-                        (color === 'vo' && !isKasyaTask && task.type === 'smm');
+        const isSMMTask = taskColor === 'smm';
+        const isMatch = (color === 'smm' && isSMMTask) ||
+                        (color === 'marketer' && !isSMMTask && task.type === 'smm');
         if (isMatch) {
           const completedDate = new Date(task.completed_at || task.date);
           const dueDate = new Date(task.date);
           dueDate.setHours(23, 59, 59, 999);
           const isLate = completedDate > dueDate;
           if (isLate) {
-            results.push({ 
+            results.push({
               id: task.id, date: task.date, completedAt: task.completed_at || task.date,
               name: task.title, event: task.title, type: 'standalone', color: taskColor
             });
@@ -6708,15 +6734,15 @@ const StatsContent = ({ onClose, settings }) => {
         }
       }
     });
-    
+
     return results;
   };
-  
+
   // Get uncompleted tasks
   const getUncompleted = (color) => {
     const uncompleted = [];
     const today = new Date();
-    
+
     events.forEach(event => {
       if (event.cancelled) return;
       Object.entries(event.smm_tasks || {}).forEach(([taskId, taskDate]) => {
@@ -6726,17 +6752,17 @@ const StatsContent = ({ onClose, settings }) => {
           if (!isCompleted) {
             const taskDef = smmTasksDefinition?.find(t => t.id === taskId);
             const taskColor = taskDef?.color || 'standard';
-            const isKasyaTask = taskColor === 'kasya';
-            const isMatch = (color === 'kasya' && isKasyaTask) ||
-                            (color === 'vo' && !isKasyaTask);
+            const isSMMTask = taskColor === 'smm';
+            const isMatch = (color === 'smm' && isSMMTask) ||
+                            (color === 'marketer' && !isSMMTask);
             if (isMatch) {
-              uncompleted.push({ 
+              uncompleted.push({
                 id: `${event.id}-${taskId}`,
                 taskId,
                 eventId: event.id,
-                date: taskDate, 
-                name: getSMMTaskName(taskId), 
-                event: event.title, 
+                date: taskDate,
+                name: getSMMTaskName(taskId),
+                event: event.title,
                 type: 'smm',
                 color: taskColor
               });
@@ -6745,12 +6771,12 @@ const StatsContent = ({ onClose, settings }) => {
         }
       });
     });
-    
+
     return uncompleted;
   };
-  
-  // Get КАРОЛІНА tasks from event reminders
-  const getKarolinaOnTime = () => {
+
+  // Get MANAGER tasks from event reminders
+  const getManagerOnTime = () => {
     const results = [];
     events.forEach(event => {
       if (event.cancelled) return;
@@ -6782,8 +6808,8 @@ const StatsContent = ({ onClose, settings }) => {
     });
     return results;
   };
-  
-  const getKarolinaLate = () => {
+
+  const getManagerLate = () => {
     const results = [];
     events.forEach(event => {
       if (event.cancelled) return;
@@ -6815,8 +6841,8 @@ const StatsContent = ({ onClose, settings }) => {
     });
     return results;
   };
-  
-  const getKarolinaUncompleted = () => {
+
+  const getManagerUncompleted = () => {
     const uncompleted = [];
     const today = new Date();
     events.forEach(event => {
@@ -6844,11 +6870,11 @@ const StatsContent = ({ onClose, settings }) => {
       refreshEvents();
       toast.success("відновлено");
       setSelectedTask(null);
-    } catch { 
-      toast.error("помилка"); 
+    } catch {
+      toast.error("помилка");
     }
   };
-  
+
   // Get events in period - all (not just non-cancelled)
   const getEventsInPeriod = () => {
     return events.filter(event => {
@@ -6856,14 +6882,14 @@ const StatsContent = ({ onClose, settings }) => {
       return date >= periodStart && date <= periodEnd && !event.cancelled;
     });
   };
-  
+
   const getCancelledEventsInPeriod = () => {
     return events.filter(event => {
       const date = new Date(event.date);
       return date >= periodStart && date <= periodEnd && event.cancelled;
     });
   };
-  
+
   const periodEvents = getEventsInPeriod();
   const cancelledEvents = getCancelledEventsInPeriod();
   const plannedRevenue = periodEvents.reduce((sum, e) => sum + (parseFloat(e.price) || 0) * (parseInt(e.spots) || 10), 0);
@@ -6871,17 +6897,17 @@ const StatsContent = ({ onClose, settings }) => {
     const booked = e.altegio_booked_count != null ? e.altegio_booked_count : (parseInt(e.spots) || 10);
     return sum + (parseFloat(e.price) || 0) * booked;
   }, 0);
-  
-  const kasyaOnTime = getCompletedOnTime('kasya');
-  const kasyaLate = getCompletedLate('kasya');
-  const kasyaUncompleted = getUncompleted('kasya');
-  const karolinaOnTime = getKarolinaOnTime();
-  const karolinaLate = getKarolinaLate();
-  const karolinaUncompleted = getKarolinaUncompleted();
-  const voOnTime = getCompletedOnTime('vo');
-  const voLate = getCompletedLate('vo');
-  const voUncompleted = getUncompleted('vo');
-  
+
+  const smmOnTime = getCompletedOnTime('smm');
+  const smmLate = getCompletedLate('smm');
+  const smmUncompleted = getUncompleted('smm');
+  const managerOnTime = getManagerOnTime();
+  const managerLate = getManagerLate();
+  const managerUncompleted = getManagerUncompleted();
+  const marketerOnTime = getCompletedOnTime('marketer');
+  const marketerLate = getCompletedLate('marketer');
+  const marketerUncompleted = getUncompleted('marketer');
+
   const renderStatsColumn = (title, onTime, late, uncompleted) => {
     const total = onTime.length + late.length + uncompleted.length;
     const allOnTime = total > 0 && late.length === 0 && uncompleted.length === 0;
@@ -6911,7 +6937,7 @@ const StatsContent = ({ onClose, settings }) => {
             </div>
           </div>
         </div>
-        
+
         {onTime.length > 0 && (
           <div className="mb-3">
             <p className="text-xs font-medium text-emerald-600 mb-2">збс</p>
@@ -6925,7 +6951,7 @@ const StatsContent = ({ onClose, settings }) => {
             </div>
           </div>
         )}
-        
+
         {late.length > 0 && (
           <div className="mb-3">
             <p className="text-xs font-medium text-orange-500 mb-2">опіздали</p>
@@ -6939,7 +6965,7 @@ const StatsContent = ({ onClose, settings }) => {
             </div>
           </div>
         )}
-        
+
         {uncompleted.length > 0 && (
           <div>
             <p className="text-xs font-medium text-red-500 mb-2">пупупу</p>
@@ -6953,14 +6979,14 @@ const StatsContent = ({ onClose, settings }) => {
             </div>
           </div>
         )}
-        
+
         {total === 0 && (
           <p className="text-secondary text-sm text-center py-4">немає даних</p>
         )}
       </div>
     </div>
   )};
-  
+
   return (
     <div className="desktop-dashboard">
       <header className="desktop-header" style={{position: 'relative'}}>
@@ -7060,17 +7086,17 @@ const StatsContent = ({ onClose, settings }) => {
             </div>
           </div>
         </div>
-        
-        {/* МЕНЕДЖМЕНТ */}
-        {renderStatsColumn("МЕНЕДЖМЕНТ", karolinaOnTime, karolinaLate, karolinaUncompleted)}
-        
+
+        {/* MANAGER */}
+        {renderStatsColumn("MANAGER", managerOnTime, managerLate, managerUncompleted)}
+
         {/* SMM */}
-        {renderStatsColumn("SMM", kasyaOnTime, kasyaLate, kasyaUncompleted)}
-        
-        {/* МАРКЕТИНГ */}
-        {renderStatsColumn("МАРКЕТИНГ", voOnTime, voLate, voUncompleted)}
+        {renderStatsColumn("SMM", smmOnTime, smmLate, smmUncompleted)}
+
+        {/* MARKETER */}
+        {renderStatsColumn("MARKETER", marketerOnTime, marketerLate, marketerUncompleted)}
       </div>
-      
+
       {/* Task Detail Dialog */}
       <Dialog open={!!selectedTask} onOpenChange={(open) => !open && setSelectedTask(null)}>
         <DialogContent className="dialog-content sm:max-w-[340px]">
@@ -7427,9 +7453,9 @@ const EventsDesktopExpanded = () => {
             ) : (
               <div className="space-y-2">
                 {[
-                  { key: 'management', label: 'МЕНЕДЖМЕНТ' },
+                  { key: 'management', label: 'MANAGER' },
                   { key: 'smm', label: 'SMM' },
-                  { key: 'marketing', label: 'МАРКЕТИНГ' },
+                  { key: 'marketing', label: 'MARKETER' },
                 ].map(({ key, label }) => {
                   const list = tasksByRole[key];
                   const isOpen = openRoles[key];
@@ -7500,18 +7526,18 @@ function App() {
   const [allTaskDefs, setAllTaskDefs] = useState({ management: [], smm: [], marketing: [], monthly: [], daily: [] });
   const [googleCalendarStatus, setGoogleCalendarStatus] = useState({ connected: false, email: null });
   const [loading, setLoading] = useState(true);
-  
+
   const refreshEvents = async () => { try { const r = await api.getEvents(); setEvents(r.data); } catch (e) { console.error(e); } };
   const refreshSettings = async () => { try { const r = await api.getSettings(); setSettings(r.data); } catch (e) { console.error(e); } };
   const refreshStandaloneTasks = async () => { try { const r = await api.getStandaloneTasks(); setStandaloneTasks(r.data); } catch (e) { console.error(e); } };
   const refreshSMMTasksDefinition = async () => { try { const r = await api.getSMMTasksDefinition(); const data = r.data; if (data.smm) { setAllTaskDefs(data); setSmmTasksDefinition([...data.management, ...data.smm, ...data.marketing]); } else { setSmmTasksDefinition(Array.isArray(data) ? data : []); } } catch (e) { console.error(e); } };
-  const refreshGoogleStatus = async () => { 
-    try { 
-      const r = await axios.get(`${API}/oauth/calendar/status`); 
-      setGoogleCalendarStatus(r.data); 
-    } catch (e) { console.error(e); } 
+  const refreshGoogleStatus = async () => {
+    try {
+      const r = await axios.get(`${API}/oauth/calendar/status`);
+      setGoogleCalendarStatus(r.data);
+    } catch (e) { console.error(e); }
   };
-  
+
   // Check for Google OAuth callback on mount
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -7525,19 +7551,19 @@ function App() {
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
-  
-  useEffect(() => { 
+
+  useEffect(() => {
     Promise.all([
-      refreshEvents(), 
-      refreshSettings(), 
-      refreshStandaloneTasks(), 
+      refreshEvents(),
+      refreshSettings(),
+      refreshStandaloneTasks(),
       refreshSMMTasksDefinition(),
       refreshGoogleStatus()
-    ]).then(() => setLoading(false)); 
+    ]).then(() => setLoading(false));
   }, []);
-  
+
   if (loading) return <div className="app-container flex items-center justify-center min-h-screen"><div className="text-center"><h1 className="logo mb-2" style={{ textTransform: 'none' }}>Poriadok</h1><p className="text-secondary text-sm">завантажую...</p></div></div>;
-  
+
   return (
       <AppContext.Provider value={{ events, settings, standaloneTasks, smmTasksDefinition, allTaskDefs, googleCalendarStatus, refreshEvents, refreshSettings, refreshStandaloneTasks, refreshGoogleStatus, refreshSMMTasksDefinition }}>
         <BrowserRouter>

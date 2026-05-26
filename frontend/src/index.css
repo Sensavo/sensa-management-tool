@@ -10,33 +10,38 @@ body {
     font-weight: 500;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background: #F5F5F0;
+    background: #F0EEE6;
 }
 
 @layer base {
     :root {
-        --background: 60 10% 96%;
+        --background: 45 25% 92%;
         --foreground: 0 0% 10%;
-        --card: 60 10% 96%;
+        --card: 45 25% 92%;
         --card-foreground: 0 0% 10%;
-        --popover: 60 10% 96%;
+        --popover: 45 25% 92%;
         --popover-foreground: 0 0% 10%;
         --primary: 0 0% 10%;
-        --primary-foreground: 60 10% 96%;
-        --secondary: 60 5% 90%;
+        --primary-foreground: 45 25% 92%;
+        --secondary: 36 27% 85%;
         --secondary-foreground: 0 0% 10%;
-        --muted: 60 5% 85%;
+        --muted: 36 27% 85%;
         --muted-foreground: 0 0% 45%;
         --accent: 150 30% 25%;
-        --accent-foreground: 60 10% 96%;
+        --accent-foreground: 45 25% 92%;
         --destructive: 0 84% 60%;
         --destructive-foreground: 0 0% 98%;
-        --border: 60 5% 85%;
-        --input: 60 5% 85%;
+        --border: 36 27% 82%;
+        --input: 36 27% 82%;
         --ring: 0 0% 10%;
         --radius: 0.75rem;
         
-        --cream: #F5F5F0;
+        --cream: #F0EEE6;
+        --app-bg: #F0EEE6;
+        --list-bg: #E3DACC;
+        --surface-soft: rgba(227, 218, 204, 0.42);
+        --surface-mid: rgba(227, 218, 204, 0.68);
+        --surface-strong: rgba(227, 218, 204, 0.88);
         --dark: #1A1A1A;
         --gray: #6B6B6B;
         --overdue: #DC2626;
@@ -54,7 +59,7 @@ body {
 
 .app-container {
     @apply max-w-md mx-auto min-h-screen relative overflow-hidden;
-    background: #F5F5F0;
+    background: #F0EEE6;
 }
 
 @media (min-width: 768px) {
@@ -71,7 +76,7 @@ body {
 
 .bottom-nav {
     @apply fixed bottom-0 left-0 right-0 w-full h-16 flex items-center justify-around z-50;
-    background: #F5F5F0;
+    background: #F0EEE6;
     border-top: 1px solid rgba(0, 0, 0, 0.08);
 }
 
@@ -119,7 +124,7 @@ body {
 }
 
 .detail-actions {
-    @apply flex gap-3 p-4 border-t bg-[#F5F5F0];
+    @apply flex gap-3 p-4 border-t bg-[#F0EEE6];
     border-color: rgba(0, 0, 0, 0.08);
     position: fixed;
     bottom: 64px;
@@ -139,12 +144,12 @@ body {
 
 .task-item-input {
     @apply flex items-center gap-3 p-3 rounded-2xl cursor-pointer;
-    background: rgba(0, 0, 0, 0.03);
+    background: var(--surface-soft);
     border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .task-item-input:hover {
-    background: rgba(0, 0, 0, 0.05);
+    background: var(--surface-mid);
 }
 
 .task-item-input .form-input {
@@ -164,13 +169,13 @@ body {
 .rdp {
     --rdp-cell-size: 40px;
     --rdp-accent-color: #1A1A1A;
-    --rdp-background-color: #F5F5F0;
+    --rdp-background-color: #F0EEE6;
     margin: 0;
 }
 
 .rdp-day_selected {
     background-color: #1A1A1A !important;
-    color: #F5F5F0 !important;
+    color: #F0EEE6 !important;
 }
 
 .rdp-day_today {
