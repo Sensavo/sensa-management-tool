@@ -38,10 +38,10 @@ body {
         
         --cream: #F0EEE6;
         --app-bg: #F0EEE6;
-        --list-bg: #E3DACC;
-        --surface-soft: rgba(227, 218, 204, 0.42);
-        --surface-mid: rgba(227, 218, 204, 0.68);
-        --surface-strong: rgba(227, 218, 204, 0.88);
+        --list-bg: #ECE8DE;
+        --surface-soft: rgba(236, 232, 222, 0.46);
+        --surface-mid: rgba(236, 232, 222, 0.72);
+        --surface-strong: rgba(236, 232, 222, 0.92);
         --dark: #1A1A1A;
         --gray: #6B6B6B;
         --overdue: #DC2626;
