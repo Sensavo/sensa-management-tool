@@ -40,7 +40,7 @@ const DialogContent = React.forwardRef(({ className, children, hideClose = false
         "w-[calc(100%-32px)] max-w-lg max-h-[88vh] overflow-y-auto",
         "rounded-[28px] text-[#1A1717]",
         // Subtle vertical gradient for depth, ends in app surface tone
-        "bg-gradient-to-b from-[#F6F3EA] to-[#F0EEE6]",
+        "bg-gradient-to-b from-[#F3EEE2] to-[#F3EEE2]",
         "p-8 sm:p-9",
         // Layered shadow + faint inner highlight at top for "lift"
         "shadow-[0_30px_80px_-20px_rgba(20,18,16,0.35),0_8px_24px_-8px_rgba(20,18,16,0.15)]",
@@ -56,7 +56,7 @@ const DialogContent = React.forwardRef(({ className, children, hideClose = false
         <DialogPrimitive.Close
           className={cn(
             "absolute right-5 top-5 inline-flex h-9 w-9 items-center justify-center rounded-full",
-            "bg-[#ECE8DE] text-[#1A1717] transition-colors hover:bg-[#E7E1D5]",
+            "bg-[#E0D5C0] text-[#1A1717] transition-colors hover:bg-[#D2C2A5]",
             "focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1A1717]/20",
             "disabled:pointer-events-none"
           )}

@@ -15,19 +15,19 @@
 .task-item { @apply flex items-center gap-3 py-2 border-b last:border-b-0; border-color: rgba(0, 0, 0, 0.05); }
 .section-card { @apply rounded-xl p-5 mb-4; background: var(--surface-soft); }
 
-.btn-dark { @apply h-12 px-6 rounded-full font-medium transition-all flex items-center justify-center gap-2 text-base; background: #1A1717; color: #F0EEE6; }
+.btn-dark { @apply h-12 px-6 rounded-full font-medium transition-all flex items-center justify-center gap-2 text-base; background: #1A1717; color: var(--cream); }
 .btn-dark:hover { background: #333333; }
 .btn-subtle { @apply h-10 px-5 rounded-full font-medium transition-all flex items-center justify-center gap-2; background: transparent; color: #6B6B6B; border: 1px dashed rgba(0, 0, 0, 0.15); }
 .btn-subtle:hover { background: var(--surface-soft); }
 
 .form-field { @apply space-y-3; }
-.form-input { @apply w-full h-12 px-4 rounded-lg border transition-colors text-base; background: rgba(240, 238, 230, 0.72); border-color: rgba(0, 0, 0, 0.1); }
+.form-input { @apply w-full h-12 px-4 rounded-lg border transition-colors text-base; background: rgba(243, 238, 226, 0.84); border-color: rgba(0, 0, 0, 0.1); }
 .form-input:focus { @apply outline-none; border-color: #1A1717; }
 
-.page-header { @apply sticky top-0 z-30 px-5 py-4; background: #F0EEE6; }
+.page-header { @apply sticky top-0 z-30 px-5 py-4; background: var(--app-bg); color: var(--cream); }
 .page-content { @apply pb-24 px-5; }
 
-.fab { @apply fixed bottom-20 right-4 w-14 h-14 rounded-full flex items-center justify-center z-40 shadow-lg; background: #1A1717; color: #F0EEE6; }
+.fab { @apply fixed bottom-20 right-4 w-14 h-14 rounded-full flex items-center justify-center z-40 shadow-lg; background: var(--cream); color: #1A1717; }
 @media (min-width: 768px) { .fab { display: none; } }
 .desktop-add-btn { display: none; }
 @media (min-width: 768px) { .desktop-add-btn { display: flex; } }
@@ -49,7 +49,8 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: #F0EEE6;
+  background: var(--app-bg);
+  color: var(--cream);
   z-index: 100;
   display: flex;
   flex-direction: column;
@@ -147,7 +148,7 @@
 .dialog-content button:not([data-radix-dialog-close]):not([data-radix-alert-dialog-action]):not([data-radix-alert-dialog-cancel]) { font-size: 17px !important; height: 48px !important; }
 .dialog-content label { font-size: 15px !important; }
 
-.date-badge { @apply w-14 h-14 rounded-xl flex flex-col items-center justify-center; background: #1A1717; color: #F0EEE6; }
+.date-badge { @apply w-14 h-14 rounded-xl flex flex-col items-center justify-center; background: #1A1717; color: #F3EEE2; }
 .task-icon { @apply w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0; background: rgba(227, 218, 204, 0.68); color: #1A1717; }
 .task-icon svg { width: 12px; height: 12px; }
 .task-icon.completed { background: transparent; border: 1.5px solid #9CA3AF; color: #9CA3AF; }
@@ -216,7 +217,7 @@
 .section-title.overdue-text { color: #D4849A; }
 .section-count { @apply text-sm px-2.5 py-1 rounded-full min-w-6 text-center; background: rgba(0, 0, 0, 0.08); color: #6B6B6B; font-size: 13px; }
 /* Add button - 1.5x smaller (was 28px, now ~19px) */
-.add-btn { @apply w-5 h-5 rounded-full flex items-center justify-center transition-all; background: #1A1717; color: #F0EEE6; }
+.add-btn { @apply w-5 h-5 rounded-full flex items-center justify-center transition-all; background: #1A1717; color: #F3EEE2; }
 .add-btn:hover { background: #333; }
 .add-btn svg { width: 10px; height: 10px; stroke-width: 3; }
 
@@ -306,7 +307,7 @@
 .dialog-content .rdp-day_selected,
 .dialog-content .calendar-today-visible {
   background: #1A1717 !important;
-  color: #F0EEE6 !important;
+  color: #F3EEE2 !important;
 }
 
 /* Task checkbox - Fixed size circles */
@@ -386,7 +387,7 @@
 /* Settings tabs */
 .settings-tabs { @apply flex gap-2; }
 .settings-tab { @apply flex-1 py-2 px-3 rounded-xl font-medium text-sm transition-colors text-center; background: var(--surface-mid); }
-.settings-tab.active { background: #1A1717; color: #F0EEE6; }
+.settings-tab.active { background: #1A1717; color: #F3EEE2; }
 
 /* Desktop */
 @media (min-width: 1024px) {
@@ -394,18 +395,18 @@
   .bottom-nav { display: none !important; }
 }
 
-.desktop-dashboard { @apply h-screen overflow-hidden; background: #F0EEE6; }
-.desktop-header { @apply flex items-center justify-between px-6 py-4 border-b; background: #F0EEE6; border-color: rgba(0, 0, 0, 0.06); }
+.desktop-dashboard { @apply h-screen overflow-hidden; background: var(--app-bg); color: var(--cream); }
+.desktop-header { @apply flex items-center justify-between px-6 py-4 border-b; background: var(--app-bg); border-color: rgba(243, 238, 226, 0.08); color: var(--cream); }
 .desktop-header-left { @apply flex items-center; }
 .desktop-date-label { align-self: flex-start; padding-top: 9px; line-height: 1.2; }
 .desktop-header-right { @apply flex items-center gap-3; }
-.desktop-header-btn { @apply w-10 h-10 rounded-full flex items-center justify-center transition-colors; background: var(--surface-mid); color: #6B6B6B; }
-.desktop-header-btn:hover { background: var(--surface-strong); }
+.desktop-header-btn { @apply w-10 h-10 rounded-full flex items-center justify-center transition-colors; background: rgba(243, 238, 226, 0.08); color: rgba(243, 238, 226, 0.72); }
+.desktop-header-btn:hover { background: rgba(243, 238, 226, 0.16); color: var(--cream); }
 
 
 .desktop-columns { @apply grid grid-cols-3 gap-4 p-4; min-height: calc(100vh - 72px); }
 .desktop-columns-4 { @apply grid gap-3 p-4; grid-template-columns: 1fr 1fr 1fr 1fr; height: calc(100vh - 72px); overflow: hidden; }
-.desktop-column { @apply flex flex-col rounded-xl; background: var(--list-bg); height: 100%; overflow: hidden; }
+.desktop-column { @apply flex flex-col rounded-xl; background: var(--list-bg); color: #1A1717; height: 100%; overflow: hidden; box-shadow: 0 18px 55px -36px rgba(0, 0, 0, 0.8); }
 .desktop-columns-4 .desktop-column { min-width: 260px; }
 .column-header { @apply flex items-center gap-3 px-5 py-4 border-b; border-color: rgba(0, 0, 0, 0.06); }
 .column-title { @apply text-sm font-semibold uppercase tracking-wide; color: #6B6B6B; }
@@ -432,12 +433,12 @@
 .calendar-container-desktop .rdp-head_row { height: auto; margin-top: 0; }
 
 /* Event cards desktop - unified */
-.event-card-desktop { @apply flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all mb-3; background: rgba(240, 238, 230, 0.48); }
-.event-card-desktop:hover { background: rgba(240, 238, 230, 0.7); }
-.event-card-desktop.event-highlight { background: rgba(240, 238, 230, 0.88); animation: highlight-pulse 1.5s ease-out; }
+.event-card-desktop { @apply flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all mb-3; background: rgba(243, 238, 226, 0.7); }
+.event-card-desktop:hover { background: rgba(243, 238, 226, 0.94); }
+.event-card-desktop.event-highlight { background: #F3EEE2; animation: highlight-pulse 1.5s ease-out; }
 @keyframes highlight-pulse { 0% { transform: scale(1.02); box-shadow: 0 0 0 3px rgba(26, 26, 26, 0.3); } 100% { transform: scale(1); box-shadow: none; } }
 
-.date-badge-desktop { @apply w-14 h-14 rounded-lg flex flex-col items-center justify-center flex-shrink-0; background: #1A1717; color: #F0EEE6; }
+.date-badge-desktop { @apply w-14 h-14 rounded-lg flex flex-col items-center justify-center flex-shrink-0; background: #1A1717; color: var(--cream); }
 .date-badge-month { @apply text-xs font-medium uppercase tracking-wide; opacity: 0.7; }
 .date-badge-day { @apply text-xl font-bold leading-none; }
 
