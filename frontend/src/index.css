@@ -10,7 +10,7 @@ body {
     font-weight: 500;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background: #11100C;
+    background: #F0EEE6;
 }
 
 @layer base {
@@ -37,7 +37,7 @@ body {
         --radius: 0.75rem;
         
         --cream: #F3EEE2;
-        --app-bg: #11100C;
+        --app-bg: #F0EEE6;
         --list-bg: #E7DDC9;
         --surface-soft: rgba(243, 238, 226, 0.62);
         --surface-mid: #E0D5C0;
@@ -62,7 +62,7 @@ body {
 .app-container {
     @apply max-w-md mx-auto min-h-screen relative overflow-hidden;
     background: var(--app-bg);
-    color: var(--cream);
+    color: #1A1717;
 }
 
 @media (min-width: 768px) {
@@ -95,7 +95,7 @@ body {
 }
 
 .nav-item.active {
-    color: var(--cream);
+    color: #1A1717;
     background: var(--olive);
     font-weight: 600;
 }
@@ -129,7 +129,7 @@ body {
 .detail-actions {
     @apply flex gap-3 p-4 border-t;
     background: var(--app-bg);
-    border-color: rgba(243, 238, 226, 0.08);
+    border-color: rgba(0, 0, 0, 0.06);
     position: fixed;
     bottom: 64px;
     left: 0;

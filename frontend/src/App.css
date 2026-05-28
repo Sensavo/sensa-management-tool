@@ -24,10 +24,10 @@
 .form-input { @apply w-full h-12 px-4 rounded-lg border transition-colors text-base; background: rgba(243, 238, 226, 0.84); border-color: rgba(0, 0, 0, 0.1); }
 .form-input:focus { @apply outline-none; border-color: #1A1717; }
 
-.page-header { @apply sticky top-0 z-30 px-5 py-4; background: var(--app-bg); color: var(--cream); }
+.page-header { @apply sticky top-0 z-30 px-5 py-4; background: var(--app-bg); color: #1A1717; }
 .page-content { @apply pb-24 px-5; }
 
-.fab { @apply fixed bottom-20 right-4 w-14 h-14 rounded-full flex items-center justify-center z-40 shadow-lg; background: var(--cream); color: #1A1717; }
+.fab { @apply fixed bottom-20 right-4 w-14 h-14 rounded-full flex items-center justify-center z-40 shadow-lg; background: #1A1717; color: var(--cream); }
 @media (min-width: 768px) { .fab { display: none; } }
 .desktop-add-btn { display: none; }
 @media (min-width: 768px) { .desktop-add-btn { display: flex; } }
@@ -50,7 +50,7 @@
   right: 0;
   bottom: 0;
   background: var(--app-bg);
-  color: var(--cream);
+  color: #1A1717;
   z-index: 100;
   display: flex;
   flex-direction: column;
@@ -395,13 +395,13 @@
   .bottom-nav { display: none !important; }
 }
 
-.desktop-dashboard { @apply h-screen overflow-hidden; background: var(--app-bg); color: var(--cream); }
-.desktop-header { @apply flex items-center justify-between px-6 py-4 border-b; background: var(--app-bg); border-color: rgba(243, 238, 226, 0.08); color: var(--cream); }
+.desktop-dashboard { @apply h-screen overflow-hidden; background: var(--app-bg); color: #1A1717; }
+.desktop-header { @apply flex items-center justify-between px-6 py-4 border-b; background: var(--app-bg); border-color: rgba(0, 0, 0, 0.06); color: #1A1717; }
 .desktop-header-left { @apply flex items-center; }
 .desktop-date-label { align-self: flex-start; padding-top: 9px; line-height: 1.2; }
 .desktop-header-right { @apply flex items-center gap-3; }
-.desktop-header-btn { @apply w-10 h-10 rounded-full flex items-center justify-center transition-colors; background: rgba(243, 238, 226, 0.08); color: rgba(243, 238, 226, 0.72); }
-.desktop-header-btn:hover { background: rgba(243, 238, 226, 0.16); color: var(--cream); }
+.desktop-header-btn { @apply w-10 h-10 rounded-full flex items-center justify-center transition-colors; background: var(--surface-mid); color: #6B6B6B; }
+.desktop-header-btn:hover { background: var(--surface-strong); color: #1A1717; }
 
 
 .desktop-columns { @apply grid grid-cols-3 gap-4 p-4; min-height: calc(100vh - 72px); }

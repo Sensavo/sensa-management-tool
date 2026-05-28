@@ -412,7 +412,7 @@ const FullscreenModal = ({ isOpen, onClose, title, children }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#11100C]">
+    <div className="fixed inset-0 z-50 bg-[#F0EEE6]">
       <div className="desktop-dashboard">
         <header className="desktop-header" style={{position: 'relative'}}>
           <div className="desktop-header-left">
@@ -1100,7 +1100,7 @@ const NewTaskPage = () => {
   const SelectedIcon = getIconComponent(newTask.icon);
 
   return (
-    <div className="animate-fade-in min-h-screen bg-[#11100C]">
+    <div className="animate-fade-in min-h-screen bg-[#F0EEE6]">
       <header className="page-header-back">
         <button className="back-btn" onClick={() => navigate(-1)}>
           <ArrowLeft className="w-5 h-5" />
@@ -1221,7 +1221,7 @@ const NewSMMTaskPage = () => {
   const SelectedIcon = getIconComponent(newTask.icon);
 
   return (
-    <div className="animate-fade-in min-h-screen bg-[#11100C]">
+    <div className="animate-fade-in min-h-screen bg-[#F0EEE6]">
       <header className="page-header-back">
         <button className="back-btn" onClick={() => navigate(-1)}>
           <ArrowLeft className="w-5 h-5" />
@@ -2063,7 +2063,7 @@ const EventForm = () => {
 
   // New event with AI parsing
   return (
-    <div className="fixed inset-0 z-50 bg-[#11100C]">
+    <div className="fixed inset-0 z-50 bg-[#F0EEE6]">
       <div className="desktop-dashboard">
         <header className="desktop-header" style={{position: 'relative'}}>
           <div className="desktop-header-left">
@@ -5752,7 +5752,7 @@ const DesktopDashboard = () => {
 
       {/* Analytics Modal - no animation, custom header */}
       {showStats && (
-        <div className="fixed inset-0 z-50 bg-[#11100C]">
+        <div className="fixed inset-0 z-50 bg-[#F0EEE6]">
           <StatsContent onClose={() => setShowStats(false)} settings={settings} />
         </div>
       )}
