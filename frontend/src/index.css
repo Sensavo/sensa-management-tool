@@ -10,40 +10,33 @@ body {
     font-weight: 500;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background: #F0EEE6;
+    background: #F5F5F0;
 }
 
 @layer base {
     :root {
-        --background: 45 25% 92%;
+        --background: 60 10% 96%;
         --foreground: 0 0% 10%;
-        --card: 45 25% 92%;
+        --card: 60 10% 96%;
         --card-foreground: 0 0% 10%;
-        --popover: 45 25% 92%;
+        --popover: 60 10% 96%;
         --popover-foreground: 0 0% 10%;
         --primary: 0 0% 10%;
-        --primary-foreground: 45 25% 92%;
-        --secondary: 36 30% 82%;
+        --primary-foreground: 60 10% 96%;
+        --secondary: 60 5% 90%;
         --secondary-foreground: 0 0% 10%;
-        --muted: 36 30% 82%;
+        --muted: 60 5% 85%;
         --muted-foreground: 0 0% 45%;
-        --accent: 88 26% 22%;
-        --accent-foreground: 45 25% 92%;
+        --accent: 150 30% 25%;
+        --accent-foreground: 60 10% 96%;
         --destructive: 0 84% 60%;
         --destructive-foreground: 0 0% 98%;
-        --border: 36 27% 72%;
-        --input: 36 27% 72%;
+        --border: 60 5% 85%;
+        --input: 60 5% 85%;
         --ring: 0 0% 10%;
         --radius: 0.75rem;
         
-        --cream: #F3EEE2;
-        --app-bg: #F0EEE6;
-        --list-bg: #E7DDC9;
-        --surface-soft: rgba(243, 238, 226, 0.62);
-        --surface-mid: #E0D5C0;
-        --surface-strong: #D2C2A5;
-        --olive: #2D3A22;
-        --olive-soft: rgba(45, 58, 34, 0.12);
+        --cream: #F5F5F0;
         --dark: #1A1A1A;
         --gray: #6B6B6B;
         --overdue: #DC2626;
@@ -61,8 +54,7 @@ body {
 
 .app-container {
     @apply max-w-md mx-auto min-h-screen relative overflow-hidden;
-    background: var(--app-bg);
-    color: #1A1717;
+    background: #F5F5F0;
 }
 
 @media (min-width: 768px) {
@@ -79,8 +71,8 @@ body {
 
 .bottom-nav {
     @apply fixed bottom-0 left-0 right-0 w-full h-16 flex items-center justify-around z-50;
-    background: var(--app-bg);
-    border-top: 1px solid rgba(243, 238, 226, 0.08);
+    background: #F5F5F0;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 @media (min-width: 768px) {
@@ -95,8 +87,8 @@ body {
 }
 
 .nav-item.active {
-    color: #1A1717;
-    background: var(--olive);
+    color: #1A1A1A;
+    background: rgba(0, 0, 0, 0.08);
     font-weight: 600;
 }
 
@@ -111,11 +103,11 @@ body {
 
 .back-btn {
     @apply w-10 h-10 rounded-full flex items-center justify-center transition-colors;
-    background: var(--surface-mid);
+    background: rgba(0, 0, 0, 0.05);
 }
 
 .back-btn:hover {
-    background: var(--surface-strong);
+    background: rgba(0, 0, 0, 0.1);
 }
 
 .page-title {
@@ -127,9 +119,8 @@ body {
 }
 
 .detail-actions {
-    @apply flex gap-3 p-4 border-t;
-    background: var(--app-bg);
-    border-color: rgba(0, 0, 0, 0.06);
+    @apply flex gap-3 p-4 border-t bg-[#F5F5F0];
+    border-color: rgba(0, 0, 0, 0.08);
     position: fixed;
     bottom: 64px;
     left: 0;
@@ -148,12 +139,12 @@ body {
 
 .task-item-input {
     @apply flex items-center gap-3 p-3 rounded-2xl cursor-pointer;
-    background: var(--surface-soft);
+    background: rgba(0, 0, 0, 0.03);
     border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .task-item-input:hover {
-    background: var(--surface-mid);
+    background: rgba(0, 0, 0, 0.05);
 }
 
 .task-item-input .form-input {
@@ -173,13 +164,13 @@ body {
 .rdp {
     --rdp-cell-size: 40px;
     --rdp-accent-color: #1A1A1A;
-    --rdp-background-color: #F3EEE2;
+    --rdp-background-color: #F5F5F0;
     margin: 0;
 }
 
 .rdp-day_selected {
     background-color: #1A1A1A !important;
-    color: #F3EEE2 !important;
+    color: #F5F5F0 !important;
 }
 
 .rdp-day_today {
@@ -233,16 +224,16 @@ body {
     min-width: 40px;
     min-height: 40px;
     flex-shrink: 0;
-    background: var(--surface-mid);
+    background: rgba(0, 0, 0, 0.05);
 }
 
 .icon-btn.active {
     background: #1A1A1A;
-    color: #F3EEE2;
+    color: white;
 }
 
 .icon-btn:hover:not(.active) {
-    background: var(--surface-strong);
+    background: rgba(0, 0, 0, 0.1);
 }
 
 ::-webkit-scrollbar {
