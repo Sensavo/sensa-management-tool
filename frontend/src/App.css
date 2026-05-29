@@ -8,36 +8,36 @@
 ::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; }
 *:hover::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.15); }
 
-.event-card { @apply p-5 rounded-xl cursor-pointer transition-all; background: rgba(0, 0, 0, 0.03); }
-.event-card:hover { background: rgba(0, 0, 0, 0.06); }
+.event-card { @apply p-5 rounded-xl cursor-pointer transition-all; background: #D4C8BC; }
+.event-card:hover { background: rgba(26, 23, 23, 0.08); }
 .event-card.event-highlight { background: rgba(0, 0, 0, 0.1); box-shadow: 0 0 0 2px #1A1717; }
 
 .task-item { @apply flex items-center gap-3 py-2 border-b last:border-b-0; border-color: rgba(0, 0, 0, 0.05); }
-.section-card { @apply rounded-xl p-5 mb-4; background: rgba(0, 0, 0, 0.03); }
+.section-card { @apply rounded-xl p-5 mb-4; background: #D4C8BC; }
 
-.btn-dark { @apply h-12 px-6 rounded-full font-medium transition-all flex items-center justify-center gap-2 text-base; background: #1A1717; color: #F5F5F0; }
+.btn-dark { @apply h-12 px-6 rounded-full font-medium transition-all flex items-center justify-center gap-2 text-base; background: #1A1717; color: #D6CBC0; }
 .btn-dark:hover { background: #333333; }
 .btn-subtle { @apply h-10 px-5 rounded-full font-medium transition-all flex items-center justify-center gap-2; background: transparent; color: #6B6B6B; border: 1px dashed rgba(0, 0, 0, 0.15); }
-.btn-subtle:hover { background: rgba(0, 0, 0, 0.03); }
+.btn-subtle:hover { background: #D4C8BC; }
 
 .form-field { @apply space-y-3; }
-.form-input { @apply w-full h-12 px-4 rounded-lg border transition-colors text-base; background: #FFFFFF; border-color: rgba(0, 0, 0, 0.1); }
+.form-input { @apply w-full h-12 px-4 rounded-lg border transition-colors text-base; background: #D4C8BC; border-color: rgba(0, 0, 0, 0.1); }
 .form-input:focus { @apply outline-none; border-color: #1A1717; }
 
-.page-header { @apply sticky top-0 z-30 px-5 py-4; background: #F5F5F0; }
+.page-header { @apply sticky top-0 z-30 px-5 py-4; background: #D6CBC0; }
 .page-content { @apply pb-24 px-5; }
 
-.fab { @apply fixed bottom-20 right-4 w-14 h-14 rounded-full flex items-center justify-center z-40 shadow-lg; background: #1A1717; color: #F5F5F0; }
+.fab { @apply fixed bottom-20 right-4 w-14 h-14 rounded-full flex items-center justify-center z-40 shadow-lg; background: #1A1717; color: #D6CBC0; }
 @media (min-width: 768px) { .fab { display: none; } }
 .desktop-add-btn { display: none; }
 @media (min-width: 768px) { .desktop-add-btn { display: flex; } }
 
 .reminder-item { @apply flex items-center justify-between py-3 border-b cursor-pointer; border-color: rgba(0, 0, 0, 0.06); }
 .reminder-item:last-child { border-bottom: none; }
-.reminder-item:hover { background: rgba(0, 0, 0, 0.02); margin: 0 -8px; padding-left: 8px; padding-right: 8px; border-radius: 8px; }
+.reminder-item:hover { background: #D4C8BC; margin: 0 -8px; padding-left: 8px; padding-right: 8px; border-radius: 8px; }
 
-.archive-btn { @apply w-full py-3 text-center rounded-xl transition-colors text-sm; color: #6B6B6B; background: rgba(0, 0, 0, 0.03); }
-.archive-btn:hover { background: rgba(0, 0, 0, 0.06); }
+.archive-btn { @apply w-full py-3 text-center rounded-xl transition-colors text-sm; color: #6B6B6B; background: #D4C8BC; }
+.archive-btn:hover { background: rgba(26, 23, 23, 0.08); }
 
 .animate-fade-in { animation: fadeIn 0.2s ease-out; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -49,7 +49,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: #F5F5F0;
+  background: #D6CBC0;
   z-index: 100;
   display: flex;
   flex-direction: column;
@@ -147,7 +147,7 @@
 .dialog-content button:not([data-radix-dialog-close]):not([data-radix-alert-dialog-action]):not([data-radix-alert-dialog-cancel]) { font-size: 17px !important; height: 48px !important; }
 .dialog-content label { font-size: 15px !important; }
 
-.date-badge { @apply w-14 h-14 rounded-xl flex flex-col items-center justify-center; background: #1A1717; color: #F5F5F0; }
+.date-badge { @apply w-14 h-14 rounded-xl flex flex-col items-center justify-center; background: #1A1717; color: #D6CBC0; }
 .task-icon { @apply w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0; background: rgba(230, 229, 225, 0.5); color: #1A1717; }
 .task-icon svg { width: 12px; height: 12px; }
 .task-icon.completed { background: transparent; border: 1.5px solid #9CA3AF; color: #9CA3AF; }
@@ -200,13 +200,13 @@
   justify-content: center; 
   flex-shrink: 0;
   aspect-ratio: 1 / 1;
-  background: #F5F5F0; 
+  background: #D6CBC0;
   color: inherit; 
   transition: all 0.15s; 
   padding: 0 !important;
   box-sizing: border-box;
 }
-.icon-selector-btn:hover { background: #EAEAE5; }
+.icon-selector-btn:hover { background: #D4C8BC; }
 .icon-selector-btn.selected { outline: 2px solid currentColor; outline-offset: 2px; }
 .icon-selector-btn svg { width: 16px; height: 16px; }
 
@@ -216,11 +216,11 @@
 .section-title.overdue-text { color: #D4849A; }
 .section-count { @apply text-sm px-2.5 py-1 rounded-full min-w-6 text-center; background: rgba(0, 0, 0, 0.08); color: #6B6B6B; font-size: 13px; }
 /* Add button - 1.5x smaller (was 28px, now ~19px) */
-.add-btn { @apply w-5 h-5 rounded-full flex items-center justify-center transition-all; background: #1A1717; color: #F5F5F0; }
+.add-btn { @apply w-5 h-5 rounded-full flex items-center justify-center transition-all; background: #1A1717; color: #D6CBC0; }
 .add-btn:hover { background: #333; }
 .add-btn svg { width: 10px; height: 10px; stroke-width: 3; }
 
-.overdue-section { @apply rounded-xl p-4; background: rgba(0, 0, 0, 0.03); }
+.overdue-section { @apply rounded-xl p-4; background: #D4C8BC; }
 
 /* Calendar */
 .calendar-container { @apply rounded-2xl p-2; }
@@ -306,7 +306,7 @@
 .dialog-content .rdp-day_selected,
 .dialog-content .calendar-today-visible {
   background: #1A1717 !important;
-  color: #F5F5F0 !important;
+  color: #D6CBC0 !important;
 }
 
 /* Task checkbox - Fixed size circles */
@@ -357,7 +357,7 @@
 .stat-label { @apply text-sm mt-1; color: #6B6B6B; }
 
 /* Analytics month card */
-.analytics-card { @apply rounded-2xl p-5 mb-4; background: rgba(0, 0, 0, 0.03); }
+.analytics-card { @apply rounded-2xl p-5 mb-4; background: #D4C8BC; }
 .analytics-card-header { @apply flex items-center justify-between mb-4; }
 .analytics-card-month { @apply text-lg font-semibold; }
 .analytics-card-grid { @apply grid grid-cols-2 gap-4; }
@@ -367,10 +367,10 @@
 
 /* Mobile ghost button for add task */
 .add-task-ghost { @apply w-full py-4 text-center rounded-2xl border-2 border-dashed transition-colors font-medium; border-color: rgba(0, 0, 0, 0.1); color: #6B6B6B; }
-.add-task-ghost:hover { background: rgba(0, 0, 0, 0.02); }
+.add-task-ghost:hover { background: #D4C8BC; }
 
 /* Mobile section styling */
-.mobile-section { @apply rounded-2xl p-4; background: rgba(0, 0, 0, 0.03); }
+.mobile-section { @apply rounded-2xl p-4; background: #D4C8BC; }
 .mobile-section-header { @apply flex items-center gap-2 font-semibold text-lg; }
 .mobile-section-header.overdue { color: #D4849A; }
 .mobile-section-count { @apply text-secondary font-normal; }
@@ -386,7 +386,7 @@
 /* Settings tabs */
 .settings-tabs { @apply flex gap-2; }
 .settings-tab { @apply flex-1 py-2 px-3 rounded-xl font-medium text-sm transition-colors text-center; background: rgba(0, 0, 0, 0.05); }
-.settings-tab.active { background: #1A1717; color: #F5F5F0; }
+.settings-tab.active { background: #1A1717; color: #D6CBC0; }
 
 /* Desktop */
 @media (min-width: 1024px) {
@@ -394,8 +394,8 @@
   .bottom-nav { display: none !important; }
 }
 
-.desktop-dashboard { @apply h-screen overflow-hidden; background: #F5F5F0; }
-.desktop-header { @apply flex items-center justify-between px-6 py-4 border-b; background: #F5F5F0; border-color: rgba(0, 0, 0, 0.06); }
+.desktop-dashboard { @apply h-screen overflow-hidden; background: #D6CBC0; }
+.desktop-header { @apply flex items-center justify-between px-6 py-4 border-b; background: #D6CBC0; border-color: rgba(0, 0, 0, 0.06); }
 .desktop-header-left { @apply flex items-center; }
 .desktop-date-label { align-self: flex-start; padding-top: 9px; line-height: 1.2; }
 .desktop-header-right { @apply flex items-center gap-3; }
@@ -405,7 +405,7 @@
 
 .desktop-columns { @apply grid grid-cols-3 gap-4 p-4; min-height: calc(100vh - 72px); }
 .desktop-columns-4 { @apply grid gap-3 p-4; grid-template-columns: 1fr 1fr 1fr 1fr; height: calc(100vh - 72px); overflow: hidden; }
-.desktop-column { @apply flex flex-col rounded-xl; background: rgba(0, 0, 0, 0.02); height: 100%; overflow: hidden; }
+.desktop-column { @apply flex flex-col rounded-xl; background: #D4C8BC; height: 100%; overflow: hidden; }
 .desktop-columns-4 .desktop-column { min-width: 260px; }
 .column-header { @apply flex items-center gap-3 px-5 py-4 border-b; border-color: rgba(0, 0, 0, 0.06); }
 .column-title { @apply text-sm font-semibold uppercase tracking-wide; color: #6B6B6B; }
@@ -432,12 +432,12 @@
 .calendar-container-desktop .rdp-head_row { height: auto; margin-top: 0; }
 
 /* Event cards desktop - unified */
-.event-card-desktop { @apply flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all mb-3; background: rgba(0, 0, 0, 0.03); }
-.event-card-desktop:hover { background: rgba(0, 0, 0, 0.06); }
+.event-card-desktop { @apply flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all mb-3; background: #D4C8BC; }
+.event-card-desktop:hover { background: rgba(26, 23, 23, 0.08); }
 .event-card-desktop.event-highlight { background: rgba(0, 0, 0, 0.12); animation: highlight-pulse 1.5s ease-out; }
 @keyframes highlight-pulse { 0% { transform: scale(1.02); box-shadow: 0 0 0 3px rgba(26, 26, 26, 0.3); } 100% { transform: scale(1); box-shadow: none; } }
 
-.date-badge-desktop { @apply w-14 h-14 rounded-lg flex flex-col items-center justify-center flex-shrink-0; background: #1A1717; color: #F5F5F0; }
+.date-badge-desktop { @apply w-14 h-14 rounded-lg flex flex-col items-center justify-center flex-shrink-0; background: #1A1717; color: #D6CBC0; }
 .date-badge-month { @apply text-xs font-medium uppercase tracking-wide; opacity: 0.7; }
 .date-badge-day { @apply text-xl font-bold leading-none; }
 
@@ -498,7 +498,7 @@
   min-height: 36px !important;
   padding: 0 !important;
   border-radius: 9999px !important;
-  background: rgba(0, 0, 0, 0.06) !important;
+  background: rgba(26, 23, 23, 0.08) !important;
   color: #1A1717 !important;
   display: inline-flex !important;
   align-items: center !important;

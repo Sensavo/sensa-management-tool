@@ -33,7 +33,7 @@ const AlertDialogContent = React.forwardRef(({ className, ...props }, ref) => (
       className={cn(
         "fixed left-1/2 top-1/2 z-[181] -translate-x-1/2 -translate-y-1/2",
         "w-[calc(100%-32px)] max-w-md",
-        "rounded-3xl bg-[#F5F5F0] text-[#1A1717]",
+        "rounded-3xl bg-[#D6CBC0] text-[#1A1717]",
         "p-7 sm:p-8",
         "shadow-[0_24px_64px_-12px_rgba(0,0,0,0.25)] ring-1 ring-black/5",
         "duration-200",
@@ -88,7 +88,7 @@ const ACTION_BASE =
   "inline-flex items-center justify-center h-11 px-5 rounded-full font-medium text-sm transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1A1717]/20 disabled:opacity-50 disabled:pointer-events-none"
 
 const ACTION_VARIANTS = {
-  primary: "bg-[#1A1717] text-[#F5F5F0] hover:bg-[#333333]",
+  primary: "bg-[#1A1717] text-[#D6CBC0] hover:bg-[#333333]",
   danger: "bg-[#DC2626] text-white hover:bg-[#B91C1C]",
   warning: "bg-[#C4703D] text-white hover:bg-[#A8602F]",
   ghost: "bg-transparent text-[#1A1717] hover:bg-black/5",
