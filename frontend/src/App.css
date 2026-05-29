@@ -8,12 +8,12 @@
 ::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; }
 *:hover::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.15); }
 
-.event-card { @apply p-5 rounded-xl cursor-pointer transition-all; background: #D4C8BC; }
-.event-card:hover { background: rgba(26, 23, 23, 0.08); }
+.event-card { @apply p-5 rounded-xl cursor-pointer transition-all; background: rgba(214, 203, 192, 0.42); box-shadow: inset 0 0 0 1px rgba(26, 23, 23, 0.05); }
+.event-card:hover { background: rgba(214, 203, 192, 0.62); }
 .event-card.event-highlight { background: rgba(0, 0, 0, 0.1); box-shadow: 0 0 0 2px #1A1717; }
 
 .task-item { @apply flex items-center gap-3 py-2 border-b last:border-b-0; border-color: rgba(0, 0, 0, 0.05); }
-.section-card { @apply rounded-xl p-5 mb-4; background: #D4C8BC; }
+.section-card { @apply rounded-xl p-5 mb-4; background: #D4C8BC; box-shadow: inset 0 0 0 1px rgba(26, 23, 23, 0.05); }
 
 .btn-dark { @apply h-12 px-6 rounded-full font-medium transition-all flex items-center justify-center gap-2 text-base; background: #1A1717; color: #D6CBC0; }
 .btn-dark:hover { background: #333333; }
@@ -36,7 +36,7 @@
 .reminder-item:last-child { border-bottom: none; }
 .reminder-item:hover { background: #D4C8BC; margin: 0 -8px; padding-left: 8px; padding-right: 8px; border-radius: 8px; }
 
-.archive-btn { @apply w-full py-3 text-center rounded-xl transition-colors text-sm; color: #6B6B6B; background: #D4C8BC; }
+.archive-btn {  w-full py-3 text-center rounded-xl transition-colors text-sm; color: #6B6B6B; background: #D4C8BC; box-shadow: inset 0 0 0 1px rgba(26, 23, 23, 0.05); }
 .archive-btn:hover { background: rgba(26, 23, 23, 0.08); }
 
 .animate-fade-in { animation: fadeIn 0.2s ease-out; }
@@ -220,7 +220,7 @@
 .add-btn:hover { background: #333; }
 .add-btn svg { width: 10px; height: 10px; stroke-width: 3; }
 
-.overdue-section { @apply rounded-xl p-4; background: #D4C8BC; }
+.overdue-section { @apply rounded-xl p-4; background: #D4C8BC; box-shadow: inset 0 0 0 1px rgba(26, 23, 23, 0.05); }
 
 /* Calendar */
 .calendar-container { @apply rounded-2xl p-2; }
@@ -357,7 +357,7 @@
 .stat-label { @apply text-sm mt-1; color: #6B6B6B; }
 
 /* Analytics month card */
-.analytics-card { @apply rounded-2xl p-5 mb-4; background: #D4C8BC; }
+.analytics-card { @apply rounded-2xl p-5 mb-4; background: #D4C8BC; box-shadow: inset 0 0 0 1px rgba(26, 23, 23, 0.05); }
 .analytics-card-header { @apply flex items-center justify-between mb-4; }
 .analytics-card-month { @apply text-lg font-semibold; }
 .analytics-card-grid { @apply grid grid-cols-2 gap-4; }
@@ -370,7 +370,7 @@
 .add-task-ghost:hover { background: #D4C8BC; }
 
 /* Mobile section styling */
-.mobile-section { @apply rounded-2xl p-4; background: #D4C8BC; }
+.mobile-section { @apply rounded-2xl p-4; background: #D4C8BC; box-shadow: inset 0 0 0 1px rgba(26, 23, 23, 0.05); }
 .mobile-section-header { @apply flex items-center gap-2 font-semibold text-lg; }
 .mobile-section-header.overdue { color: #D4849A; }
 .mobile-section-count { @apply text-secondary font-normal; }
@@ -405,7 +405,7 @@
 
 .desktop-columns { @apply grid grid-cols-3 gap-4 p-4; min-height: calc(100vh - 72px); }
 .desktop-columns-4 { @apply grid gap-3 p-4; grid-template-columns: 1fr 1fr 1fr 1fr; height: calc(100vh - 72px); overflow: hidden; }
-.desktop-column { @apply flex flex-col rounded-xl; background: #D4C8BC; height: 100%; overflow: hidden; }
+.desktop-column { @apply flex flex-col rounded-xl; background: #D4C8BC; height: 100%; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(26, 23, 23, 0.06), 0 10px 28px rgba(26, 23, 23, 0.04); }
 .desktop-columns-4 .desktop-column { min-width: 260px; }
 .column-header { @apply flex items-center gap-3 px-5 py-4 border-b; border-color: rgba(0, 0, 0, 0.06); }
 .column-title { @apply text-sm font-semibold uppercase tracking-wide; color: #6B6B6B; }
@@ -432,8 +432,8 @@
 .calendar-container-desktop .rdp-head_row { height: auto; margin-top: 0; }
 
 /* Event cards desktop - unified */
-.event-card-desktop { @apply flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all mb-3; background: #D4C8BC; }
-.event-card-desktop:hover { background: rgba(26, 23, 23, 0.08); }
+.event-card-desktop { @apply flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all mb-3; background: rgba(214, 203, 192, 0.42); box-shadow: inset 0 0 0 1px rgba(26, 23, 23, 0.05); }
+.event-card-desktop:hover { background: rgba(214, 203, 192, 0.62); }
 .event-card-desktop.event-highlight { background: rgba(0, 0, 0, 0.12); animation: highlight-pulse 1.5s ease-out; }
 @keyframes highlight-pulse { 0% { transform: scale(1.02); box-shadow: 0 0 0 3px rgba(26, 26, 26, 0.3); } 100% { transform: scale(1); box-shadow: none; } }
 
