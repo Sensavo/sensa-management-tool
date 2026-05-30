@@ -24,7 +24,7 @@
 .form-input { @apply w-full h-12 px-4 rounded-lg border transition-colors text-base; background: #FFFFFF; border-color: rgba(0, 0, 0, 0.1); }
 .form-input:focus { @apply outline-none; border-color: #1A1717; }
 
-.page-header { @apply sticky top-0 z-30 px-5 py-4; background: #F5F5F0; }
+.page-header { @apply sticky top-0 z-30 px-5 py-4; background: #F0EEE6; }
 .page-content { @apply pb-24 px-5; }
 
 .fab { @apply fixed bottom-20 right-4 w-14 h-14 rounded-full flex items-center justify-center z-40 shadow-lg; background: #1A1717; color: #F5F5F0; }
@@ -49,7 +49,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: #F5F5F0;
+  background: #F0EEE6;
   z-index: 100;
   display: flex;
   flex-direction: column;
@@ -200,7 +200,7 @@
   justify-content: center; 
   flex-shrink: 0;
   aspect-ratio: 1 / 1;
-  background: #F5F5F0; 
+  background: #F5F5F0;
   color: inherit; 
   transition: all 0.15s; 
   padding: 0 !important;
@@ -394,8 +394,8 @@
   .bottom-nav { display: none !important; }
 }
 
-.desktop-dashboard { @apply h-screen overflow-hidden; background: #F5F5F0; }
-.desktop-header { @apply flex items-center justify-between px-6 py-4 border-b; background: #F5F5F0; border-color: rgba(0, 0, 0, 0.06); }
+.desktop-dashboard { @apply h-screen overflow-hidden; background: #F0EEE6; }
+.desktop-header { @apply flex items-center justify-between px-6 py-4 border-b; background: #F0EEE6; border-color: rgba(0, 0, 0, 0.06); }
 .desktop-header-left { @apply flex items-center; }
 .desktop-date-label { align-self: flex-start; padding-top: 9px; line-height: 1.2; }
 .desktop-header-right { @apply flex items-center gap-3; }
