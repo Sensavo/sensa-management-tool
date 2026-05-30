@@ -412,7 +412,7 @@ const FullscreenModal = ({ isOpen, onClose, title, children }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#D6CBC0]">
+    <div className="fixed inset-0 z-50 bg-[#F5F5F0]">
       <div className="desktop-dashboard">
         <header className="desktop-header" style={{position: 'relative'}}>
           <div className="desktop-header-left">
@@ -933,7 +933,7 @@ const Dashboard = () => {
         </div>
         <div className="flex gap-1.5 justify-end pb-1" data-testid="mobile-tabs">
           {tabs.map(tab => (
-            <button key={tab.id} onClick={() => { setActiveTab(tab.id); setOverdueExpanded(false); setSoonExpanded(false); }} className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeTab === tab.id ? 'bg-[#1A1717] text-[#D6CBC0]' : 'bg-[rgba(0,0,0,0.05)] text-[#1A1717]'}`} data-testid={`tab-${tab.id}`}>
+            <button key={tab.id} onClick={() => { setActiveTab(tab.id); setOverdueExpanded(false); setSoonExpanded(false); }} className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeTab === tab.id ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-[rgba(0,0,0,0.05)] text-[#1A1717]'}`} data-testid={`tab-${tab.id}`}>
               {tab.label}
             </button>
           ))}
@@ -1100,7 +1100,7 @@ const NewTaskPage = () => {
   const SelectedIcon = getIconComponent(newTask.icon);
 
   return (
-    <div className="animate-fade-in min-h-screen bg-[#D6CBC0]">
+    <div className="animate-fade-in min-h-screen bg-[#F5F5F0]">
       <header className="page-header-back">
         <button className="back-btn" onClick={() => navigate(-1)}>
           <ArrowLeft className="w-5 h-5" />
@@ -1130,7 +1130,7 @@ const NewTaskPage = () => {
               onClick={() => setShowIconPicker(true)}
             >
               <div className="w-8 h-8 rounded-full bg-[#1A1717] flex items-center justify-center">
-                <SelectedIcon className="w-4 h-4 text-[#D6CBC0]" />
+                <SelectedIcon className="w-4 h-4 text-[#F5F5F0]" />
               </div>
               <span className="text-secondary">змінити іконку</span>
             </button>
@@ -1221,7 +1221,7 @@ const NewSMMTaskPage = () => {
   const SelectedIcon = getIconComponent(newTask.icon);
 
   return (
-    <div className="animate-fade-in min-h-screen bg-[#D6CBC0]">
+    <div className="animate-fade-in min-h-screen bg-[#F5F5F0]">
       <header className="page-header-back">
         <button className="back-btn" onClick={() => navigate(-1)}>
           <ArrowLeft className="w-5 h-5" />
@@ -1251,7 +1251,7 @@ const NewSMMTaskPage = () => {
               onClick={() => setShowIconPicker(true)}
             >
               <div className="w-8 h-8 rounded-full flex items-center justify-center bg-[#1A1717]">
-                <SelectedIcon className="w-4 h-4 text-[#D6CBC0]" />
+                <SelectedIcon className="w-4 h-4 text-[#F5F5F0]" />
               </div>
               <span className="text-secondary">змінити іконку</span>
             </button>
@@ -1271,7 +1271,7 @@ const NewSMMTaskPage = () => {
         </div>
 
         <button
-          className="w-full h-14 text-lg rounded-full font-medium transition-colors flex items-center justify-center gap-2 bg-[#1A1717] hover:bg-[#333333] text-[#D6CBC0]"
+          className="w-full h-14 text-lg rounded-full font-medium transition-colors flex items-center justify-center gap-2 bg-[#1A1717] hover:bg-[#333333] text-[#F5F5F0]"
           onClick={handleCreateTask}
           disabled={loading || !newTask.title.trim()}
         >
@@ -2063,7 +2063,7 @@ const EventForm = () => {
 
   // New event with AI parsing
   return (
-    <div className="fixed inset-0 z-50 bg-[#D6CBC0]">
+    <div className="fixed inset-0 z-50 bg-[#F5F5F0]">
       <div className="desktop-dashboard">
         <header className="desktop-header" style={{position: 'relative'}}>
           <div className="desktop-header-left">
@@ -2154,7 +2154,7 @@ const EventForm = () => {
                             .filter(e => !q || e.title.toLowerCase().includes(q));
                           if (recentEvents.length === 0) return null;
                           return (
-                            <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-[#D4C8BC] border rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                            <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto">
                               {recentEvents.map((src, i) => (
                                 <button key={i} className="w-full text-left px-3 py-2 text-sm hover:bg-black/5 transition-colors" onMouseDown={() => {
                                   // Auto-fill everything from the past event EXCEPT the date.
@@ -2185,7 +2185,7 @@ const EventForm = () => {
                         onMouseDown={() => closeAllDropdowns(index, null)}
                         onFocus={() => closeAllDropdowns(index, null)}
                         onChange={(e) => updateParsedEvent(index, "event_type", e.target.value)}
-                        className="form-input w-full bg-[#D4C8BC] font-medium cursor-pointer text-sm"
+                        className="form-input w-full bg-[#E3DACC] font-medium cursor-pointer text-sm"
                         style={{paddingRight: '36px', backgroundPosition: 'right 14px center'}}
                         data-testid={`event-type-select-${index}`}
                       >
@@ -2205,7 +2205,7 @@ const EventForm = () => {
                           return (
                             <button key={day.v}
                               type="button"
-                              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${selected ? 'bg-[#1A1717] text-[#D6CBC0]' : 'bg-[#D4C8BC] hover:bg-black/5'}`}
+                              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${selected ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white hover:bg-black/5'}`}
                               data-testid={`weekday-${day.v}`}
                               onClick={() => {
                                 const days = event.repeat_days || [0];
@@ -2272,7 +2272,7 @@ const EventForm = () => {
                             data-testid={`price-input-${index}`}
                           />
                           {event._showPriceDropdown && recentPrices.length > 0 && (
-                            <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-[#D4C8BC] border rounded-xl shadow-lg max-h-36 overflow-y-auto">
+                            <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-36 overflow-y-auto">
                               {recentPrices.map(p => (
                                 <button key={p} className="w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 transition-colors" onMouseDown={() => {
                                   updateParsedEvent(index, "price", String(p));
@@ -2306,7 +2306,7 @@ const EventForm = () => {
                                   el.scrollTop = sel.offsetTop - el.clientHeight / 2 + sel.offsetHeight / 2;
                                 }
                               }}
-                              className="absolute z-20 top-full left-0 right-0 mt-1 bg-[#D4C8BC] border rounded-xl shadow-lg max-h-48 overflow-y-auto"
+                              className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto"
                             >
                               {Array.from({length: 20}, (_, i) => i + 1).map(s => {
                                 const selected = String(event.spots) === String(s);
@@ -2362,7 +2362,7 @@ const EventForm = () => {
                               const sel = el.querySelector('[data-selected="true"]');
                               if (sel) el.scrollTop = sel.offsetTop - el.clientHeight / 2 + sel.offsetHeight / 2;
                             }}
-                            className="absolute z-20 top-full left-0 right-0 mt-1 bg-[#D4C8BC] border rounded-xl shadow-lg max-h-48 overflow-y-auto"
+                            className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto"
                           >
                             {TIME_OPTIONS.map(t => {
                               const selected = (event.start_time || "12:00") === t;
@@ -2413,7 +2413,7 @@ const EventForm = () => {
                                 const sel = el.querySelector('[data-selected="true"]');
                                 if (sel) el.scrollTop = sel.offsetTop - el.clientHeight / 2 + sel.offsetHeight / 2;
                               }}
-                              className="absolute z-20 top-full left-0 right-0 mt-1 bg-[#D4C8BC] border rounded-xl shadow-lg max-h-48 overflow-y-auto"
+                              className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-xl shadow-lg max-h-48 overflow-y-auto"
                             >
                               {list.map(t => {
                                 const selected = (event.end_time || "") === t;
@@ -2774,7 +2774,7 @@ const TelegramSettingsSection = ({ compact = false }) => {
         <select
           value={currentUser}
           onChange={(e) => handleUserChange(e.target.value)}
-          className="h-8 rounded-full bg-[#D4C8BC] border border-black/10 px-2 text-xs"
+          className="h-8 rounded-full bg-white border border-black/10 px-2 text-xs"
         >
           <option value="">хто я</option>
           {TEAM_USER_OPTIONS.map(user => <option key={user.id} value={user.id}>{user.label}</option>)}
@@ -2822,12 +2822,12 @@ const CalendarFullPage = () => {
     <div style={{ background: '#0A0A0A', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px' }}>
       <div style={{ maxWidth: 420, width: '100%' }}>
         <Calendar mode="single" locale={uk} weekStartsOn={1} month={currentMonth} onMonthChange={setCurrentMonth} className="w-full calendar-dark"
-          classNames={{ month: "space-y-1 w-full", caption: "flex justify-center items-center py-2", caption_label: "text-base font-medium text-[#D6CBC0]", row: "flex w-full", head_row: "flex w-full", head_cell: "text-gray-500 text-xs font-normal w-full text-center", table: "w-full border-collapse", cell: "text-center p-0", day: "w-full h-10 text-sm text-[#D6CBC0] hover:bg-[#D4C8BC]/10 rounded-lg transition-colors", nav_button: "w-8 h-8 bg-transparent hover:bg-[#D4C8BC]/10 rounded-full flex items-center justify-center text-[#D6CBC0]", day_selected: "bg-[#D4C8BC]/20" }}
+          classNames={{ month: "space-y-1 w-full", caption: "flex justify-center items-center py-2", caption_label: "text-base font-medium text-[#F5F5F0]", row: "flex w-full", head_row: "flex w-full", head_cell: "text-gray-500 text-xs font-normal w-full text-center", table: "w-full border-collapse", cell: "text-center p-0", day: "w-full h-10 text-sm text-[#F5F5F0] hover:bg-white/10 rounded-lg transition-colors", nav_button: "w-8 h-8 bg-transparent hover:bg-white/10 rounded-full flex items-center justify-center text-[#F5F5F0]", day_selected: "bg-white/20" }}
           modifiersClassNames={{ today: "calendar-today-hidden" }}
           components={{ DayContent: ({ date }) => {
             const checkDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
             const hasEvent = events.some(e => !e.cancelled && e.date.startsWith(checkDate));
-            return <div className="flex flex-col items-center"><span>{date.getDate()}</span>{hasEvent && <span className="w-1 h-1 rounded-full bg-[#D4C8BC] mt-0.5" />}</div>;
+            return <div className="flex flex-col items-center"><span>{date.getDate()}</span>{hasEvent && <span className="w-1 h-1 rounded-full bg-white mt-0.5" />}</div>;
           }}}
         />
       </div>
@@ -3080,7 +3080,7 @@ const ContentPage = () => {
                 <button className="text-xs font-medium text-secondary min-w-[60px] text-center hover:bg-black/5 rounded px-1 py-0.5" onClick={() => setShowMonthPicker(!showMonthPicker)}>{UK_MONTHS_NOMINATIVE[currentMonth.getMonth()]}</button>
                 <button className="p-0.5 hover:bg-black/5 rounded-full transition-colors" onClick={() => { setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1)); setShowMonthPicker(false); }}><ChevronRight className="w-3.5 h-3.5 text-secondary" /></button>
                 {showMonthPicker && (
-                  <div className="absolute top-full left-0 mt-1 bg-[#D4C8BC] rounded-xl shadow-lg border p-3 z-50" style={{minWidth: '200px'}}>
+                  <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-lg border p-3 z-50" style={{minWidth: '200px'}}>
                     <div className="flex items-center justify-between mb-2">
                       <button className="p-1 hover:bg-black/5 rounded-full" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear() - 1, currentMonth.getMonth()))}><ChevronLeft className="w-3.5 h-3.5" /></button>
                       <span className="text-xs font-semibold">{currentMonth.getFullYear()}</span>
@@ -3088,7 +3088,7 @@ const ContentPage = () => {
                     </div>
                     <div className="grid grid-cols-3 gap-1">
                       {UK_MONTHS_NOMINATIVE.map((m, i) => (
-                        <button key={i} className={`text-xs py-1.5 px-1 rounded-lg transition-colors ${i === currentMonth.getMonth() ? 'bg-[#1A1717] text-[#D6CBC0]' : 'hover:bg-black/5'}`}
+                        <button key={i} className={`text-xs py-1.5 px-1 rounded-lg transition-colors ${i === currentMonth.getMonth() ? 'bg-[#1A1717] text-[#F5F5F0]' : 'hover:bg-black/5'}`}
                           onClick={() => { setCurrentMonth(new Date(currentMonth.getFullYear(), i)); setShowMonthPicker(false); }}>{m.slice(0, 3)}</button>
                       ))}
                     </div>
@@ -3124,19 +3124,19 @@ const ContentPage = () => {
             </div>
             <div className="px-3 pt-2 space-y-2">
               <label className="flex items-center gap-2 text-xs text-secondary cursor-pointer">
-                <span onClick={() => setShowCalAnnouncements(!showCalAnnouncements)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalAnnouncements ? '#E8913A' : 'transparent', border: '2px solid #E8913A'}}>{showCalAnnouncements && <Check className="w-2.5 h-2.5 text-[#D6CBC0]" />}</span>
+                <span onClick={() => setShowCalAnnouncements(!showCalAnnouncements)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalAnnouncements ? '#E8913A' : 'transparent', border: '2px solid #E8913A'}}>{showCalAnnouncements && <Check className="w-2.5 h-2.5 text-[#F5F5F0]" />}</span>
                 анонси
               </label>
               <label className="flex items-center gap-2 text-xs text-secondary cursor-pointer">
-                <span onClick={() => setShowCalStories(!showCalStories)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalStories ? '#A78BFA' : 'transparent', border: '2px solid #A78BFA'}}>{showCalStories && <Check className="w-2.5 h-2.5 text-[#D6CBC0]" />}</span>
+                <span onClick={() => setShowCalStories(!showCalStories)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalStories ? '#A78BFA' : 'transparent', border: '2px solid #A78BFA'}}>{showCalStories && <Check className="w-2.5 h-2.5 text-[#F5F5F0]" />}</span>
                 історії
               </label>
               <label className="flex items-center gap-2 text-xs text-secondary cursor-pointer">
-                <span onClick={() => setShowCalInfoPosts(!showCalInfoPosts)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalInfoPosts ? '#059669' : 'transparent', border: '2px solid #059669'}}>{showCalInfoPosts && <Check className="w-2.5 h-2.5 text-[#D6CBC0]" />}</span>
+                <span onClick={() => setShowCalInfoPosts(!showCalInfoPosts)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalInfoPosts ? '#059669' : 'transparent', border: '2px solid #059669'}}>{showCalInfoPosts && <Check className="w-2.5 h-2.5 text-[#F5F5F0]" />}</span>
                 інфо-пости
               </label>
               <label className="flex items-center gap-2 text-xs text-secondary cursor-pointer">
-                <span onClick={() => setShowCalMemes(!showCalMemes)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalMemes ? '#EC4899' : 'transparent', border: '2px solid #EC4899'}}>{showCalMemes && <Check className="w-2.5 h-2.5 text-[#D6CBC0]" />}</span>
+                <span onClick={() => setShowCalMemes(!showCalMemes)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalMemes ? '#EC4899' : 'transparent', border: '2px solid #EC4899'}}>{showCalMemes && <Check className="w-2.5 h-2.5 text-[#F5F5F0]" />}</span>
                 меми
               </label>
             </div>
@@ -3475,7 +3475,7 @@ const TaskDefEditor = ({ draft, setDraft }) => {
             key={f.v}
             type="button"
             onClick={() => setFreq(f.v)}
-            className={`h-9 rounded-full text-[12.5px] font-medium transition-all ${freq === f.v ? 'bg-[#D4C8BC] text-[#1A1717] shadow-sm' : 'text-[#1A1717]/55 hover:text-[#1A1717]'}`}
+            className={`h-9 rounded-full text-[12.5px] font-medium transition-all ${freq === f.v ? 'bg-white text-[#1A1717] shadow-sm' : 'text-[#1A1717]/55 hover:text-[#1A1717]'}`}
           >{f.l}</button>
         ))}
       </div>
@@ -3493,7 +3493,7 @@ const TaskDefEditor = ({ draft, setDraft }) => {
           {COLS.map(c => (
             <button key={c.v} type="button"
               onClick={() => setDraft({ ...draft, column: c.v })}
-              className={`h-10 rounded-full text-sm font-medium transition-colors ${draft.column === c.v ? 'bg-[#1A1717] text-[#D6CBC0]' : 'bg-[#D4C8BC] ring-1 ring-black/8 hover:bg-black/5'}`}
+              className={`h-10 rounded-full text-sm font-medium transition-colors ${draft.column === c.v ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white ring-1 ring-black/8 hover:bg-black/5'}`}
             >{c.l}</button>
           ))}
         </div>
@@ -3532,7 +3532,7 @@ const TaskDefEditor = ({ draft, setDraft }) => {
                 ].map(o => (
                   <button key={o.v} type="button"
                     onClick={() => setCondition(o.v, condThreshold)}
-                    className={`h-9 rounded-full text-[12px] font-medium transition-colors ${condType === o.v ? 'bg-[#1A1717] text-[#D6CBC0]' : 'bg-[#D4C8BC] ring-1 ring-black/8 hover:bg-black/5'}`}
+                    className={`h-9 rounded-full text-[12px] font-medium transition-colors ${condType === o.v ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white ring-1 ring-black/8 hover:bg-black/5'}`}
                   >{o.l}</button>
                 ))}
               </div>
@@ -3729,7 +3729,7 @@ const SettingsPage = () => {
                 </div>
               );
             })}
-            <button className="mt-3 w-full h-11 rounded-full bg-[#D4C8BC] ring-1 ring-black/8 hover:bg-black/5 transition-colors text-sm font-medium inline-flex items-center justify-center gap-1.5"
+            <button className="mt-3 w-full h-11 rounded-full bg-white ring-1 ring-black/8 hover:bg-black/5 transition-colors text-sm font-medium inline-flex items-center justify-center gap-1.5"
               onClick={() => { setNewReminder({ name: "", days_before: 7, column: "management", frequency: "event", is_announcement: false, is_teamwork: false, series_master_only: false, condition: null }); setShowAddDialog(true); }}>
               <Plus className="w-4 h-4" />новий таск
             </button>
@@ -3755,7 +3755,7 @@ const SettingsPage = () => {
                 </div>
               );
             })}
-            <button className="mt-3 w-full h-11 rounded-full bg-[#D4C8BC] ring-1 ring-black/8 hover:bg-black/5 transition-colors text-sm font-medium inline-flex items-center justify-center gap-1.5"
+            <button className="mt-3 w-full h-11 rounded-full bg-white ring-1 ring-black/8 hover:bg-black/5 transition-colors text-sm font-medium inline-flex items-center justify-center gap-1.5"
               onClick={() => { setNewReminder({ name: "", days_before: 7, column: "smm", frequency: "event", is_announcement: false, is_teamwork: false, series_master_only: false, condition: null }); setShowAddDialog(true); }}>
               <Plus className="w-4 h-4" />новий таск
             </button>
@@ -3778,7 +3778,7 @@ const SettingsPage = () => {
               );
             })}
             {(allTaskDefs.marketing || []).length === 0 && <p className="text-center text-secondary text-sm py-4">немає завдань</p>}
-            <button className="mt-3 w-full h-11 rounded-full bg-[#D4C8BC] ring-1 ring-black/8 hover:bg-black/5 transition-colors text-sm font-medium inline-flex items-center justify-center gap-1.5"
+            <button className="mt-3 w-full h-11 rounded-full bg-white ring-1 ring-black/8 hover:bg-black/5 transition-colors text-sm font-medium inline-flex items-center justify-center gap-1.5"
               onClick={() => { setNewReminder({ name: "", days_before: 7, column: "marketing", frequency: "event", is_announcement: false, is_teamwork: false, series_master_only: false, condition: null }); setShowAddDialog(true); }}>
               <Plus className="w-4 h-4" />новий таск
             </button>
@@ -5112,7 +5112,7 @@ const DesktopDashboard = () => {
           />
           {activeDragTask && dragPosition && (
             <div
-              className="fixed z-[9999] pointer-events-none px-3 py-2 rounded-xl bg-[#D4C8BC] shadow-[0_16px_40px_-8px_rgba(0,0,0,0.25)] ring-1 ring-black/10 select-none max-w-xs"
+              className="fixed z-[9999] pointer-events-none px-3 py-2 rounded-xl bg-white shadow-[0_16px_40px_-8px_rgba(0,0,0,0.25)] ring-1 ring-black/10 select-none max-w-xs"
               style={{ left: dragPosition.x + 12, top: dragPosition.y + 12, transform: "rotate(-2deg)" }}
             >
               <p className="text-sm font-medium truncate">{activeDragTask.task_name || activeDragTask.reminder_name || "задача"}</p>
@@ -5241,7 +5241,7 @@ const DesktopDashboard = () => {
                   value={newTask.title}
                   onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
                   onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && newTask.title?.trim()) handleCreateTask(); }}
-                  className="w-full h-12 px-4 rounded-xl bg-[#D4C8BC] border-2 border-transparent text-[15px] placeholder:text-[#1A1717]/35 focus:outline-none focus:border-[#1A1717] transition-colors"
+                  className="w-full h-12 px-4 rounded-xl bg-white border-2 border-transparent text-[15px] placeholder:text-[#1A1717]/35 focus:outline-none focus:border-[#1A1717] transition-colors"
                   data-testid="new-task-title"
                 />
 
@@ -5255,7 +5255,7 @@ const DesktopDashboard = () => {
                         type="button"
                         onClick={() => setNewTask({ ...newTask, date: chip.value })}
                         className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-colors ${
-                          sel ? 'bg-[#1A1717] text-[#D6CBC0]' : 'bg-[#D4C8BC] text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
+                          sel ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
                         }`}
                         data-testid={`new-task-date-${chip.label}`}
                       >{chip.label}</button>
@@ -5265,7 +5265,7 @@ const DesktopDashboard = () => {
                     type="button"
                     onClick={() => setShowTaskCalendar(true)}
                     className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-colors inline-flex items-center gap-1.5 ${
-                      isCustomDate ? 'bg-[#1A1717] text-[#D6CBC0]' : 'bg-[#D4C8BC] text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
+                      isCustomDate ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
                     }`}
                     data-testid="new-task-date-custom"
                   >
@@ -5275,7 +5275,7 @@ const DesktopDashboard = () => {
                 </div>
 
                 {/* Icons (left, big grid) + colors (right, tight vertical strip) */}
-                <div className="mt-4 p-3 rounded-2xl bg-[#D4C8BC] ring-1 ring-black/[0.06] flex gap-3">
+                <div className="mt-4 p-3 rounded-2xl bg-white ring-1 ring-black/[0.06] flex gap-3">
                   <div className="flex-1 grid grid-cols-7 gap-1.5">
                     {CUSTOM_TASK_ICONS.map(opt => {
                       const sel = newTask.icon === opt.value;
@@ -5325,7 +5325,7 @@ const DesktopDashboard = () => {
                 <button
                   onClick={handleCreateTask}
                   disabled={!newTask.title?.trim()}
-                  className="mt-4 w-full h-12 rounded-full bg-[#1A1717] text-[#D6CBC0] font-medium text-[14px] transition-colors hover:bg-[#2a2424] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 active:scale-[0.98]"
+                  className="mt-4 w-full h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-[14px] transition-colors hover:bg-[#2a2424] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 active:scale-[0.98]"
                   data-testid="new-task-create"
                 >
                   створити <ChevronRight className="w-4 h-4" />
@@ -5369,7 +5369,7 @@ const DesktopDashboard = () => {
                     </button>
                     {seriesPickerOpen && (
                       <div
-                        className="absolute right-2 top-full mt-1 z-30 w-72 rounded-2xl bg-[#D4C8BC] ring-1 ring-black/8 shadow-[0_16px_40px_-8px_rgba(0,0,0,0.18)] p-1.5 max-h-80 overflow-y-auto"
+                        className="absolute right-2 top-full mt-1 z-30 w-72 rounded-2xl bg-white ring-1 ring-black/8 shadow-[0_16px_40px_-8px_rgba(0,0,0,0.18)] p-1.5 max-h-80 overflow-y-auto"
                       >
                         {seriesData.events.map((inst) => {
                           const d = new Date(inst.date);
@@ -5388,7 +5388,7 @@ const DesktopDashboard = () => {
                               disabled={isCurrent}
                               className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-sm transition-colors ${
                                 isCurrent
-                                  ? 'bg-[#1A1717] text-[#D6CBC0] cursor-default'
+                                  ? 'bg-[#1A1717] text-[#F5F5F0] cursor-default'
                                   : isCancelled
                                     ? 'text-[#1A1717]/35 line-through hover:bg-black/5'
                                     : isPast
@@ -5398,7 +5398,7 @@ const DesktopDashboard = () => {
                               data-testid={`series-instance-${inst.id}`}
                             >
                               <span className="font-medium tabular-nums w-20">{dayLabel}</span>
-                              <span className={`text-[11px] uppercase ${isCurrent ? 'text-[#D6CBC0]/70' : 'text-secondary'}`}>{wd}</span>
+                              <span className={`text-[11px] uppercase ${isCurrent ? 'text-[#F5F5F0]/70' : 'text-secondary'}`}>{wd}</span>
                               {isMaster && <span className="text-[10px] uppercase tracking-wider opacity-60">батько</span>}
                               <span className="ml-auto text-xs tabular-nums">
                                 {bookings != null ? `${bookings}/${cap}` : `–/${cap}`}
@@ -5667,7 +5667,7 @@ const DesktopDashboard = () => {
                   value={newSMMTask.title}
                   onChange={(e) => setNewSMMTask({ ...newSMMTask, title: e.target.value })}
                   onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && newSMMTask.title?.trim()) handleCreateSMMTask(); }}
-                  className="w-full h-12 px-4 rounded-xl bg-[#D4C8BC] border-2 border-transparent text-[15px] placeholder:text-[#1A1717]/35 focus:outline-none focus:border-[#1A1717] transition-colors"
+                  className="w-full h-12 px-4 rounded-xl bg-white border-2 border-transparent text-[15px] placeholder:text-[#1A1717]/35 focus:outline-none focus:border-[#1A1717] transition-colors"
                 />
 
                 <div className="mt-3 flex gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1 scrollbar-hide">
@@ -5677,7 +5677,7 @@ const DesktopDashboard = () => {
                       <button key={chip.value} type="button"
                         onClick={() => setNewSMMTask({ ...newSMMTask, date: chip.value })}
                         className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-colors ${
-                          sel ? 'bg-[#1A1717] text-[#D6CBC0]' : 'bg-[#D4C8BC] text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
+                          sel ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
                         }`}
                       >{chip.label}</button>
                     );
@@ -5685,7 +5685,7 @@ const DesktopDashboard = () => {
                   <button type="button"
                     onClick={() => setShowSMMCalendar(true)}
                     className={`shrink-0 h-9 px-3.5 rounded-full text-[12.5px] font-medium transition-colors inline-flex items-center gap-1.5 ${
-                      isCustomDate ? 'bg-[#1A1717] text-[#D6CBC0]' : 'bg-[#D4C8BC] text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
+                      isCustomDate ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
                     }`}
                   >
                     <CalendarIcon className="w-3 h-3" />
@@ -5693,7 +5693,7 @@ const DesktopDashboard = () => {
                   </button>
                 </div>
 
-                <div className="mt-4 p-3 rounded-2xl bg-[#D4C8BC] ring-1 ring-black/[0.06] flex gap-3">
+                <div className="mt-4 p-3 rounded-2xl bg-white ring-1 ring-black/[0.06] flex gap-3">
                   <div className="flex-1 grid grid-cols-7 gap-1.5">
                     {SMM_TASK_ICONS.map(opt => {
                       const sel = newSMMTask.icon === opt.value;
@@ -5736,7 +5736,7 @@ const DesktopDashboard = () => {
                 <button
                   onClick={handleCreateSMMTask}
                   disabled={!newSMMTask.title?.trim()}
-                  className="mt-4 w-full h-12 rounded-full bg-[#1A1717] text-[#D6CBC0] font-medium text-[14px] transition-colors hover:bg-[#2a2424] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 active:scale-[0.98]"
+                  className="mt-4 w-full h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-[14px] transition-colors hover:bg-[#2a2424] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 active:scale-[0.98]"
                 >
                   створити <ChevronRight className="w-4 h-4" />
                 </button>
@@ -5752,7 +5752,7 @@ const DesktopDashboard = () => {
 
       {/* Analytics Modal - no animation, custom header */}
       {showStats && (
-        <div className="fixed inset-0 z-50 bg-[#D6CBC0]">
+        <div className="fixed inset-0 z-50 bg-[#F5F5F0]">
           <StatsContent onClose={() => setShowStats(false)} settings={settings} />
         </div>
       )}
@@ -5882,7 +5882,7 @@ const DesktopDashboard = () => {
                   placeholder="що треба зробити?"
                   value={editingStandaloneTask.title}
                   onChange={(e) => setEditingStandaloneTask({ ...editingStandaloneTask, title: e.target.value })}
-                  className="mt-3 w-full h-12 px-4 rounded-xl bg-[#D4C8BC] border-2 border-transparent text-[15px] placeholder:text-[#1A1717]/35 focus:outline-none focus:border-[#1A1717] transition-colors"
+                  className="mt-3 w-full h-12 px-4 rounded-xl bg-white border-2 border-transparent text-[15px] placeholder:text-[#1A1717]/35 focus:outline-none focus:border-[#1A1717] transition-colors"
                   data-testid="edit-task-input"
                 />
 
@@ -5895,7 +5895,7 @@ const DesktopDashboard = () => {
                         onClick={() => handleRescheduleStandaloneTask(chip.value)}
                         disabled={!!reschedulingTaskDate}
                         className={`h-9 rounded-full text-[12.5px] font-medium transition-colors disabled:opacity-50 ${
-                          sel ? 'bg-[#1A1717] text-[#D6CBC0]' : 'bg-[#D4C8BC] text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
+                          sel ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25'
                         }`}
                         data-testid={`edit-task-date-${chip.label}`}
                       >{isSavingThisDate ? "..." : chip.label}</button>
@@ -5908,13 +5908,13 @@ const DesktopDashboard = () => {
                     type="button"
                     onClick={() => handleRescheduleStandaloneTask(shiftDateLocal(editingStandaloneTask.date, -1))}
                     disabled={!!reschedulingTaskDate}
-                    className="h-9 rounded-full bg-[#D4C8BC] text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25 transition-colors disabled:opacity-50 inline-flex items-center justify-center"
+                    className="h-9 rounded-full bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25 transition-colors disabled:opacity-50 inline-flex items-center justify-center"
                     aria-label="перенести на день назад"
                     data-testid="edit-task-date-prev"
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
-                  <div className={`h-9 rounded-full bg-[#D4C8BC] text-[#1A1717] ring-1 ring-black/8 inline-flex items-center justify-center gap-2 px-3 ${isCustomDate ? 'ring-black/25' : ''}`}>
+                  <div className={`h-9 rounded-full bg-white text-[#1A1717] ring-1 ring-black/8 inline-flex items-center justify-center gap-2 px-3 ${isCustomDate ? 'ring-black/25' : ''}`}>
                     <button
                       type="button"
                       onClick={() => setShowEditCalendar(true)}
@@ -5930,7 +5930,7 @@ const DesktopDashboard = () => {
                     type="button"
                     onClick={() => handleRescheduleStandaloneTask(shiftDateLocal(editingStandaloneTask.date, 1))}
                     disabled={!!reschedulingTaskDate}
-                    className="h-9 rounded-full bg-[#D4C8BC] text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25 transition-colors disabled:opacity-50 inline-flex items-center justify-center"
+                    className="h-9 rounded-full bg-white text-[#1A1717] ring-1 ring-black/8 hover:ring-black/25 transition-colors disabled:opacity-50 inline-flex items-center justify-center"
                     aria-label="перенести на день вперед"
                     data-testid="edit-task-date-next"
                   >
@@ -5938,7 +5938,7 @@ const DesktopDashboard = () => {
                   </button>
                 </div>
 
-                <div className="mt-4 p-3 rounded-2xl bg-[#D4C8BC] ring-1 ring-black/[0.06] flex gap-3">
+                <div className="mt-4 p-3 rounded-2xl bg-white ring-1 ring-black/[0.06] flex gap-3">
                   <div className="flex-1 grid grid-cols-7 gap-1.5">
                     {iconSet.map(opt => {
                       const sel = editingStandaloneTask.icon === opt.value;
@@ -5982,7 +5982,7 @@ const DesktopDashboard = () => {
                       <Trash2 className="w-4 h-4" />видалити
                     </button>
                   )}
-                  <button className="flex-1 h-12 rounded-full bg-[#1A1717] text-[#D6CBC0] font-medium text-[14px] transition-colors hover:bg-[#2a2424] active:scale-[0.98]" data-testid="edit-task-save" onClick={handleSaveStandaloneTask}>зберегти</button>
+                  <button className="flex-1 h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-[14px] transition-colors hover:bg-[#2a2424] active:scale-[0.98]" data-testid="edit-task-save" onClick={handleSaveStandaloneTask}>зберегти</button>
                 </div>
               </>
             );
@@ -6028,7 +6028,7 @@ const DesktopDashboard = () => {
                         key={opt.v}
                         type="button"
                         onClick={() => setDayOffForm({...dayOffForm, assignee: opt.v})}
-                        className={`h-11 rounded-full text-sm font-medium transition-colors ${dayOffForm.assignee === opt.v ? 'bg-[#1A1717] text-[#D6CBC0]' : 'bg-[#D4C8BC] ring-1 ring-black/8 hover:bg-black/5'}`}
+                        className={`h-11 rounded-full text-sm font-medium transition-colors ${dayOffForm.assignee === opt.v ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-white ring-1 ring-black/8 hover:bg-black/5'}`}
                       >{opt.l}</button>
                     ))}
                   </div>
@@ -6037,7 +6037,7 @@ const DesktopDashboard = () => {
                   <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-2">коли</div>
                   <Popover>
                     <PopoverTrigger asChild>
-                      <button type="button" className="w-full h-12 px-4 rounded-xl bg-[#D4C8BC] border border-black/10 hover:border-[#1A1717]/30 transition-colors flex items-center gap-3 text-left">
+                      <button type="button" className="w-full h-12 px-4 rounded-xl bg-white border border-black/10 hover:border-[#1A1717]/30 transition-colors flex items-center gap-3 text-left">
                         <CalendarIcon className="w-4 h-4 text-[#1A1717]/60" />
                         <span className="text-sm">{formatDateUkrainian(dayOffForm.date)}</span>
                       </button>
@@ -6067,7 +6067,7 @@ const DesktopDashboard = () => {
                   finally { setDayOffSubmitting(false); }
                 }}
                 disabled={dayOffSubmitting}
-                className="mt-7 w-full h-12 rounded-full bg-[#1A1717] text-[#D6CBC0] font-medium text-sm hover:bg-[#333333] disabled:opacity-50 transition-colors inline-flex items-center justify-center gap-2"
+                className="mt-7 w-full h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-sm hover:bg-[#333333] disabled:opacity-50 transition-colors inline-flex items-center justify-center gap-2"
               >
                 {dayOffSubmitting ? "рахуємо..." : "далі — побачити перерозподіл"}
               </button>
@@ -6107,7 +6107,7 @@ const DesktopDashboard = () => {
                         const key = `${item.event_id}::${item.task_id}`;
                         const choice = reviewChoices[key];
                         return (
-                          <div key={key} className="p-3 rounded-lg bg-[#D4C8BC]">
+                          <div key={key} className="p-3 rounded-lg bg-white">
                             <div className="text-sm font-medium">{item.name}</div>
                             <div className="text-xs text-secondary mt-0.5">{item.event_title}</div>
                             <div className="text-xs text-amber-900/80 mt-1.5 italic">{item.reason}</div>
@@ -6118,12 +6118,12 @@ const DesktopDashboard = () => {
                                 {item.suggested_dates.map(d => (
                                   <button key={d} type="button"
                                     onClick={() => setReviewChoices({...reviewChoices, [key]: d})}
-                                    className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${choice === d ? 'bg-[#1A1717] text-[#D6CBC0]' : 'bg-black/5 hover:bg-black/10'}`}
+                                    className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${choice === d ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-black/5 hover:bg-black/10'}`}
                                   >{formatDateUkrainian(d)}</button>
                                 ))}
                                 <button type="button"
                                   onClick={() => setReviewChoices({...reviewChoices, [key]: null})}
-                                  className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${choice === null ? 'bg-[#1A1717] text-[#D6CBC0]' : 'bg-black/5 hover:bg-black/10'}`}
+                                  className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${choice === null ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-black/5 hover:bg-black/10'}`}
                                 >не зміщати</button>
                               </div>
                             )}
@@ -6163,7 +6163,7 @@ const DesktopDashboard = () => {
                   finally { setDayOffSubmitting(false); }
                 }}
                 disabled={dayOffSubmitting}
-                className="mt-6 w-full h-12 rounded-full bg-[#1A1717] text-[#D6CBC0] font-medium text-sm hover:bg-[#333333] disabled:opacity-50 transition-colors"
+                className="mt-6 w-full h-12 rounded-full bg-[#1A1717] text-[#F5F5F0] font-medium text-sm hover:bg-[#333333] disabled:opacity-50 transition-colors"
               >
                 {dayOffSubmitting ? "застосовуємо..." : "застосувати перерозподіл"}
               </button>
@@ -6944,7 +6944,7 @@ const StatsContent = ({ onClose, settings }) => {
             <div className="space-y-1">
               {onTime.map((task) => (
                 <div key={task.id} className="flex items-center gap-2 py-2 px-2 bg-emerald-50 rounded cursor-pointer hover:bg-emerald-100 transition-colors" onClick={() => setSelectedTask(task)}>
-                  <div className="w-5 h-5 rounded-full bg-emerald-600 flex items-center justify-center flex-shrink-0"><Check className="w-3 h-3 text-[#D6CBC0]" /></div>
+                  <div className="w-5 h-5 rounded-full bg-emerald-600 flex items-center justify-center flex-shrink-0"><Check className="w-3 h-3 text-[#F5F5F0]" /></div>
                   <span className="flex-1 text-sm truncate text-emerald-800">{task.name}</span>
                 </div>
               ))}
@@ -6958,7 +6958,7 @@ const StatsContent = ({ onClose, settings }) => {
             <div className="space-y-1">
               {late.map((task) => (
                 <div key={task.id} className="flex items-center gap-2 py-2 px-2 bg-orange-50 rounded cursor-pointer hover:bg-orange-100 transition-colors" onClick={() => setSelectedTask(task)}>
-                  <div className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0"><Check className="w-3 h-3 text-[#D6CBC0]" /></div>
+                  <div className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0"><Check className="w-3 h-3 text-[#F5F5F0]" /></div>
                   <span className="flex-1 text-sm truncate text-orange-800">{task.name}</span>
                 </div>
               ))}
@@ -6972,7 +6972,7 @@ const StatsContent = ({ onClose, settings }) => {
             <div className="space-y-1">
               {uncompleted.map((task) => (
                 <div key={task.id} className="flex items-center gap-2 py-2 px-2 bg-red-50 rounded cursor-pointer hover:bg-red-100 transition-colors" onClick={() => setSelectedTask(task)}>
-                  <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0"><X className="w-3 h-3 text-[#D6CBC0]" /></div>
+                  <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0"><X className="w-3 h-3 text-[#F5F5F0]" /></div>
                   <span className="flex-1 text-sm truncate text-red-800">{task.name}</span>
                 </div>
               ))}
@@ -6995,13 +6995,13 @@ const StatsContent = ({ onClose, settings }) => {
         </div>
         <div style={{position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)'}} className="flex items-center gap-3">
           <button
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${periodType === 'week' ? 'bg-[#1A1717] text-[#D6CBC0]' : 'bg-black/5 text-[#1A1717] hover:bg-black/10'}`}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${periodType === 'week' ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-black/5 text-[#1A1717] hover:bg-black/10'}`}
             onClick={() => setPeriodType('week')}
           >
             ТИЖДЕНЬ
           </button>
           <button
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${periodType === 'month' ? 'bg-[#1A1717] text-[#D6CBC0]' : 'bg-black/5 text-[#1A1717] hover:bg-black/10'}`}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${periodType === 'month' ? 'bg-[#1A1717] text-[#F5F5F0]' : 'bg-black/5 text-[#1A1717] hover:bg-black/10'}`}
             onClick={() => setPeriodType('month')}
           >
             МІСЯЦЬ
@@ -7063,7 +7063,7 @@ const StatsContent = ({ onClose, settings }) => {
               {periodEvents.length > 0 && (
                 <div className="space-y-1.5">
                   {periodEvents.map(event => (
-                    <div key={event.id} className="p-2 bg-[#D4C8BC] border border-gray-100 rounded-lg">
+                    <div key={event.id} className="p-2 bg-white border border-gray-100 rounded-lg">
                       <p className="font-medium text-sm">{event.title}</p>
                       <p className="text-xs text-secondary">{formatDateUkrainian(event.date)} • {event.price} ₴ {event.altegio_booked_count != null ? `• ${event.altegio_booked_count}/${event.spots}` : ''}</p>
                     </div>

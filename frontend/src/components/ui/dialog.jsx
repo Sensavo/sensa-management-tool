@@ -40,12 +40,12 @@ const DialogContent = React.forwardRef(({ className, children, hideClose = false
         "w-[calc(100%-32px)] max-w-lg max-h-[88vh] overflow-y-auto",
         "rounded-[28px] text-[#1A1717]",
         // Subtle vertical gradient for depth, ends in app surface tone
-        "bg-gradient-to-b from-[#D6CBC0] to-[#D4C8BC]",
+        "bg-gradient-to-b from-[#FAFAF7] to-[#F1F0EA]",
         "p-8 sm:p-9",
         // Layered shadow + faint inner highlight at top for "lift"
         "shadow-[0_30px_80px_-20px_rgba(20,18,16,0.35),0_8px_24px_-8px_rgba(20,18,16,0.15)]",
         "ring-1 ring-black/[0.06]",
-        "before:absolute before:inset-x-6 before:top-0 before:h-px before:bg-[#D4C8BC]/60 before:rounded-full before:pointer-events-none",
+        "before:absolute before:inset-x-6 before:top-0 before:h-px before:bg-white/60 before:rounded-full before:pointer-events-none",
         "duration-200",
         className
       )}
