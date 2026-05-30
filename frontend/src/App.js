@@ -153,6 +153,7 @@ const api = {
   getAltegioEvents: () => axios.get(`${API}/altegio/events`),
   syncFromAltegio: () => axios.post(`${API}/altegio/sync/pull`),
   getEventBookings: (eventId) => axios.get(`${API}/altegio/event/${eventId}/bookings`),
+  getEventAltegioUrl: (eventId) => axios.get(`${API}/events/${eventId}/altegio-url`),
   syncEventFromAltegio: (eventId) => axios.post(`${API}/altegio/event/${eventId}/sync`),
   exportEventToCalendar: (eventId) => axios.post(`${API}/calendar/events/${eventId}/export`),
   getTelegramStatus: (userId) => axios.get(`${API}/users/${userId}/telegram/status`),
@@ -4615,6 +4616,16 @@ const DesktopDashboard = () => {
     finally { setExportingEvent(false); }
   };
 
+  const handleOpenAltegioInPopup = async () => {
+    if (!selectedEvent) return;
+    try {
+      const r = await api.getEventAltegioUrl(selectedEvent.id);
+      const url = r.data?.activity_url || r.data?.url;
+      if (!url) throw new Error("No Altegio URL");
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch { toast.error("не вдалося відкрити Altegio"); }
+  };
+
   const handleStandaloneTaskClick = (task) => {
     const fullTask = standaloneTasks.find(t => t.id === task.event_id);
     if (fullTask) { setSelectedStandaloneTask(fullTask); setShowStandaloneTaskPopup(true); }
@@ -5464,6 +5475,9 @@ const DesktopDashboard = () => {
                     </button>
                     <button className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 transition-colors" onClick={handleSyncAltegioInPopup} disabled={syncingEvent}>
                       <RefreshCw className={`w-4 h-4 ${syncingEvent ? 'animate-spin' : ''}`} /><span>{syncingEvent ? "..." : "Altegio"}</span>
+                    </button>
+                    <button className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 transition-colors" onClick={handleOpenAltegioInPopup}>
+                      <ExternalLink className="w-4 h-4" /><span>відкрити</span>
                     </button>
                   </div>
                   {selectedEvent.altegio_last_sync && (
@@ -7203,6 +7217,15 @@ const EventsDesktopExpanded = () => {
     catch { toast.error("помилка синхронізації"); }
     finally { setSyncingEvent(false); }
   };
+  const handleOpenAltegio = async () => {
+    if (!selectedEvent) return;
+    try {
+      const r = await api.getEventAltegioUrl(selectedEvent.id);
+      const url = r.data?.activity_url || r.data?.url;
+      if (!url) throw new Error("No Altegio URL");
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch { toast.error("не вдалося відкрити Altegio"); }
+  };
   const handleCancelSelected = async () => {
     if (!selectedEvent) return;
     try { await axios.patch(`${API}/events/${selectedEvent.id}`, { cancelled: true }); toast.success("скасовано"); refreshEvents(); }
@@ -7415,6 +7438,9 @@ const EventsDesktopExpanded = () => {
                     </button>
                     <button className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 transition-colors" onClick={handleSyncAltegio} disabled={syncingEvent}>
                       <RefreshCw className={`w-4 h-4 ${syncingEvent ? 'animate-spin' : ''}`} /><span>{syncingEvent ? "..." : "Altegio"}</span>
+                    </button>
+                    <button className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 transition-colors" onClick={handleOpenAltegio}>
+                      <ExternalLink className="w-4 h-4" /><span>відкрити</span>
                     </button>
                   </div>
                   {selectedEvent.altegio_last_sync && (

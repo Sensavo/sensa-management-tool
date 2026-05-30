@@ -1247,6 +1247,75 @@ def _normalize_for_match(s: str) -> str:
     return "".join(ch for ch in s.lower() if ch.isalnum())
 
 
+def _tokens_for_match(s: str) -> set[str]:
+    """Tokenize title for forgiving Altegio matching.
+
+    Altegio service titles and local event titles often differ by punctuation
+    or conjunctions, e.g. `ЧАЙНА ЦЕРЕМОНІЯ + МЕДИТАЦІЯ` vs
+    `чайна церемонія і медитація`. Exact normalized substring matching
+    misses those, so compare meaningful title tokens as well.
+    """
+    if not s:
+        return set()
+    stopwords = {"і", "й", "та", "and"}
+    tokens = []
+    current = []
+    for ch in s.lower():
+        if ch.isalnum():
+            current.append(ch)
+        elif current:
+            token = "".join(current)
+            if len(token) > 1 and token not in stopwords:
+                tokens.append(token)
+            current = []
+    if current:
+        token = "".join(current)
+        if len(token) > 1 and token not in stopwords:
+            tokens.append(token)
+    return set(tokens)
+
+
+def _titles_match(a: str, b: str) -> bool:
+    a_norm = _normalize_for_match(a)
+    b_norm = _normalize_for_match(b)
+    if a_norm and b_norm and (a_norm == b_norm or a_norm in b_norm or b_norm in a_norm):
+        return True
+
+    a_tokens = _tokens_for_match(a)
+    b_tokens = _tokens_for_match(b)
+    if not a_tokens or not b_tokens:
+        return False
+
+    overlap = a_tokens & b_tokens
+    shorter = min(len(a_tokens), len(b_tokens))
+    # Require most of the shorter title to match. This keeps matching strict
+    # enough for same-date events, while tolerating punctuation/conjunctions.
+    return len(overlap) >= max(1, min(shorter, 2)) and (len(overlap) / shorter) >= 0.67
+
+
+def _altegio_booked_count(altegio_event: dict) -> int:
+    for key in ("records_count", "booked_count", "bookings_count", "clients_count"):
+        value = altegio_event.get(key)
+        if value is not None:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                pass
+    records = altegio_event.get("records") or altegio_event.get("bookings")
+    if isinstance(records, list):
+        return len(records)
+    return 0
+
+
+def _altegio_activity_url(activity_id: Optional[str] = None) -> Optional[str]:
+    if not ALTEGIO_COMPANY_ID:
+        return None
+    base = f"https://n{ALTEGIO_COMPANY_ID}.alteg.io/company/{ALTEGIO_COMPANY_ID}"
+    if activity_id:
+        return f"{base}/activity/{activity_id}"
+    return f"{base}/menu"
+
+
 def _altegio_event_title(altegio_event: dict) -> str:
     return altegio_event.get("service", {}).get("title", "") or altegio_event.get("title", "") or ""
 
@@ -1268,9 +1337,9 @@ async def _find_local_event_for_altegio(altegio_event: dict) -> Optional[dict]:
         if local_event:
             return local_event
 
-    title_norm = _normalize_for_match(_altegio_event_title(altegio_event))
+    title = _altegio_event_title(altegio_event)
     date_part = _altegio_event_date(altegio_event)
-    if not title_norm:
+    if not title:
         return None
 
     query = {"cancelled": {"$ne": True}, "archived": {"$ne": True}}
@@ -1279,8 +1348,7 @@ async def _find_local_event_for_altegio(altegio_event: dict) -> Optional[dict]:
 
     candidates = await db.events.find(query).to_list(500)
     for event in candidates:
-        event_norm = _normalize_for_match(event.get("title", ""))
-        if event_norm and (event_norm == title_norm or event_norm in title_norm or title_norm in event_norm):
+        if _titles_match(event.get("title", ""), title):
             return event
     return None
 
@@ -1298,7 +1366,7 @@ async def _sync_altegio_events_to_local(altegio_events: list) -> tuple[int, list
         if not local_event:
             continue
 
-        booked_count = altegio_event.get("records_count", 0)
+        booked_count = _altegio_booked_count(altegio_event)
         title = _altegio_event_title(altegio_event)
         await db.events.update_one(
             {"id": local_event["id"]},
@@ -1306,6 +1374,7 @@ async def _sync_altegio_events_to_local(altegio_events: list) -> tuple[int, list
                 "altegio_id": altegio_id,
                 "altegio_activity_id": altegio_id,
                 "altegio_booked_count": booked_count,
+                "spots": int(altegio_event.get("capacity") or local_event.get("spots") or 10),
                 "altegio_last_sync": datetime.now(timezone.utc).isoformat()
             }}
         )
@@ -3626,10 +3695,13 @@ async def get_altegio_url(event_id: str):
             "can_create": False
         }
     
-    url = f"https://n{company_id}.alteg.io/company/{company_id}/menu"
+    altegio_id = event.get("altegio_id") or event.get("altegio_activity_id")
+    url = _altegio_activity_url(str(altegio_id) if altegio_id else None)
     return {
-        "url": url, 
-        "message": "Відкриваю сторінку бронювання.",
+        "url": url,
+        "activity_url": _altegio_activity_url(str(altegio_id)) if altegio_id else None,
+        "altegio_id": str(altegio_id) if altegio_id else None,
+        "message": "Відкриваю подію в Altegio." if altegio_id else "Відкриваю сторінку бронювання.",
         "can_create": False,
         "event_data": {
             "title": event["title"],
@@ -4026,7 +4098,7 @@ async def get_event_bookings_from_altegio(event_id: str):
                 altegio_events = await altegio_client.get_group_events()
                 for altegio_event in altegio_events:
                     if str(altegio_event.get("id")) == str(altegio_id):
-                        booked_count = altegio_event.get("records_count", 0)
+                        booked_count = _altegio_booked_count(altegio_event)
                         break
 
             if booked_count is None:
@@ -4082,13 +4154,14 @@ async def sync_single_event_from_altegio(event_id: str):
             altegio_events = await altegio_client.get_group_events()
             for altegio_event in altegio_events:
                 if str(altegio_event.get("id")) == str(altegio_id):
-                    records_count = altegio_event.get("records_count", 0)
+                    records_count = _altegio_booked_count(altegio_event)
                     await db.events.update_one(
                         {"id": event_id},
                         {"$set": {
                             "altegio_id": str(altegio_id),
                             "altegio_activity_id": str(altegio_id),
                             "altegio_booked_count": records_count,
+                            "spots": int(altegio_event.get("capacity") or event.get("spots") or 10),
                             "altegio_last_sync": datetime.now(timezone.utc).isoformat()
                         }}
                     )
@@ -4102,25 +4175,20 @@ async def sync_single_event_from_altegio(event_id: str):
             return {"event_id": event_id, "message": "Event not found in Altegio"}
         else:
             # Try to find by title
-            title_norm = _normalize_for_match(event.get("title", ""))
             altegio_events = await altegio_client.get_group_events()
             for altegio_event in altegio_events:
-                altegio_title_norm = _normalize_for_match(_altegio_event_title(altegio_event))
-                same_title = title_norm and altegio_title_norm and (
-                    title_norm == altegio_title_norm
-                    or title_norm in altegio_title_norm
-                    or altegio_title_norm in title_norm
-                )
+                same_title = _titles_match(event.get("title", ""), _altegio_event_title(altegio_event))
                 same_date = not _altegio_event_date(altegio_event) or event.get("date", "").startswith(_altegio_event_date(altegio_event))
                 if same_title and same_date:
                     altegio_id = str(altegio_event.get("id"))
-                    records_count = altegio_event.get("records_count", 0)
+                    records_count = _altegio_booked_count(altegio_event)
                     await db.events.update_one(
                         {"id": event_id},
                         {"$set": {
                             "altegio_id": altegio_id,
                             "altegio_activity_id": altegio_id,
                             "altegio_booked_count": records_count,
+                            "spots": int(altegio_event.get("capacity") or event.get("spots") or 10),
                             "altegio_last_sync": datetime.now(timezone.utc).isoformat()
                         }}
                     )
