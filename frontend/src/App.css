@@ -60,7 +60,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 16px 24px;
-  border-bottom: 1px solid #E8E5DC;
+  border-bottom: none;
   flex-shrink: 0;
 }
 .fullscreen-modal-title {
@@ -395,7 +395,7 @@
 }
 
 .desktop-dashboard { @apply h-screen overflow-hidden; background: #F6F5F1; }
-.desktop-header { @apply flex items-center justify-between px-6 py-4 border-b; background: #F6F5F1; border-color: #E8E5DC; }
+.desktop-header { @apply flex items-center justify-between px-6 py-4; background: #F6F5F1; border-bottom: none; }
 .desktop-header-left { @apply flex items-center; }
 .desktop-date-label { align-self: flex-start; padding-top: 9px; line-height: 1.2; }
 .desktop-header-right { @apply flex items-center gap-3; }
