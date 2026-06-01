@@ -74,7 +74,7 @@ body {
 .bottom-nav {
     @apply fixed bottom-0 left-0 right-0 w-full h-16 flex items-center justify-around z-50;
     background: #F6F5F1;
-    border-top: 1px solid #E8E5DC;
+    border-top: none;
 }
 
 @media (min-width: 768px) {
@@ -121,8 +121,8 @@ body {
 }
 
 .detail-actions {
-    @apply flex gap-3 p-4 border-t bg-[#F6F5F1];
-    border-color: #E8E5DC;
+    @apply flex gap-3 p-4 bg-[#F6F5F1];
+    border-color: transparent;
     position: fixed;
     bottom: 64px;
     left: 0;

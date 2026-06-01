@@ -990,7 +990,7 @@ const Dashboard = () => {
 
       {/* Edit task dialog */}
       {showEditDialog && editingTask && (() => {
-        const COLOR_MAP = {'manager':'#1A1717','red':'#FF8370','purple':'#9333EA','blue':'#3B82F6','orange':'#C4703D','emerald':'#059669','teal':'#14B8A6','smm':'#059669','pink':'#EC4899'};
+        const COLOR_MAP = {'manager':'#1A1717','red':'#FF8370','purple':'#9333EA','blue':'#3B82F6','orange':'#C4703D','emerald':'#059669','teal':'#14B8A6','smm':'#059669','pink':'#FF8370'};
         const selectedHex = COLOR_MAP[editingTask.color] || '#1A1717';
         return (
         <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
@@ -1034,7 +1034,7 @@ const Dashboard = () => {
 
       {/* New task dialog */}
       {showNewTask && newTaskData && (() => {
-        const COLOR_MAP = {'manager':'#1A1717','red':'#FF8370','purple':'#9333EA','blue':'#3B82F6','orange':'#C4703D','emerald':'#059669','teal':'#14B8A6','smm':'#059669','pink':'#EC4899'};
+        const COLOR_MAP = {'manager':'#1A1717','red':'#FF8370','purple':'#9333EA','blue':'#3B82F6','orange':'#C4703D','emerald':'#059669','teal':'#14B8A6','smm':'#059669','pink':'#FF8370'};
         const selectedHex = COLOR_MAP[newTaskData.color] || '#1A1717';
         return (
         <Dialog open={showNewTask} onOpenChange={setShowNewTask}>
@@ -3033,7 +3033,7 @@ const ContentPage = () => {
         <Info className="w-3.5 h-3.5" style={{color: '#059669'}} />інфо
       </button>
       <button onClick={() => onChange('meme')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${value === 'meme' ? 'bg-pink-100 text-pink-700 ring-2 ring-pink-400' : 'bg-[rgba(0,0,0,0.05)]'}`}>
-        <Smile className="w-3.5 h-3.5" style={{color: '#EC4899'}} />мем
+        <Smile className="w-3.5 h-3.5" style={{color: '#FF8370'}} />мем
       </button>
     </div>
   );
@@ -3116,7 +3116,7 @@ const ContentPage = () => {
                         {hasAnnouncement && <span style={{width:'5px', height:'5px', borderRadius:'50%', background:'#E8913A', display:'block'}} />}
                         {hasStory && <span style={{width:'5px', height:'5px', borderRadius:'50%', background:'#A78BFA', display:'block'}} />}
                         {hasInfo && <span style={{width:'5px', height:'5px', borderRadius:'50%', background:'#059669', display:'block'}} />}
-                        {hasMeme && <span style={{width:'5px', height:'5px', borderRadius:'50%', background:'#EC4899', display:'block'}} />}
+                        {hasMeme && <span style={{width:'5px', height:'5px', borderRadius:'50%', background:'#FF8370', display:'block'}} />}
                       </div>
                     </div>
                   );
@@ -3137,7 +3137,7 @@ const ContentPage = () => {
                 інфо-пости
               </label>
               <label className="flex items-center gap-2 text-xs text-secondary cursor-pointer">
-                <span onClick={() => setShowCalMemes(!showCalMemes)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalMemes ? '#EC4899' : 'transparent', border: '2px solid #EC4899'}}>{showCalMemes && <Check className="w-2.5 h-2.5 text-[#F6F5F1]" />}</span>
+                <span onClick={() => setShowCalMemes(!showCalMemes)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalMemes ? '#FF8370' : 'transparent', border: '2px solid #FF8370'}}>{showCalMemes && <Check className="w-2.5 h-2.5 text-[#F6F5F1]" />}</span>
                 меми
               </label>
             </div>
@@ -3285,7 +3285,7 @@ const ContentPage = () => {
                 </button>
                 {completedPostsOpen && completedPosts.map(post => {
                   const isInfo = !post.post_type || post.post_type === 'info';
-                  const badgeColor = isInfo ? '#059669' : '#EC4899';
+                  const badgeColor = isInfo ? '#059669' : '#FF8370';
                   return (
                     <div key={post.id} className="event-card-desktop opacity-40" data-testid={`completed-post-${post.id}`}>
                       <div className="date-badge-desktop" style={{background: badgeColor, color: 'white'}}>
@@ -3306,7 +3306,7 @@ const ContentPage = () => {
             )}
             {activePosts.length > 0 ? activePosts.map(post => {
               const isInfo = !post.post_type || post.post_type === 'info';
-              const badgeColor = isInfo ? '#059669' : '#EC4899';
+              const badgeColor = isInfo ? '#059669' : '#FF8370';
               return (
                 <div key={post.id} className="event-card-desktop" data-testid={`post-${post.id}`}>
                   <div className="date-badge-desktop" style={{background: badgeColor, color: 'white'}}>
@@ -5190,7 +5190,7 @@ const DesktopDashboard = () => {
             const PALETTE = [
               {c:'manager',bg:'#1A1717'}, {c:'red',bg:'#FF8370'}, {c:'purple',bg:'#9333EA'},
               {c:'smm',bg:'#059669'}, {c:'blue',bg:'#3B82F6'}, {c:'orange',bg:'#C4703D'},
-              {c:'pink',bg:'#EC4899'}, {c:'teal',bg:'#14B8A6'},
+              {c:'pink',bg:'#FF8370'}, {c:'teal',bg:'#14B8A6'},
             ];
             const COLOR_MAP = Object.fromEntries(PALETTE.map(p => [p.c, p.bg]));
             const selectedHex = COLOR_MAP[newTask.color] || '#1A1717';
@@ -5621,7 +5621,7 @@ const DesktopDashboard = () => {
             const PALETTE = [
               {c:'manager',bg:'#1A1717'}, {c:'red',bg:'#FF8370'}, {c:'purple',bg:'#9333EA'},
               {c:'smm',bg:'#059669'}, {c:'blue',bg:'#3B82F6'}, {c:'orange',bg:'#C4703D'},
-              {c:'pink',bg:'#EC4899'}, {c:'teal',bg:'#14B8A6'},
+              {c:'pink',bg:'#FF8370'}, {c:'teal',bg:'#14B8A6'},
             ];
             const COLOR_MAP = Object.fromEntries(PALETTE.map(p => [p.c, p.bg]));
             const selectedHex = COLOR_MAP[newSMMTask.color] || '#1A1717';
@@ -5820,7 +5820,7 @@ const DesktopDashboard = () => {
             const PALETTE = [
               {c:'manager',bg:'#1A1717'}, {c:'red',bg:'#FF8370'}, {c:'purple',bg:'#9333EA'},
               {c:'smm',bg:'#059669'}, {c:'blue',bg:'#3B82F6'}, {c:'orange',bg:'#C4703D'},
-              {c:'pink',bg:'#EC4899'}, {c:'teal',bg:'#14B8A6'},
+              {c:'pink',bg:'#FF8370'}, {c:'teal',bg:'#14B8A6'},
             ];
             const COLOR_MAP = Object.fromEntries(PALETTE.map(p => [p.c, p.bg]));
             const selectedHex = COLOR_MAP[editingStandaloneTask.color] || '#1A1717';

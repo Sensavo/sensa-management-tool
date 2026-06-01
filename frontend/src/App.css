@@ -181,7 +181,7 @@
   outline-offset: 2px;
 }
 .task-icon.blue { background: rgba(232, 229, 220, 0.78); color: #3B82F6; }
-.task-icon.pink { background: rgba(232, 229, 220, 0.78); color: #EC4899; }
+.task-icon.pink { background: rgba(232, 229, 220, 0.78); color: #FF8370; }
 .task-icon.teal { background: rgba(232, 229, 220, 0.78); color: #14B8A6; }
 
 /* Dark mode emerald */
@@ -213,7 +213,7 @@
 /* Section headers - larger */
 .section-header { @apply w-full flex items-center gap-2 text-left; }
 .section-title { @apply text-base font-semibold; color: #6B6B6B; }
-.section-title.overdue-text { color: #D4849A; }
+.section-title.overdue-text { color: #FF8370; }
 .section-count { @apply text-sm px-2.5 py-1 rounded-full min-w-6 text-center; background: #E8E5DC; color: #6B6B6B; font-size: 13px; }
 /* Add button - 1.5x smaller (was 28px, now ~19px) */
 .add-btn { @apply w-5 h-5 rounded-full flex items-center justify-center transition-all; background: #1A1717; color: #F6F5F1; }
@@ -372,7 +372,7 @@
 /* Mobile section styling */
 .mobile-section { @apply rounded-2xl p-4; background: #F1EEE7; }
 .mobile-section-header { @apply flex items-center gap-2 font-semibold text-lg; }
-.mobile-section-header.overdue { color: #D4849A; }
+.mobile-section-header.overdue { color: #FF8370; }
 .mobile-section-count { @apply text-secondary font-normal; }
 
 /* Chart */
@@ -412,7 +412,7 @@
 .column-content { @apply flex-1 overflow-y-auto p-4; }
 
 .section-header-mini { @apply flex items-center gap-2 mb-3 w-full text-left text-base font-medium; color: #6B6B6B; }
-.section-header-mini.overdue-header { color: #D4849A; }
+.section-header-mini.overdue-header { color: #FF8370; }
 
 .calendar-container-desktop { @apply mb-1 border-b; border-color: #E8E5DC; width: 100%; padding: 16px; }
 .calendar-container-desktop .calendar-minimal { width: 100% !important; max-width: none; padding: 0 !important; }
@@ -540,3 +540,7 @@
 .hover\:bg-red-50:hover { background-color: rgba(255, 131, 112, 0.10) !important; }
 .hover\:bg-red-100:hover { background-color: rgba(255, 131, 112, 0.16) !important; }
 .hover\:bg-red-200:hover { background-color: rgba(255, 131, 112, 0.24) !important; }
+
+.text-pink-700 { color: #FF8370 !important; }
+.bg-pink-100 { background-color: rgba(255, 131, 112, 0.16) !important; }
+.ring-pink-400 { --tw-ring-color: rgba(255, 131, 112, 0.55) !important; }
