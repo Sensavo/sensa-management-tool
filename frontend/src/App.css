@@ -8,7 +8,7 @@
 ::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; }
 *:hover::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.15); }
 
-.event-card { @apply p-5 rounded-xl cursor-pointer transition-all; background: #F1EEE7; }
+.event-card { @apply p-5 rounded-xl cursor-pointer transition-all; background: #E8E5DC; }
 .event-card:hover { background: #E8E5DC; }
 .event-card.event-highlight { background: rgba(0, 0, 0, 0.1); box-shadow: 0 0 0 2px #1A1717; }
 
@@ -407,7 +407,7 @@
 .desktop-columns-4 { @apply grid gap-3 p-4; grid-template-columns: 1fr 1fr 1fr 1fr; height: calc(100vh - 72px); overflow: hidden; }
 .desktop-column { @apply flex flex-col rounded-xl; background: #F1EEE7; height: 100%; overflow: hidden; }
 .desktop-columns-4 .desktop-column { min-width: 260px; }
-.column-header { @apply flex items-center gap-3 px-5 py-4 border-b; border-color: #E8E5DC; }
+.column-header { @apply flex items-center gap-3 px-5 py-4; border-bottom: none; }
 .column-title { @apply text-sm font-semibold uppercase tracking-wide; color: #6B6B6B; }
 .column-content { @apply flex-1 overflow-y-auto p-4; }
 
@@ -432,7 +432,7 @@
 .calendar-container-desktop .rdp-head_row { height: auto; margin-top: 0; }
 
 /* Event cards desktop - unified */
-.event-card-desktop { @apply flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all mb-3; background: #F6F5F1; }
+.event-card-desktop { @apply flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all mb-3; background: #E8E5DC; }
 .event-card-desktop:hover { background: #E8E5DC; }
 .event-card-desktop.event-highlight { background: rgba(0, 0, 0, 0.12); animation: highlight-pulse 1.5s ease-out; }
 @keyframes highlight-pulse { 0% { transform: scale(1.02); box-shadow: 0 0 0 3px rgba(26, 26, 26, 0.3); } 100% { transform: scale(1); box-shadow: none; } }

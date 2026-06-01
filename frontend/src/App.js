@@ -1745,7 +1745,7 @@ const EventDetailPage = () => {
 
   const TaskColumn = ({ title, tasks, colorCls, onToggle }) => (
     <div className="desktop-column">
-      <div className="px-4 py-3 border-b border-[#E8E5DC] flex items-center justify-between">
+      <div className="px-4 py-3 flex items-center justify-between">
         <span className="text-sm font-semibold tracking-wide">{title}</span>
         <span className="text-xs text-secondary">{tasks.filter(t => t.completed).length}/{tasks.length}</span>
       </div>
@@ -1792,7 +1792,7 @@ const EventDetailPage = () => {
       <div className="desktop-columns-4">
         {/* Column 1: Event info */}
         <div className="desktop-column">
-          <div className="px-4 py-3 border-b border-[#E8E5DC]">
+          <div className="px-4 py-3">
             <span className="text-sm font-semibold tracking-wide">ПОДІЯ</span>
           </div>
           <div className="column-content space-y-4 p-4">
@@ -3074,7 +3074,7 @@ const ContentPage = () => {
       <div className="desktop-columns-4">
         {/* КАЛЕНДАР */}
         <div className="desktop-column">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[#E8E5DC]">
+          <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>КАЛЕНДАР</span>
               <div className="flex items-center gap-1 relative">
@@ -3147,7 +3147,7 @@ const ContentPage = () => {
 
         {/* АНОНСИ */}
         <div className="desktop-column">
-          <div className="px-4 py-3 border-b border-[#E8E5DC]">
+          <div className="px-4 py-3">
             <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>АНОНСИ</span>
           </div>
           <div className="column-content">
@@ -3201,7 +3201,7 @@ const ContentPage = () => {
 
         {/* ІСТОРІЇ */}
         <div className="desktop-column">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[#E8E5DC]">
+          <div className="flex items-center justify-between px-4 py-3">
             <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>ІСТОРІЇ</span>
             <button className="add-btn" onClick={() => { setNewStory({ title: '', date: todayStr, notes: '' }); setShowNewStoryCalendar(false); setShowNewStoryDialog(true); }} data-testid="add-story-btn"><Plus className="w-4 h-4" /></button>
           </div>
@@ -3273,7 +3273,7 @@ const ContentPage = () => {
 
         {/* ІНФО-ПОСТИ */}
         <div className="desktop-column">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[#E8E5DC]">
+          <div className="flex items-center justify-between px-4 py-3">
             <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>ІНФО-ПОСТИ</span>
             <button className="add-btn" onClick={() => { setNewPost({ title: '', date: todayStr, notes: '', post_type: 'info' }); setShowNewPostCalendar(false); setShowNewPostDialog(true); }} data-testid="add-post-btn"><Plus className="w-4 h-4" /></button>
           </div>
@@ -3970,7 +3970,7 @@ const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, sta
 
   const renderArchiveColumn = (title, colorHex, weekGroups, columnKey, renderItem) => (
     <div className="desktop-column">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#E8E5DC]">
+      <div className="flex items-center justify-between px-4 py-3">
         <span className="text-sm font-semibold tracking-wide" style={colorHex ? {color: colorHex} : {}}>{title}</span>
       </div>
       <div className="column-content">
@@ -4233,7 +4233,7 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
       data-task-drop-type="column"
       data-assignee={columnAssignee}
     >
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#E8E5DC]">
+      <div className="flex items-center justify-between px-4 py-3">
         <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>{name}</span>
         <button className="add-btn" onClick={onAddClick}><Plus className="w-4 h-4" /></button>
       </div>
@@ -4989,7 +4989,7 @@ const DesktopDashboard = () => {
       <div className="desktop-columns-4">
           {/* Events Column */}
           <div className="desktop-column">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[#E8E5DC]">
+            <div className="flex items-center justify-between px-4 py-3">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>ПОДІЇ</span>
                 <div className="flex items-center gap-1">
@@ -5366,7 +5366,7 @@ const DesktopDashboard = () => {
           <div className="desktop-columns-4">
             {/* Column 1 - Event Info */}
             <div className="desktop-column">
-              <div className="px-4 py-3 border-b border-[#E8E5DC] flex items-center justify-between gap-2 relative">
+              <div className="px-4 py-3 flex items-center justify-between gap-2 relative">
                 {seriesData && seriesData.events && seriesData.events.length > 1 ? (
                   <>
                     <span className="text-sm font-semibold tracking-wide">РЕГУЛЯРНА ПОДІЯ</span>
@@ -5504,7 +5504,7 @@ const DesktopDashboard = () => {
 
             {/* Column 2 - MANAGER */}
             <div className="desktop-column">
-              <div className="px-4 py-3 border-b border-[#E8E5DC]">
+              <div className="px-4 py-3">
                 <span className="text-sm font-semibold tracking-wide">MANAGER</span>
               </div>
               <div className="column-content">
@@ -5538,7 +5538,7 @@ const DesktopDashboard = () => {
 
             {/* Column 3 - SMM */}
             <div className="desktop-column">
-              <div className="px-4 py-3 border-b border-[#E8E5DC]">
+              <div className="px-4 py-3">
                 <span className="text-sm font-semibold tracking-wide">SMM</span>
               </div>
               <div className="column-content">
@@ -5574,7 +5574,7 @@ const DesktopDashboard = () => {
 
             {/* Column 4 - MARKETER */}
             <div className="desktop-column">
-              <div className="px-4 py-3 border-b border-[#E8E5DC]">
+              <div className="px-4 py-3">
                 <span className="text-sm font-semibold tracking-wide">MARKETER</span>
               </div>
               <div className="column-content">
@@ -6379,7 +6379,7 @@ const SettingsContent = () => {
     <div className="desktop-columns-4" data-testid="settings-list">
       {/* Column 1: Automation */}
       <div className="desktop-column">
-        <div className="px-4 py-3 border-b border-[#E8E5DC]">
+        <div className="px-4 py-3">
           <span className="text-sm font-semibold tracking-wide">ІНШЕ</span>
         </div>
         <div className="column-content space-y-4">
@@ -6419,7 +6419,7 @@ const SettingsContent = () => {
 
       {/* Column 2: MANAGER + daily + monthly */}
       <div className="desktop-column">
-        <div className="px-4 py-3 border-b border-[#E8E5DC] flex items-center justify-between">
+        <div className="px-4 py-3 flex items-center justify-between">
           <div>
             <span className="text-sm font-semibold tracking-wide">MANAGER</span>
             <span className="text-xs text-secondary ml-2">({allTasks.mgmt.length})</span>
@@ -6450,7 +6450,7 @@ const SettingsContent = () => {
 
       {/* Column 3: SMM + daily + monthly */}
       <div className="desktop-column">
-        <div className="px-4 py-3 border-b border-[#E8E5DC] flex items-center justify-between">
+        <div className="px-4 py-3 flex items-center justify-between">
           <div>
             <span className="text-sm font-semibold tracking-wide">SMM</span>
             <span className="text-xs text-secondary ml-2">({allTasks.smm.length})</span>
@@ -6481,7 +6481,7 @@ const SettingsContent = () => {
 
       {/* Column 4: MARKETER + daily + monthly */}
       <div className="desktop-column">
-        <div className="px-4 py-3 border-b border-[#E8E5DC] flex items-center justify-between">
+        <div className="px-4 py-3 flex items-center justify-between">
           <div>
             <span className="text-sm font-semibold tracking-wide">MARKETER</span>
             <span className="text-xs text-secondary ml-2">({allTasks.mktg.length})</span>
@@ -6936,7 +6936,7 @@ const StatsContent = ({ onClose, settings }) => {
     const allOnTime = total > 0 && late.length === 0 && uncompleted.length === 0;
     return (
     <div className="desktop-column">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#E8E5DC]">
+      <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold tracking-wide">{title}</span>
           {allOnTime && <span className="text-base" title="всі вчасно">🏆</span>}
@@ -7052,7 +7052,7 @@ const StatsContent = ({ onClose, settings }) => {
       <div className="desktop-columns-4">
         {/* ПОДІЇ */}
         <div className="desktop-column">
-          <div className="px-4 py-3 border-b border-[#E8E5DC]">
+          <div className="px-4 py-3">
             <span className="text-sm font-semibold tracking-wide">ПОДІЇ</span>
           </div>
           <div className="column-content">
@@ -7301,7 +7301,7 @@ const EventsDesktopExpanded = () => {
       <div className="desktop-columns-4">
         {/* Col 1: Calendar — has its own scroll so it stays put as list scrolls. */}
         <div className="desktop-column">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[#E8E5DC]">
+          <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold tracking-wide" style={{ color: '#1A1717' }}>КАЛЕНДАР</span>
               <div className="flex items-center gap-1">
@@ -7349,7 +7349,7 @@ const EventsDesktopExpanded = () => {
 
         {/* Col 2: Events list — scrollable, calendar stays put in col 1 */}
         <div className="desktop-column">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[#E8E5DC]">
+          <div className="flex items-center justify-between px-4 py-3">
             <span className="text-sm font-semibold tracking-wide" style={{ color: '#1A1717' }}>СПИСОК</span>
             <span className="text-xs text-secondary">{allEvents.length}</span>
           </div>
@@ -7390,7 +7390,7 @@ const EventsDesktopExpanded = () => {
 
         {/* Col 3: Event card — same layout as the dashboard's event-detail popup. */}
         <div className="desktop-column">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[#E8E5DC]">
+          <div className="flex items-center justify-between px-4 py-3">
             <span className="text-sm font-semibold tracking-wide" style={{ color: '#1A1717' }}>ПОДІЯ</span>
             {selectedEvent?.title && <span className="text-xs text-secondary truncate ml-2">{selectedEvent.title}</span>}
           </div>
@@ -7478,7 +7478,7 @@ const EventsDesktopExpanded = () => {
 
         {/* Col 4: Tasks accordion (overdue + today only) */}
         <div className="desktop-column">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[#E8E5DC]">
+          <div className="flex items-center justify-between px-4 py-3">
             <span className="text-sm font-semibold tracking-wide" style={{ color: '#1A1717' }}>ЗАДАЧІ</span>
             <span className="text-xs text-secondary">протерм. + сьогодні</span>
           </div>
