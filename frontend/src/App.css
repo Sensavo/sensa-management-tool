@@ -8,26 +8,26 @@
 ::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; }
 *:hover::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.15); }
 
-.event-card { @apply p-5 rounded-xl cursor-pointer transition-all; background: rgba(0, 0, 0, 0.03); }
-.event-card:hover { background: rgba(0, 0, 0, 0.06); }
+.event-card { @apply p-5 rounded-xl cursor-pointer transition-all; background: #F1EEE7; }
+.event-card:hover { background: #E8E5DC; }
 .event-card.event-highlight { background: rgba(0, 0, 0, 0.1); box-shadow: 0 0 0 2px #1A1717; }
 
 .task-item { @apply flex items-center gap-3 py-2 border-b last:border-b-0; border-color: rgba(0, 0, 0, 0.05); }
-.section-card { @apply rounded-xl p-5 mb-4; background: rgba(0, 0, 0, 0.03); }
+.section-card { @apply rounded-xl p-5 mb-4; background: #F1EEE7; }
 
-.btn-dark { @apply h-12 px-6 rounded-full font-medium transition-all flex items-center justify-center gap-2 text-base; background: #1A1717; color: #F5F5F0; }
+.btn-dark { @apply h-12 px-6 rounded-full font-medium transition-all flex items-center justify-center gap-2 text-base; background: #1A1717; color: #F6F5F1; }
 .btn-dark:hover { background: #333333; }
 .btn-subtle { @apply h-10 px-5 rounded-full font-medium transition-all flex items-center justify-center gap-2; background: transparent; color: #6B6B6B; border: 1px dashed rgba(0, 0, 0, 0.15); }
-.btn-subtle:hover { background: rgba(0, 0, 0, 0.03); }
+.btn-subtle:hover { background: #E8E5DC; }
 
 .form-field { @apply space-y-3; }
-.form-input { @apply w-full h-12 px-4 rounded-lg border transition-colors text-base; background: #FFFFFF; border-color: rgba(0, 0, 0, 0.1); }
+.form-input { @apply w-full h-12 px-4 rounded-lg border transition-colors text-base; background: #F1EEE7; border-color: #E8E5DC; }
 .form-input:focus { @apply outline-none; border-color: #1A1717; }
 
-.page-header { @apply sticky top-0 z-30 px-5 py-4; background: #F0EEE6; }
+.page-header { @apply sticky top-0 z-30 px-5 py-4; background: #F6F5F1; }
 .page-content { @apply pb-24 px-5; }
 
-.fab { @apply fixed bottom-20 right-4 w-14 h-14 rounded-full flex items-center justify-center z-40 shadow-lg; background: #1A1717; color: #F5F5F0; }
+.fab { @apply fixed bottom-20 right-4 w-14 h-14 rounded-full flex items-center justify-center z-40 shadow-lg; background: #1A1717; color: #F6F5F1; }
 @media (min-width: 768px) { .fab { display: none; } }
 .desktop-add-btn { display: none; }
 @media (min-width: 768px) { .desktop-add-btn { display: flex; } }
@@ -49,7 +49,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: #F0EEE6;
+  background: #F6F5F1;
   z-index: 100;
   display: flex;
   flex-direction: column;
@@ -60,7 +60,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 16px 24px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  border-bottom: 1px solid #E8E5DC;
   flex-shrink: 0;
 }
 .fullscreen-modal-title {
@@ -78,12 +78,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.05);
+  background: #E8E5DC;
   transition: background 0.2s;
 }
 .fullscreen-modal-back:hover,
 .fullscreen-modal-close:hover {
-  background: rgba(0, 0, 0, 0.1);
+  background: color-mix(in srgb, #E8E5DC 82%, #1A1717 18%);
 }
 .fullscreen-modal-content {
   flex: 1;
@@ -147,15 +147,15 @@
 .dialog-content button:not([data-radix-dialog-close]):not([data-radix-alert-dialog-action]):not([data-radix-alert-dialog-cancel]) { font-size: 17px !important; height: 48px !important; }
 .dialog-content label { font-size: 15px !important; }
 
-.date-badge { @apply w-14 h-14 rounded-xl flex flex-col items-center justify-center; background: #1A1717; color: #F5F5F0; }
-.task-icon { @apply w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0; background: rgba(230, 229, 225, 0.5); color: #1A1717; }
+.date-badge { @apply w-14 h-14 rounded-xl flex flex-col items-center justify-center; background: #1A1717; color: #F6F5F1; }
+.task-icon { @apply w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0; background: rgba(232, 229, 220, 0.78); color: #1A1717; }
 .task-icon svg { width: 12px; height: 12px; }
 .task-icon.completed { background: transparent; border: 1.5px solid #9CA3AF; color: #9CA3AF; }
 /* .task-icon.emerald / .task-icon.smm emerald color removed - smm inherits default neutral icon style */
-.task-icon.red { background: rgba(230, 229, 225, 0.5); color: #DC2626; }
-.task-icon.orange { background: rgba(230, 229, 225, 0.5); color: #C4703D; }
-.task-icon.purple { background: rgba(230, 229, 225, 0.5); color: #9333EA; }
-.task-icon.manager { background: rgba(230, 229, 225, 0.5); color: #1A1717; }
+.task-icon.red { background: rgba(232, 229, 220, 0.78); color: #FF8370; }
+.task-icon.orange { background: rgba(232, 229, 220, 0.78); color: #C4703D; }
+.task-icon.purple { background: rgba(232, 229, 220, 0.78); color: #9333EA; }
+.task-icon.manager { background: rgba(232, 229, 220, 0.78); color: #1A1717; }
 
 /* Color circle buttons — MUST remain perfect circles */
 .color-circle {
@@ -180,9 +180,9 @@
   outline: 2px solid var(--circle-color);
   outline-offset: 2px;
 }
-.task-icon.blue { background: rgba(230, 229, 225, 0.5); color: #3B82F6; }
-.task-icon.pink { background: rgba(230, 229, 225, 0.5); color: #EC4899; }
-.task-icon.teal { background: rgba(230, 229, 225, 0.5); color: #14B8A6; }
+.task-icon.blue { background: rgba(232, 229, 220, 0.78); color: #3B82F6; }
+.task-icon.pink { background: rgba(232, 229, 220, 0.78); color: #EC4899; }
+.task-icon.teal { background: rgba(232, 229, 220, 0.78); color: #14B8A6; }
 
 /* Dark mode emerald */
 
@@ -200,13 +200,13 @@
   justify-content: center; 
   flex-shrink: 0;
   aspect-ratio: 1 / 1;
-  background: #F5F5F0;
+  background: #F6F5F1;
   color: inherit; 
   transition: all 0.15s; 
   padding: 0 !important;
   box-sizing: border-box;
 }
-.icon-selector-btn:hover { background: #EAEAE5; }
+.icon-selector-btn:hover { background: #E8E5DC; }
 .icon-selector-btn.selected { outline: 2px solid currentColor; outline-offset: 2px; }
 .icon-selector-btn svg { width: 16px; height: 16px; }
 
@@ -214,13 +214,13 @@
 .section-header { @apply w-full flex items-center gap-2 text-left; }
 .section-title { @apply text-base font-semibold; color: #6B6B6B; }
 .section-title.overdue-text { color: #D4849A; }
-.section-count { @apply text-sm px-2.5 py-1 rounded-full min-w-6 text-center; background: rgba(0, 0, 0, 0.08); color: #6B6B6B; font-size: 13px; }
+.section-count { @apply text-sm px-2.5 py-1 rounded-full min-w-6 text-center; background: #E8E5DC; color: #6B6B6B; font-size: 13px; }
 /* Add button - 1.5x smaller (was 28px, now ~19px) */
-.add-btn { @apply w-5 h-5 rounded-full flex items-center justify-center transition-all; background: #1A1717; color: #F5F5F0; }
+.add-btn { @apply w-5 h-5 rounded-full flex items-center justify-center transition-all; background: #1A1717; color: #F6F5F1; }
 .add-btn:hover { background: #333; }
 .add-btn svg { width: 10px; height: 10px; stroke-width: 3; }
 
-.overdue-section { @apply rounded-xl p-4; background: rgba(0, 0, 0, 0.03); }
+.overdue-section { @apply rounded-xl p-4; background: #F1EEE7; }
 
 /* Calendar */
 .calendar-container { @apply rounded-2xl p-2; }
@@ -245,8 +245,8 @@
 .calendar-minimal .rdp-head_cell { color: #6B6B6B; font-weight: 400; font-size: 0.7rem; text-transform: lowercase; width: auto; text-align: center; }
 .calendar-minimal .rdp-cell { width: auto; text-align: center; padding: 0 !important; }
 .calendar-minimal .rdp-day { background: transparent !important; border-radius: 50%; width: 30px; height: 30px; margin: 0 auto; display: flex; align-items: center; justify-content: center; padding: 0 !important; }
-.calendar-minimal .rdp-day:hover { background: rgba(0, 0, 0, 0.05) !important; }
-.calendar-minimal .rdp-day_selected { background: rgba(0, 0, 0, 0.08) !important; color: #1A1717 !important; }
+.calendar-minimal .rdp-day:hover { background: #E8E5DC !important; }
+.calendar-minimal .rdp-day_selected { background: #E8E5DC !important; color: #1A1717 !important; }
 .calendar-today-hidden { font-weight: normal !important; background: transparent !important; border: none !important; }
 .calendar-today-visible { font-weight: 700 !important; background: #1A1717 !important; color: #fff !important; border-radius: 50% !important; }
 
@@ -306,7 +306,7 @@
 .dialog-content .rdp-day_selected,
 .dialog-content .calendar-today-visible {
   background: #1A1717 !important;
-  color: #F5F5F0 !important;
+  color: #F6F5F1 !important;
 }
 
 /* Task checkbox - Fixed size circles */
@@ -334,10 +334,10 @@
 /* (emerald checkbox styling removed — kasya checkbox inherits default neutral) */
 
 /* Red checkbox for red SMM tasks */
-.task-checkbox.red { border-color: #DC2626; }
+.task-checkbox.red { border-color: #FF8370; }
 .task-checkbox.red.checked { background: transparent; border-color: #9CA3AF; }
 .task-checkbox.red.checked svg { color: #9CA3AF; }
-.task-checkbox.red:hover { background: rgba(220, 38, 38, 0.1); }
+.task-checkbox.red:hover { background: rgba(255, 131, 112, 0.14); }
 
 /* Orange checkbox for VO tasks */
 .task-checkbox.orange { border-color: #C4703D; }
@@ -357,7 +357,7 @@
 .stat-label { @apply text-sm mt-1; color: #6B6B6B; }
 
 /* Analytics month card */
-.analytics-card { @apply rounded-2xl p-5 mb-4; background: rgba(0, 0, 0, 0.03); }
+.analytics-card { @apply rounded-2xl p-5 mb-4; background: #F1EEE7; }
 .analytics-card-header { @apply flex items-center justify-between mb-4; }
 .analytics-card-month { @apply text-lg font-semibold; }
 .analytics-card-grid { @apply grid grid-cols-2 gap-4; }
@@ -367,10 +367,10 @@
 
 /* Mobile ghost button for add task */
 .add-task-ghost { @apply w-full py-4 text-center rounded-2xl border-2 border-dashed transition-colors font-medium; border-color: rgba(0, 0, 0, 0.1); color: #6B6B6B; }
-.add-task-ghost:hover { background: rgba(0, 0, 0, 0.02); }
+.add-task-ghost:hover { background: #E8E5DC; }
 
 /* Mobile section styling */
-.mobile-section { @apply rounded-2xl p-4; background: rgba(0, 0, 0, 0.03); }
+.mobile-section { @apply rounded-2xl p-4; background: #F1EEE7; }
 .mobile-section-header { @apply flex items-center gap-2 font-semibold text-lg; }
 .mobile-section-header.overdue { color: #D4849A; }
 .mobile-section-count { @apply text-secondary font-normal; }
@@ -385,8 +385,8 @@
 
 /* Settings tabs */
 .settings-tabs { @apply flex gap-2; }
-.settings-tab { @apply flex-1 py-2 px-3 rounded-xl font-medium text-sm transition-colors text-center; background: rgba(0, 0, 0, 0.05); }
-.settings-tab.active { background: #1A1717; color: #F5F5F0; }
+.settings-tab { @apply flex-1 py-2 px-3 rounded-xl font-medium text-sm transition-colors text-center; background: #E8E5DC; }
+.settings-tab.active { background: #1A1717; color: #F6F5F1; }
 
 /* Desktop */
 @media (min-width: 1024px) {
@@ -394,27 +394,27 @@
   .bottom-nav { display: none !important; }
 }
 
-.desktop-dashboard { @apply h-screen overflow-hidden; background: #F0EEE6; }
-.desktop-header { @apply flex items-center justify-between px-6 py-4 border-b; background: #F0EEE6; border-color: rgba(0, 0, 0, 0.06); }
+.desktop-dashboard { @apply h-screen overflow-hidden; background: #F6F5F1; }
+.desktop-header { @apply flex items-center justify-between px-6 py-4 border-b; background: #F6F5F1; border-color: #E8E5DC; }
 .desktop-header-left { @apply flex items-center; }
 .desktop-date-label { align-self: flex-start; padding-top: 9px; line-height: 1.2; }
 .desktop-header-right { @apply flex items-center gap-3; }
-.desktop-header-btn { @apply w-10 h-10 rounded-full flex items-center justify-center transition-colors; background: rgba(0, 0, 0, 0.04); color: #6B6B6B; }
-.desktop-header-btn:hover { background: rgba(0, 0, 0, 0.08); }
+.desktop-header-btn { @apply w-10 h-10 rounded-full flex items-center justify-center transition-colors; background: #E8E5DC; color: #6B6B6B; }
+.desktop-header-btn:hover { background: color-mix(in srgb, #E8E5DC 84%, #1A1717 16%); }
 
 
 .desktop-columns { @apply grid grid-cols-3 gap-4 p-4; min-height: calc(100vh - 72px); }
 .desktop-columns-4 { @apply grid gap-3 p-4; grid-template-columns: 1fr 1fr 1fr 1fr; height: calc(100vh - 72px); overflow: hidden; }
-.desktop-column { @apply flex flex-col rounded-xl; background: rgba(0, 0, 0, 0.02); height: 100%; overflow: hidden; }
+.desktop-column { @apply flex flex-col rounded-xl; background: #F1EEE7; height: 100%; overflow: hidden; }
 .desktop-columns-4 .desktop-column { min-width: 260px; }
-.column-header { @apply flex items-center gap-3 px-5 py-4 border-b; border-color: rgba(0, 0, 0, 0.06); }
+.column-header { @apply flex items-center gap-3 px-5 py-4 border-b; border-color: #E8E5DC; }
 .column-title { @apply text-sm font-semibold uppercase tracking-wide; color: #6B6B6B; }
 .column-content { @apply flex-1 overflow-y-auto p-4; }
 
 .section-header-mini { @apply flex items-center gap-2 mb-3 w-full text-left text-base font-medium; color: #6B6B6B; }
 .section-header-mini.overdue-header { color: #D4849A; }
 
-.calendar-container-desktop { @apply mb-1 border-b; border-color: rgba(0, 0, 0, 0.06); width: 100%; padding: 16px; }
+.calendar-container-desktop { @apply mb-1 border-b; border-color: #E8E5DC; width: 100%; padding: 16px; }
 .calendar-container-desktop .calendar-minimal { width: 100% !important; max-width: none; padding: 0 !important; }
 .calendar-container-desktop .rdp { width: 100% !important; margin: 0; }
 .calendar-container-desktop .rdp-months { width: 100%; justify-content: center; }
@@ -424,20 +424,20 @@
 .calendar-container-desktop .rdp-head_cell { width: auto; text-align: center; padding: 0; font-size: 11px; line-height: 1; height: 16px; color: #6B6B6B; font-weight: 400; }
 .calendar-container-desktop .rdp-cell { width: auto; text-align: center; padding: 0 !important; height: 28px !important; display: flex; align-items: center; justify-content: center; }
 .calendar-container-desktop .rdp-day { width: 28px !important; height: 28px !important; display: flex; align-items: center; justify-content: center; margin: 0 auto; border-radius: 50%; padding: 0 !important; font-size: 13px; background: transparent !important; border: none !important; box-shadow: none !important; }
-.calendar-container-desktop .rdp-day:hover { background: rgba(26, 23, 23, 0.08) !important; }
-.calendar-container-desktop .rdp-day_selected { background: rgba(26, 23, 23, 0.1) !important; color: #1A1717 !important; }
+.calendar-container-desktop .rdp-day:hover { background: #E8E5DC !important; }
+.calendar-container-desktop .rdp-day_selected { background: #E8E5DC !important; color: #1A1717 !important; }
 .calendar-container-desktop .calendar-day-content { font-size: 13px; font-weight: 500; line-height: 1; }
 .calendar-container-desktop .calendar-day-content .event-dot { bottom: -3px; }
 .calendar-container-desktop .rdp-row { height: auto; }
 .calendar-container-desktop .rdp-head_row { height: auto; margin-top: 0; }
 
 /* Event cards desktop - unified */
-.event-card-desktop { @apply flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all mb-3; background: rgba(0, 0, 0, 0.03); }
-.event-card-desktop:hover { background: rgba(0, 0, 0, 0.06); }
+.event-card-desktop { @apply flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all mb-3; background: #F6F5F1; }
+.event-card-desktop:hover { background: #E8E5DC; }
 .event-card-desktop.event-highlight { background: rgba(0, 0, 0, 0.12); animation: highlight-pulse 1.5s ease-out; }
 @keyframes highlight-pulse { 0% { transform: scale(1.02); box-shadow: 0 0 0 3px rgba(26, 26, 26, 0.3); } 100% { transform: scale(1); box-shadow: none; } }
 
-.date-badge-desktop { @apply w-14 h-14 rounded-lg flex flex-col items-center justify-center flex-shrink-0; background: #1A1717; color: #F5F5F0; }
+.date-badge-desktop { @apply w-14 h-14 rounded-lg flex flex-col items-center justify-center flex-shrink-0; background: #1A1717; color: #F6F5F1; }
 .date-badge-month { @apply text-xs font-medium uppercase tracking-wide; opacity: 0.7; }
 .date-badge-day { @apply text-xl font-bold leading-none; }
 
@@ -446,7 +446,7 @@
 /* Event popup */
 .event-popup-content { @apply grid grid-cols-2 gap-8; }
 .event-popup-left { @apply space-y-4; }
-.event-popup-right { @apply space-y-2 border-l pl-6 max-h-72 overflow-y-auto; border-color: rgba(0, 0, 0, 0.06); }
+.event-popup-right { @apply space-y-2 border-l pl-6 max-h-72 overflow-y-auto; border-color: #E8E5DC; }
 
 /* Dark Theme */
 
@@ -498,7 +498,7 @@
   min-height: 36px !important;
   padding: 0 !important;
   border-radius: 9999px !important;
-  background: rgba(0, 0, 0, 0.06) !important;
+  background: #E8E5DC !important;
   color: #1A1717 !important;
   display: inline-flex !important;
   align-items: center !important;
@@ -509,7 +509,7 @@
   border: none !important;
 }
 [data-radix-dialog-close]:hover {
-  background: rgba(0, 0, 0, 0.12) !important;
+  background: color-mix(in srgb, #E8E5DC 78%, #1A1717 22%) !important;
   transform: scale(1.04);
 }
 [data-radix-dialog-close] svg {
@@ -523,3 +523,20 @@
 .calendar-dark td, .calendar-dark th { width: 48px; height: 48px; text-align: center; vertical-align: middle; }
 .calendar-dark button[name="day"] { width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border-radius: 12px; }
 .calendar-dark [role="gridcell"] { padding: 2px; }
+
+
+/* Poriadok palette overrides */
+[data-radix-dialog-content],
+[data-radix-alert-dialog-content] {
+  background: #F1EEE7 !important;
+  border-color: #E8E5DC !important;
+}
+.text-red-500, .text-red-600, .text-red-700, .text-red-800 { color: #FF8370 !important; }
+.bg-red-50 { background-color: rgba(255, 131, 112, 0.10) !important; }
+.bg-red-100 { background-color: rgba(255, 131, 112, 0.16) !important; }
+.bg-red-200 { background-color: rgba(255, 131, 112, 0.24) !important; }
+.bg-red-500 { background-color: #FF8370 !important; }
+.border-red-100, .border-red-200, .border-red-300 { border-color: rgba(255, 131, 112, 0.35) !important; }
+.hover\:bg-red-50:hover { background-color: rgba(255, 131, 112, 0.10) !important; }
+.hover\:bg-red-100:hover { background-color: rgba(255, 131, 112, 0.16) !important; }
+.hover\:bg-red-200:hover { background-color: rgba(255, 131, 112, 0.24) !important; }
