@@ -7489,7 +7489,7 @@ const EventsDesktopExpanded = () => {
         <div className="desktop-column">
           <div className="flex items-center justify-between px-4 py-3">
             <span className="text-sm font-semibold tracking-wide" style={{ color: '#1A1717' }}>ЗАДАЧІ</span>
-            <span className="text-xs text-secondary">протерм. + сьогодні</span>
+            <span className="text-xs text-secondary">протерміновано + сьогодні</span>
           </div>
           <div className="column-content">
             {!selectedEvent ? (
