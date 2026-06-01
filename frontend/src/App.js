@@ -122,7 +122,16 @@ const api = {
   deleteEvent: (id) => axios.delete(`${API}/events/${id}`),
   cancelEventSeries: (id) => axios.post(`${API}/events/${id}/cancel-series`),
   updateEventTask: (eventId, taskId, data) => axios.patch(`${API}/events/${eventId}/tasks/${taskId}`, data),
-  deleteEventTask: (eventId, taskId) => axios.delete(`${API}/events/${eventId}/tasks/${taskId}`),
+  deleteEventTask: async (eventId, taskId) => {
+    try {
+      return await axios.delete(`${API}/events/${eventId}/tasks/${taskId}`);
+    } catch (error) {
+      if (error?.response?.status === 405) {
+        return axios.post(`${API}/events/${eventId}/tasks/${taskId}/delete`);
+      }
+      throw error;
+    }
+  },
   editTaskDef:   (taskId, data) => axios.patch(`${API}/task-definitions/${taskId}`, data),
   deleteTaskDef: (taskId) => axios.delete(`${API}/task-definitions/${taskId}`),
   createTaskDef: (data) => axios.post(`${API}/task-definitions`, data),

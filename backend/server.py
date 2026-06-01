@@ -2452,8 +2452,7 @@ async def update_event_task(event_id: str, task_id: str, data: dict, request: Re
         )
 
 
-@api_router.delete("/events/{event_id}/tasks/{task_id}")
-async def delete_event_task(event_id: str, task_id: str):
+async def _delete_event_task_instance(event_id: str, task_id: str):
     """Remove an event-based task instance from its event maps."""
     event = await db.events.find_one({"id": event_id}, {"_id": 0})
     if not event:
@@ -2474,6 +2473,16 @@ async def delete_event_task(event_id: str, task_id: str):
 
     await db.events.update_one({"id": event_id}, {"$unset": unset_fields})
     return {"deleted": True, "event_id": event_id, "task_id": task_id}
+
+
+@api_router.delete("/events/{event_id}/tasks/{task_id}")
+async def delete_event_task(event_id: str, task_id: str):
+    return await _delete_event_task_instance(event_id, task_id)
+
+
+@api_router.post("/events/{event_id}/tasks/{task_id}/delete")
+async def delete_event_task_post_fallback(event_id: str, task_id: str):
+    return await _delete_event_task_instance(event_id, task_id)
 
 
 @api_router.get("/smm/announcement-overlaps")
