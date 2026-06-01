@@ -5775,7 +5775,16 @@ const DesktopDashboard = () => {
         <DialogContent className="dialog-content">
           {selectedStandaloneTask && (
             <>
-              <DialogHeader>
+              <button
+                type="button"
+                className="absolute right-16 top-5 z-[2] w-9 h-9 rounded-full text-red-500 hover:bg-red-50 transition-colors inline-flex items-center justify-center"
+                onClick={handleDeleteStandaloneTask}
+                title="видалити таск"
+                data-testid="task-popup-delete-icon"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+              <DialogHeader className="pr-24">
                 <DialogTitle>{selectedStandaloneTask.title}</DialogTitle>
                 <DialogDescription>{formatDateUkrainian(selectedStandaloneTask.date)} — {UK_WEEKDAYS[new Date(selectedStandaloneTask.date).getDay()]}</DialogDescription>
               </DialogHeader>
@@ -5839,7 +5848,7 @@ const DesktopDashboard = () => {
             return (
               <>
                 {/* Header inline: title + assignee chip + event chip */}
-                <div className="flex items-baseline gap-2 mb-4 pr-10 flex-wrap">
+                <div className="flex items-baseline gap-2 mb-4 pr-24 flex-wrap">
                   <DialogTitle className="text-[20px] font-semibold tracking-tight" data-testid="edit-task-title">завдання</DialogTitle>
                   <span className="relative inline-flex items-center text-[11px] font-medium text-[#1A1717]/55">
                     <span className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ background: selectedHex }} />
@@ -5882,7 +5891,7 @@ const DesktopDashboard = () => {
                   {isStandalone && (
                     <button
                       type="button"
-                      className="absolute right-12 top-5 w-9 h-9 rounded-full text-red-500 hover:bg-red-50 transition-colors inline-flex items-center justify-center"
+                      className="absolute right-16 top-5 z-[2] w-9 h-9 rounded-full text-red-500 hover:bg-red-50 transition-colors inline-flex items-center justify-center"
                       onClick={handleDeleteEditingTask}
                       title="видалити таск"
                       data-testid="edit-task-delete-icon"
