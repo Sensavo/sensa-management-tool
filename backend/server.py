@@ -2452,6 +2452,30 @@ async def update_event_task(event_id: str, task_id: str, data: dict, request: Re
         )
 
 
+@api_router.delete("/events/{event_id}/tasks/{task_id}")
+async def delete_event_task(event_id: str, task_id: str):
+    """Remove an event-based task instance from its event maps."""
+    event = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    unset_fields = {}
+    for field in COLUMN_TO_FIELD.values():
+        if task_id in (event.get(field) or {}):
+            unset_fields[f"{field}.{task_id}"] = ""
+    for field in COLUMN_TO_COMPLETED_FIELD.values():
+        if task_id in (event.get(field) or {}):
+            unset_fields[f"{field}.{task_id}"] = ""
+    if task_id in (event.get("task_overrides") or {}):
+        unset_fields[f"task_overrides.{task_id}"] = ""
+
+    if not unset_fields:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    await db.events.update_one({"id": event_id}, {"$unset": unset_fields})
+    return {"deleted": True, "event_id": event_id, "task_id": task_id}
+
+
 @api_router.get("/smm/announcement-overlaps")
 async def get_announcement_overlaps():
     """Check for announcement task overlaps across all events.

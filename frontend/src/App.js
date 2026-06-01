@@ -122,6 +122,7 @@ const api = {
   deleteEvent: (id) => axios.delete(`${API}/events/${id}`),
   cancelEventSeries: (id) => axios.post(`${API}/events/${id}/cancel-series`),
   updateEventTask: (eventId, taskId, data) => axios.patch(`${API}/events/${eventId}/tasks/${taskId}`, data),
+  deleteEventTask: (eventId, taskId) => axios.delete(`${API}/events/${eventId}/tasks/${taskId}`),
   editTaskDef:   (taskId, data) => axios.patch(`${API}/task-definitions/${taskId}`, data),
   deleteTaskDef: (taskId) => axios.delete(`${API}/task-definitions/${taskId}`),
   createTaskDef: (data) => axios.post(`${API}/task-definitions`, data),
@@ -5836,9 +5837,14 @@ const DesktopDashboard = () => {
             const isCustomDate = !dateChips.some(c => c.value === editingStandaloneTask.date);
             const handleDeleteEditingTask = async () => {
               try {
-                await api.deleteStandaloneTask(editingStandaloneTask.id);
+                if (isStandalone) {
+                  await api.deleteStandaloneTask(editingStandaloneTask.id);
+                  refreshStandaloneTasks();
+                } else {
+                  await api.deleteEventTask(editingStandaloneTask._eventId, editingStandaloneTask._taskId);
+                  refreshEvents();
+                }
                 toast.success("видалено!");
-                refreshStandaloneTasks();
                 setShowEditStandaloneDialog(false);
                 setEditingStandaloneTask(null);
               } catch {
@@ -5888,17 +5894,6 @@ const DesktopDashboard = () => {
                       {editingStandaloneTask.eventTitle}
                     </span>
                   ))}
-                  {isStandalone && (
-                    <button
-                      type="button"
-                      className="absolute right-16 top-5 z-[2] w-9 h-9 rounded-full text-red-500 hover:bg-red-50 transition-colors inline-flex items-center justify-center"
-                      onClick={handleDeleteEditingTask}
-                      title="видалити таск"
-                      data-testid="edit-task-delete-icon"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
                 </div>
 
                 <Input
@@ -6000,11 +5995,16 @@ const DesktopDashboard = () => {
                 </div>
 
                 <div className="mt-4 flex gap-2">
-                  {isStandalone && (
-                    <button className="flex-1 h-12 rounded-full border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5 text-sm font-medium" data-testid="edit-task-delete" onClick={handleDeleteEditingTask}>
-                      <Trash2 className="w-4 h-4" />видалити
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="w-12 h-12 rounded-full border border-red-200 text-red-600 hover:bg-red-50 transition-colors inline-flex items-center justify-center"
+                    data-testid="edit-task-delete-icon"
+                    title="видалити таск"
+                    aria-label="видалити таск"
+                    onClick={handleDeleteEditingTask}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                   <button className="flex-1 h-12 rounded-full bg-[#1A1717] text-[#F6F5F1] font-medium text-[14px] transition-colors hover:bg-[#2a2424] active:scale-[0.98]" data-testid="edit-task-save" onClick={handleSaveStandaloneTask}>зберегти</button>
                 </div>
               </>
