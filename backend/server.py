@@ -22,9 +22,10 @@ from zoneinfo import ZoneInfo
 import html
 
 try:
-    from telegram import Update
+    from telegram import ReplyKeyboardMarkup, Update
     from telegram.ext import Application, CommandHandler, ContextTypes
 except Exception:  # pragma: no cover - keeps the API alive when TG deps are absent
+    ReplyKeyboardMarkup = None
     Update = None
     Application = None
     CommandHandler = None
@@ -1110,14 +1111,31 @@ async def telegram_summary_loop():
             await asyncio.sleep(60)
 
 
+def _telegram_main_keyboard():
+    if not ReplyKeyboardMarkup:
+        return None
+    return ReplyKeyboardMarkup(
+        [
+            ["/today", "/overdue"],
+            ["/mute", "/unmute"],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+        input_field_placeholder="/link код",
+    )
+
+
 async def telegram_start_command(update, context):
-    await update.message.reply_text("привіт. для привʼязки надішли /link 123456")
+    await update.message.reply_text(
+        "привіт. кнопки нижче, а для привʼязки надішли /link 123456",
+        reply_markup=_telegram_main_keyboard(),
+    )
 
 
 async def telegram_link_command(update, context):
     args = context.args or []
     if not args:
-        await update.message.reply_text("надішли код так: /link 123456")
+        await update.message.reply_text("надішли код так: /link 123456", reply_markup=_telegram_main_keyboard())
         return
 
     code = args[0].strip()
@@ -1127,7 +1145,7 @@ async def telegram_link_command(update, context):
         "link_expires_at": {"$gt": now},
     }, {"_id": 0})
     if not doc:
-        await update.message.reply_text("код не знайдено або він вже протермінований")
+        await update.message.reply_text("код не знайдено або він вже протермінований", reply_markup=_telegram_main_keyboard())
         return
 
     chat = update.effective_chat
@@ -1142,13 +1160,13 @@ async def telegram_link_command(update, context):
             "link_expires_at": None,
         }},
     )
-    await update.message.reply_text(f"✓ привʼязано до акаунту {doc['user_id']}")
+    await update.message.reply_text(f"✓ привʼязано до акаунту {doc['user_id']}", reply_markup=_telegram_main_keyboard())
 
 
 async def telegram_today_command(update, context):
     user = await _find_user_by_chat(update.effective_chat.id)
     if not user:
-        await update.message.reply_text("спершу привʼяжи акаунт через /link 123456")
+        await update.message.reply_text("спершу привʼяжи акаунт через /link 123456", reply_markup=_telegram_main_keyboard())
         return
     await update.message.reply_html(await _build_today_tasks_message(user["user_id"]))
 
@@ -1156,7 +1174,7 @@ async def telegram_today_command(update, context):
 async def telegram_overdue_command(update, context):
     user = await _find_user_by_chat(update.effective_chat.id)
     if not user:
-        await update.message.reply_text("спершу привʼяжи акаунт через /link 123456")
+        await update.message.reply_text("спершу привʼяжи акаунт через /link 123456", reply_markup=_telegram_main_keyboard())
         return
     tasks = await _collect_user_tasks(user["user_id"], overdue=True)
     await update.message.reply_html(f"📋 протерміновано:\n{_format_task_list(tasks, 'протермінованих тасків немає')}\n\n{_poriadok_link()}")
@@ -1165,19 +1183,19 @@ async def telegram_overdue_command(update, context):
 async def telegram_mute_command(update, context):
     user = await _find_user_by_chat(update.effective_chat.id)
     if not user:
-        await update.message.reply_text("спершу привʼяжи акаунт через /link 123456")
+        await update.message.reply_text("спершу привʼяжи акаунт через /link 123456", reply_markup=_telegram_main_keyboard())
         return
     await db.user_settings.update_one({"user_id": user["user_id"]}, {"$set": {"muted": True}})
-    await update.message.reply_text("ок, сповіщення тимчасово вимкнено")
+    await update.message.reply_text("ок, сповіщення тимчасово вимкнено", reply_markup=_telegram_main_keyboard())
 
 
 async def telegram_unmute_command(update, context):
     user = await _find_user_by_chat(update.effective_chat.id)
     if not user:
-        await update.message.reply_text("спершу привʼяжи акаунт через /link 123456")
+        await update.message.reply_text("спершу привʼяжи акаунт через /link 123456", reply_markup=_telegram_main_keyboard())
         return
     await db.user_settings.update_one({"user_id": user["user_id"]}, {"$set": {"muted": False}})
-    await update.message.reply_text("ок, сповіщення знову увімкнено")
+    await update.message.reply_text("ок, сповіщення знову увімкнено", reply_markup=_telegram_main_keyboard())
 
 
 @api_router.get("/users/{user_id}/telegram/status")
