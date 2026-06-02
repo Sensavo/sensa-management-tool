@@ -4931,6 +4931,24 @@ const DesktopDashboard = () => {
     }
   };
 
+  const handleDeleteEditingTask = useCallback(async () => {
+    if (!editingStandaloneTask) return;
+    try {
+      if (editingStandaloneTask._isStandalone === false) {
+        await api.deleteEventTask(editingStandaloneTask._eventId, editingStandaloneTask._taskId);
+        refreshEvents();
+      } else {
+        await api.deleteStandaloneTask(editingStandaloneTask.id);
+        refreshStandaloneTasks();
+      }
+      toast.success("видалено!");
+      setShowEditStandaloneDialog(false);
+      setEditingStandaloneTask(null);
+    } catch {
+      toast.error("помилка");
+    }
+  }, [editingStandaloneTask, refreshEvents, refreshStandaloneTasks]);
+
   // Keyboard shortcut for save (Ctrl/Cmd + Enter)
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -4950,6 +4968,22 @@ const DesktopDashboard = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showTaskDialog, showSMMTaskDialog, showEditStandaloneDialog, newTask, newSMMTask, editingStandaloneTask]);
+
+  // Delete shortcut in the edit dialog: d (latin) / в (Ukrainian).
+  useEffect(() => {
+    if (!showEditStandaloneDialog || showEditCalendar) return;
+    const handleDeleteKey = (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      const tag = e.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
+      const key = String(e.key || '').toLowerCase();
+      if (key !== 'd' && key !== 'в') return;
+      e.preventDefault();
+      handleDeleteEditingTask();
+    };
+    window.addEventListener('keydown', handleDeleteKey);
+    return () => window.removeEventListener('keydown', handleDeleteKey);
+  }, [showEditStandaloneDialog, showEditCalendar, editingStandaloneTask, handleDeleteEditingTask]);
 
   // Digit shortcuts in the edit dialog: 0 = today, 1 = tomorrow, … 9 = +9d.
   // Calls the same reschedule handler the chips use, so the popup closes on
@@ -5844,22 +5878,6 @@ const DesktopDashboard = () => {
               { label: "+1 тиж",  value: dt(7) },
             ];
             const isCustomDate = !dateChips.some(c => c.value === editingStandaloneTask.date);
-            const handleDeleteEditingTask = async () => {
-              try {
-                if (isStandalone) {
-                  await api.deleteStandaloneTask(editingStandaloneTask.id);
-                  refreshStandaloneTasks();
-                } else {
-                  await api.deleteEventTask(editingStandaloneTask._eventId, editingStandaloneTask._taskId);
-                  refreshEvents();
-                }
-                toast.success("видалено!");
-                setShowEditStandaloneDialog(false);
-                setEditingStandaloneTask(null);
-              } catch {
-                toast.error("помилка");
-              }
-            };
             return (
               <>
                 {/* Header inline: title + assignee chip + event chip */}
