@@ -1038,6 +1038,20 @@ async def _today_events_summary() -> str:
     return f"подія сьогодні: <b>{_html_escape(first.get('title'))}</b>{_html_escape(time_part)}{extra}"
 
 
+async def _build_today_tasks_message(user_id: str) -> str:
+    user_id = normalize_assignee(user_id, "")
+    today_tasks = await _collect_user_tasks(user_id, target_date=_today_kyiv())
+    event_line = await _today_events_summary()
+    lines = [
+        f"📋 сьогодні для {_html_escape(TEAM_USER_LABELS.get(user_id, user_id))}:",
+        _format_task_list(today_tasks, "тасків на сьогодні немає"),
+    ]
+    if event_line:
+        lines.extend(["", event_line])
+    lines.extend(["", _poriadok_link()])
+    return "\n".join(lines)
+
+
 async def _build_morning_summary(user_id: str) -> Optional[str]:
     today_tasks = await _collect_user_tasks(user_id, target_date=_today_kyiv())
     overdue_tasks = await _collect_user_tasks(user_id, overdue=True)
@@ -1052,8 +1066,10 @@ async def _build_morning_summary(user_id: str) -> Optional[str]:
         f"сьогодні в тебе: <b>{total}</b> тасків ({len(overdue_tasks)} протерм).",
         f"найперший — <b>{_html_escape(first_task.get('title'))}</b> {_format_task_date(first_task.get('date', ''))}.",
     ]
+    if today_tasks:
+        lines.extend(["", "сьогодні:", _format_task_list(today_tasks, "")])
     if event_line:
-        lines.append(event_line)
+        lines.extend(["", event_line])
     lines.append("")
     lines.append(_poriadok_link())
     return "\n".join(lines)
@@ -1134,8 +1150,7 @@ async def telegram_today_command(update, context):
     if not user:
         await update.message.reply_text("спершу привʼяжи акаунт через /link 123456")
         return
-    tasks = await _collect_user_tasks(user["user_id"], target_date=_today_kyiv())
-    await update.message.reply_html(f"📋 сьогодні:\n{_format_task_list(tasks, 'тасків на сьогодні немає')}\n\n{_poriadok_link()}")
+    await update.message.reply_html(await _build_today_tasks_message(user["user_id"]))
 
 
 async def telegram_overdue_command(update, context):
@@ -1210,6 +1225,22 @@ async def unmute_telegram_user(user_id: str):
 @api_router.post("/admin/telegram/test-summary")
 async def test_telegram_summary():
     return await _send_morning_summaries()
+
+
+@api_router.post("/admin/telegram/test-today")
+async def test_telegram_today(user_id: Optional[str] = None):
+    users = [normalize_assignee(user_id, "")] if user_id else list(TEAM_USERS)
+    sent = 0
+    skipped = 0
+    for uid in users:
+        if uid not in TEAM_USERS:
+            skipped += 1
+            continue
+        if await send_telegram(uid, await _build_today_tasks_message(uid)):
+            sent += 1
+        else:
+            skipped += 1
+    return {"sent": sent, "skipped": skipped}
 
 
 # ==================== EVENTS API ====================
