@@ -170,6 +170,7 @@ const api = {
   createTelegramLinkCode: (userId) => axios.post(`${API}/users/${userId}/telegram/link-code`),
   muteTelegram: (userId) => axios.post(`${API}/users/${userId}/telegram/mute`),
   unmuteTelegram: (userId) => axios.post(`${API}/users/${userId}/telegram/unmute`),
+  unlinkTelegram: (userId) => axios.post(`${API}/users/${userId}/telegram/unlink`),
 };
 
 // Helper function to get booking status color
@@ -2760,6 +2761,18 @@ const TelegramSettingsSection = ({ compact = false }) => {
     }
   };
 
+  const handleUnlink = async () => {
+    if (!currentUser || !status?.linked) return;
+    try {
+      const res = await api.unlinkTelegram(currentUser);
+      setStatus(res.data);
+      setLinkData(null);
+      toast.success("Telegram відвʼязано");
+    } catch {
+      toast.error("не вдалося відвʼязати Telegram");
+    }
+  };
+
   const botUsername = linkData?.bot_username || status?.bot_username;
   const botUrl = botUsername ? `https://t.me/${botUsername.replace("@", "")}` : "";
   const codeText = linkData?.code ? `/link ${linkData.code}` : "";
@@ -2792,12 +2805,15 @@ const TelegramSettingsSection = ({ compact = false }) => {
         </select>
       </div>
 
-      <div className="flex gap-2">
-        <button className="btn-dark flex-1 h-9 text-xs" onClick={handleCreateCode} disabled={!currentUser}>
+      <div className="grid grid-cols-3 gap-2">
+        <button className="btn-dark h-9 text-xs" onClick={handleCreateCode} disabled={!currentUser}>
           {status?.linked ? "перепривʼязати" : "привʼязати TG"}
         </button>
-        <button className="btn-subtle flex-1 h-9 text-xs" onClick={handleToggleMute} disabled={!currentUser || !status?.linked}>
+        <button className="btn-subtle h-9 text-xs" onClick={handleToggleMute} disabled={!currentUser || !status?.linked}>
           {status?.muted ? "увімкнути" : "тимч. вимкнути"}
+        </button>
+        <button className="btn-subtle h-9 text-xs" onClick={handleUnlink} disabled={!currentUser || !status?.linked}>
+          відвʼязати
         </button>
       </div>
 

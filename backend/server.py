@@ -1155,6 +1155,10 @@ async def telegram_link_command(update, context):
 
     chat = update.effective_chat
     username = update.effective_user.username if update.effective_user else ""
+    await db.user_settings.update_many(
+        {"telegram_chat_id": chat.id},
+        {"$set": {"telegram_chat_id": None, "telegram_username": ""}},
+    )
     await db.user_settings.update_one(
         {"user_id": normalize_assignee(doc["user_id"])},
         {"$set": {
@@ -1242,6 +1246,23 @@ async def unmute_telegram_user(user_id: str):
     user_id = normalize_assignee(user_id, "")
     await _ensure_user_setting(user_id)
     await db.user_settings.update_one({"user_id": user_id}, {"$set": {"muted": False}})
+    return await _telegram_status_payload(user_id)
+
+
+@api_router.post("/users/{user_id}/telegram/unlink")
+async def unlink_telegram_user(user_id: str):
+    user_id = normalize_assignee(user_id, "")
+    await _ensure_user_setting(user_id)
+    await db.user_settings.update_many(
+        {"user_id": {"$in": assignee_storage_aliases(user_id)}},
+        {"$set": {
+            "telegram_chat_id": None,
+            "telegram_username": "",
+            "link_code": None,
+            "link_expires_at": None,
+            "muted": False,
+        }},
+    )
     return await _telegram_status_payload(user_id)
 
 
