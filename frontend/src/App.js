@@ -554,7 +554,7 @@ const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, 
             )
           )}
         </div>
-        {!task.is_standalone && task.event_title && <p className="text-xs text-secondary lowercase truncate">{task.event_title}</p>}
+        {task.event_title && <p className="text-xs text-secondary lowercase truncate">{task.event_title}</p>}
         {task.target_month && <p className="text-xs text-gray-400">{UK_MONTHS[parseInt(task.target_month.split('-')[1]) - 1]}</p>}
       </div>
       {showDate && <span className="text-secondary text-xs whitespace-nowrap ml-1">{formatDateUkrainian(task.task_date)}</span>}
@@ -785,8 +785,8 @@ const Dashboard = () => {
     });
     standaloneTasks.filter(t => t.type !== "smm").forEach(task => {
       const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
-      const monthLabel = task.target_month ? UK_MONTHS[parseInt(task.target_month.split('-')[1]) - 1] : '';
-      const t = { event_id: task.id, event_title: task.type === 'monthly' ? '' : task.title, reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "manager", assignee: normalizeAssignee(task.assignee), target_month: task.target_month };
+      const linkedEvent = task.event_id ? events.find(event => event.id === task.event_id) : null;
+      const t = { event_id: task.id, event_title: linkedEvent?.title || "", reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "manager", assignee: normalizeAssignee(task.assignee), target_month: task.target_month };
       if (task.date === todayStr) todayTasks.push(t);
       else if (taskDate < today && !task.completed) overdueTasks.push(t);
       else if (taskDate > today && task.date <= twoWeeksStr) soonTasks.push(t);
@@ -815,7 +815,8 @@ const Dashboard = () => {
     });
     standaloneTasks.filter(t => t.type === "smm").forEach(task => {
       const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
-      const t = { event_id: task.id, event_title: task.title, task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "manager", assignee: normalizeAssignee(task.assignee, "smm"), target_month: task.target_month };
+      const linkedEvent = task.event_id ? events.find(event => event.id === task.event_id) : null;
+      const t = { event_id: task.id, event_title: linkedEvent?.title || "", task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "manager", assignee: normalizeAssignee(task.assignee, "smm"), target_month: task.target_month };
       if (task.date === todayStr) todayTasks.push(t);
       else if (taskDate < today && !task.completed) overdueTasks.push(t);
       else if (taskDate > today && task.date <= twoWeeksStr) soonTasks.push(t);
@@ -4471,7 +4472,8 @@ const DesktopDashboard = () => {
 
     standaloneTasks.filter(t => t.type !== "smm").forEach(task => {
       const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
-      const t = { event_id: task.id, event_title: task.title, reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "manager", assignee: normalizeAssignee(task.assignee), type: task.type, event_id_link: task.event_id || "", order: task.order || 0 };
+      const linkedEvent = task.event_id ? events.find(event => event.id === task.event_id) : null;
+      const t = { event_id: task.id, event_title: linkedEvent?.title || "", reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "manager", assignee: normalizeAssignee(task.assignee), type: task.type, event_id_link: task.event_id || "", order: task.order || 0 };
       if (task.date === todayStr) todayTasks.push(t);
       else if (taskDate < today && !task.completed) overdueTasks.push(t);
       else if (taskDate > today && task.date <= twoWeeksStr) soonTasks.push(t);
@@ -4509,7 +4511,8 @@ const DesktopDashboard = () => {
     // Add standalone tasks
     standaloneTasks.filter(t => t.type === "smm").forEach(task => {
       const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
-      const t = { event_id: task.id, event_title: task.title, task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "manager", assignee: normalizeAssignee(task.assignee, "smm"), type: task.type, event_id_link: task.event_id || "", order: task.order || 0 };
+      const linkedEvent = task.event_id ? events.find(event => event.id === task.event_id) : null;
+      const t = { event_id: task.id, event_title: linkedEvent?.title || "", task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "manager", assignee: normalizeAssignee(task.assignee, "smm"), type: task.type, event_id_link: task.event_id || "", order: task.order || 0 };
       if (task.date === todayStr) todayTasks.push(t);
       else if (taskDate < today && !task.completed) overdueTasks.push(t);
       else if (taskDate > today && task.date <= twoWeeksStr) soonTasks.push(t);
