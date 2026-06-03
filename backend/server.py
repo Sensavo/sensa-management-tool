@@ -1053,22 +1053,19 @@ async def _build_today_tasks_message(user_id: str) -> str:
     return "\n".join(lines)
 
 
-async def _build_morning_summary(user_id: str) -> Optional[str]:
+async def _build_morning_summary(user_id: str) -> str:
     today_tasks = await _collect_user_tasks(user_id, target_date=_today_kyiv())
     overdue_tasks = await _collect_user_tasks(user_id, overdue=True)
-    if not today_tasks and not overdue_tasks:
-        return None
-
-    total = len(today_tasks) + len(overdue_tasks)
-    first_task = (overdue_tasks + today_tasks)[0]
     event_line = await _today_events_summary()
     lines = [
         f"📋 доброго ранку, {_html_escape(TEAM_USER_LABELS.get(user_id, user_id))}.",
-        f"сьогодні в тебе: <b>{total}</b> тасків ({len(overdue_tasks)} протерм).",
-        f"найперший — <b>{_html_escape(first_task.get('title'))}</b> {_format_task_date(first_task.get('date', ''))}.",
+        f"сьогодні в тебе: <b>{len(today_tasks)}</b> тасків ({len(overdue_tasks)} протерм).",
+        "",
+        "сьогодні:",
+        _format_task_list(today_tasks, "тасків на сьогодні немає"),
     ]
-    if today_tasks:
-        lines.extend(["", "сьогодні:", _format_task_list(today_tasks, "")])
+    if overdue_tasks:
+        lines.extend(["", "протерміновано:", _format_task_list(overdue_tasks, "")])
     if event_line:
         lines.extend(["", event_line])
     lines.append("")
@@ -1081,9 +1078,6 @@ async def _send_morning_summaries() -> dict:
     skipped = 0
     for user_id in TEAM_USERS:
         message = await _build_morning_summary(user_id)
-        if not message:
-            skipped += 1
-            continue
         if await send_telegram(user_id, message):
             sent += 1
         else:
