@@ -5939,6 +5939,17 @@ const DesktopDashboard = () => {
       {/* Edit Task Dialog (both standalone and event-based) */}
       <Dialog open={showEditStandaloneDialog} onOpenChange={setShowEditStandaloneDialog}>
         <DialogContent className="sm:max-w-[420px] !p-5 sm:!p-6" onOpenAutoFocus={(e) => e.preventDefault()}>
+          {editingStandaloneTask && (
+            <div className="hidden lg:block absolute right-[calc(100%+14px)] top-7 w-36 rounded-2xl border border-black/5 bg-[#F1EEE7]/95 px-3 py-3 shadow-sm">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#1A1717]/45 mb-2">хоткеї</p>
+              <div className="space-y-1.5 text-[11px] text-[#1A1717]/55">
+                <div className="flex items-center justify-between gap-2"><span>сьогодні</span><kbd className="hotkey-kbd">` / 0</kbd></div>
+                <div className="flex items-center justify-between gap-2"><span>+ день</span><kbd className="hotkey-kbd">1-9</kbd></div>
+                <div className="flex items-center justify-between gap-2"><span>видалити</span><kbd className="hotkey-kbd">d / в</kbd></div>
+                <div className="flex items-center justify-between gap-2"><span>зберегти</span><kbd className="hotkey-kbd">⌘↵</kbd></div>
+              </div>
+            </div>
+          )}
           {editingStandaloneTask && (() => {
             const getAssigneeName = () => {
               const a = editingStandaloneTask.assignee;
