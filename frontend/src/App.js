@@ -6147,7 +6147,11 @@ const DesktopDashboard = () => {
       <Dialog open={showEditStandaloneDialog} onOpenChange={setShowEditStandaloneDialog}>
         <DialogContent className="sm:max-w-[420px] !p-5 sm:!p-6" onOpenAutoFocus={(e) => e.preventDefault()}>
           {editingStandaloneTask && (
-            <div className="hidden lg:block absolute right-[calc(100%+14px)] top-7 w-36 rounded-2xl border border-black/5 bg-[#F1EEE7]/95 px-3 py-3 shadow-sm">
+            <div
+              className="hidden md:block fixed z-[160] w-36 rounded-2xl border border-black/5 bg-[#F1EEE7]/95 px-3 py-3 shadow-sm backdrop-blur"
+              style={{ left: "max(16px, calc(50vw - 360px))", top: "50%", transform: "translateY(-50%)" }}
+              data-testid="task-hotkeys-panel"
+            >
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#1A1717]/45 mb-2">хоткеї</p>
               <div className="space-y-1.5 text-[11px] text-[#1A1717]/55">
                 <div className="flex items-center justify-between gap-2"><span>сьогодні</span><kbd className="hotkey-kbd">` / 0</kbd></div>
@@ -6227,6 +6231,14 @@ const DesktopDashboard = () => {
                       {editingStandaloneTask.eventTitle}
                     </span>
                   ))}
+                </div>
+
+                <div className="md:hidden task-hotkeys-inline" data-testid="task-hotkeys-inline">
+                  <span>хоткеї</span>
+                  <kbd className="hotkey-kbd">` / 0</kbd>
+                  <kbd className="hotkey-kbd">1-9</kbd>
+                  <kbd className="hotkey-kbd">d / в</kbd>
+                  <kbd className="hotkey-kbd">⌘↵</kbd>
                 </div>
 
                 <Input

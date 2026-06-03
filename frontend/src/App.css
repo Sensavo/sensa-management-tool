@@ -654,3 +654,21 @@
 .event-card-desktop.event-archive-cancelled:hover {
   background: color-mix(in srgb, #E8E5DC 84%, #FF8370 16%);
 }
+
+.task-hotkeys-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 0 2px;
+  color: rgba(26, 23, 23, 0.45);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.task-hotkeys-inline .hotkey-kbd {
+  flex-shrink: 0;
+  text-transform: none;
+  letter-spacing: 0;
+}
