@@ -893,6 +893,17 @@ async def _telegram_status_payload(user_id: str) -> dict:
     }
 
 
+async def _telegram_send_setting(user_id: str) -> Optional[dict]:
+    user_id = normalize_assignee(user_id, "")
+    aliases = assignee_storage_aliases(user_id)
+    docs = await db.user_settings.find({"user_id": {"$in": aliases}}, {"_id": 0}).to_list(len(aliases))
+    exact = next((doc for doc in docs if normalize_assignee(doc.get("user_id"), "") == user_id and doc.get("user_id") == user_id), None)
+    if exact and exact.get("telegram_chat_id"):
+        return exact
+    linked_alias = next((doc for doc in docs if doc.get("telegram_chat_id")), None)
+    return linked_alias or exact or (docs[0] if docs else None)
+
+
 def _task_def_for_event_task(column: str, task_id: str) -> dict:
     return next((t for t in get_tasks_for_column(column) if t.get("id") == task_id), {})
 
@@ -978,7 +989,7 @@ async def send_telegram(user_id: str, text: str) -> bool:
     user_id = normalize_assignee(user_id, "")
     if not telegram_app:
         return False
-    doc = await db.user_settings.find_one({"user_id": {"$in": assignee_storage_aliases(user_id)}}, {"_id": 0})
+    doc = await _telegram_send_setting(user_id)
     if not doc or not doc.get("telegram_chat_id") or doc.get("muted"):
         return False
     try:
