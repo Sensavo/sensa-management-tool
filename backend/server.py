@@ -1365,6 +1365,12 @@ def _altegio_activity_url(activity_id: Optional[str] = None) -> Optional[str]:
     return f"{base}/menu"
 
 
+def _google_calendar_event_id(event: Optional[dict]) -> Optional[str]:
+    if not event:
+        return None
+    return event.get("google_calendar_event_id") or event.get("google_calendar_id")
+
+
 def _altegio_event_title(altegio_event: dict) -> str:
     return altegio_event.get("service", {}).get("title", "") or altegio_event.get("title", "") or ""
 
@@ -1537,7 +1543,7 @@ async def _sync_event_to_external(event: Event) -> None:
                 calendar_event['end'] = {'date': (event_date + timedelta(days=1)).strftime('%Y-%m-%d'), 'timeZone': 'Europe/Kyiv'}
 
             result = service.events().insert(calendarId='primary', body=calendar_event).execute()
-            await db.events.update_one({"id": event.id}, {"$set": {"google_calendar_id": result.get("id")}})
+            await db.events.update_one({"id": event.id}, {"$set": {"google_calendar_id": result.get("id"), "google_calendar_event_id": result.get("id")}})
             logging.info(f"Auto-exported event {event.title} to Google Calendar")
     except Exception as e:
         logging.error(f"Failed to auto-export to Google Calendar: {e}")
@@ -1732,7 +1738,7 @@ async def _create_event_legacy_keepalive(event_data: EventCreate):  # pragma: no
                 calendar_event['end'] = {'date': (event_date + timedelta(days=1)).strftime('%Y-%m-%d'), 'timeZone': 'Europe/Kyiv'}
             
             result = service.events().insert(calendarId='primary', body=calendar_event).execute()
-            await db.events.update_one({"id": event.id}, {"$set": {"google_calendar_id": result.get("id")}})
+            await db.events.update_one({"id": event.id}, {"$set": {"google_calendar_id": result.get("id"), "google_calendar_event_id": result.get("id")}})
             logging.info(f"Auto-exported event {event.title} to Google Calendar")
     except Exception as e:
         logging.error(f"Failed to auto-export to Google Calendar: {e}")
@@ -1911,7 +1917,7 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
             logging.error(f"Failed to create cancellation tasks for {event_id}: {e}")
         
         # Delete from Google Calendar if exists
-        google_calendar_event_id = existing.get("google_calendar_event_id")
+        google_calendar_event_id = _google_calendar_event_id(existing)
         if google_calendar_event_id:
             try:
                 service = await get_google_calendar_service()
@@ -1919,6 +1925,7 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
                     service.events().delete(calendarId='primary', eventId=google_calendar_event_id).execute()
                     logging.info(f"Deleted event {event_id} from Google Calendar")
                     update_dict["google_calendar_event_id"] = None
+                    update_dict["google_calendar_id"] = None
             except Exception as e:
                 logging.error(f"Failed to delete from Google Calendar: {e}")
     
@@ -2003,13 +2010,13 @@ async def cancel_event_series(event_id: str, request: Request):
         cancelled_ids.append(tid)
 
         # Best-effort external cleanup per instance
-        gcal_id = t.get("google_calendar_event_id")
+        gcal_id = _google_calendar_event_id(t)
         if gcal_id:
             try:
                 service = await get_google_calendar_service()
                 if service:
                     service.events().delete(calendarId='primary', eventId=gcal_id).execute()
-                    await db.events.update_one({"id": tid}, {"$set": {"google_calendar_event_id": None}})
+                    await db.events.update_one({"id": tid}, {"$set": {"google_calendar_event_id": None, "google_calendar_id": None}})
             except Exception as e:
                 logging.error(f"Failed to delete series instance {tid} from Google Calendar: {e}")
 
@@ -2098,7 +2105,7 @@ async def delete_event(event_id: str, request: Request):
 
     # Delete from Google Calendar if linked
     try:
-        gcal_id = existing.get("google_calendar_event_id") if existing else None
+        gcal_id = _google_calendar_event_id(existing)
         if gcal_id:
             service = await get_google_calendar_service()
             if service:
@@ -3603,7 +3610,7 @@ async def export_event_to_google_calendar(event_id: str):
         # Save Google Calendar event ID
         await db.events.update_one(
             {"id": event_id},
-            {"$set": {"google_calendar_event_id": result.get("id")}}
+            {"$set": {"google_calendar_event_id": result.get("id"), "google_calendar_id": result.get("id")}}
         )
         
         return {
@@ -3641,7 +3648,7 @@ async def export_all_events_to_google_calendar():
         
         for event in future_events:
             # Skip if already exported
-            if event.get("google_calendar_id"):
+            if _google_calendar_event_id(event):
                 continue
             
             try:
@@ -3698,7 +3705,7 @@ async def export_all_events_to_google_calendar():
             
             await db.events.update_one(
                 {"id": event["id"]},
-                {"$set": {"google_calendar_id": result.get("id")}}
+                {"$set": {"google_calendar_id": result.get("id"), "google_calendar_event_id": result.get("id")}}
             )
             
             exported.append(event["title"])
