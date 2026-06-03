@@ -307,6 +307,19 @@ const isEditableTarget = (target) => {
   return tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable;
 };
 
+
+const getStandaloneTaskPayload = (task) => ({
+  title: task.title,
+  date: task.date,
+  icon: task.icon || 'coffee',
+  type: task.type || 'regular',
+  color: task.color || 'manager',
+  assignee: task.assignee || 'manager',
+  event_id: task.event_id || '',
+  order: task.order || 0,
+});
+
+
 // Extended icon mapping
 const ICONS = {
   bell: Bell, target: Target, zap: Zap, star: Star, clock: Clock, send: Send,
@@ -976,9 +989,12 @@ const Dashboard = () => {
 
   const handleSaveTask = async () => {
     if (!editingTask?.title?.trim()) return;
+    const beforeStandalone = editingTask._isStandalone === false ? null : standaloneTasks.find(t => t.id === editingTask.id);
+    const beforeEventTask = editingTask._isStandalone === false ? { ...editingTask } : null;
     try {
       if (editingTask._isStandalone === false) {
         await axios.patch(`${API}/events/${editingTask._eventId}/tasks/${editingTask._taskId}`, { color: editingTask.color, icon: editingTask.icon, title: editingTask.title, assignee: editingTask.assignee, date: editingTask.date });
+        pushUndo({ label: "редагування таска", run: async () => { await api.updateEventTask(beforeEventTask._eventId, beforeEventTask._taskId, { color: beforeEventTask.color, icon: beforeEventTask.icon, title: beforeEventTask.title, assignee: beforeEventTask.assignee, date: beforeEventTask.date, order: beforeEventTask.order || 0 }); refreshEvents(); } });
         toast.success("збережено!"); refreshEvents();
       } else {
         await api.updateStandaloneTaskFull(editingTask.id, {
@@ -990,6 +1006,7 @@ const Dashboard = () => {
           assignee: editingTask.assignee || 'manager',
           event_id: editingTask.event_id || "",
         });
+        if (beforeStandalone) pushUndo({ label: "редагування таска", run: async () => { await api.updateStandaloneTaskFull(beforeStandalone.id, getStandaloneTaskPayload(beforeStandalone)); refreshStandaloneTasks(); } });
         toast.success("збережено!"); refreshStandaloneTasks();
       }
       setShowEditDialog(false); setEditingTask(null);
@@ -1163,7 +1180,7 @@ const Dashboard = () => {
               </div>
               <div className="grid grid-cols-2 gap-2 pt-1">
                 {editingTask._isStandalone && (
-                  <button className="h-11 text-sm rounded-full border border-red-200 text-red-600" onClick={async () => { try { await api.deleteStandaloneTask(editingTask.id); toast.success("видалено!"); refreshStandaloneTasks(); setShowEditDialog(false); } catch { toast.error("помилка"); } }} data-testid="mobile-edit-delete"><Trash2 className="w-4 h-4 inline mr-1" />видалити</button>
+                  <button className="h-11 text-sm rounded-full border border-red-200 text-red-600" onClick={async () => { const before = { ...editingTask }; try { await api.deleteStandaloneTask(editingTask.id); pushUndo({ label: "видалення таска", run: async () => { await api.createStandaloneTask(getStandaloneTaskPayload(before)); refreshStandaloneTasks(); } }); toast.success("видалено!"); refreshStandaloneTasks(); setShowEditDialog(false); } catch { toast.error("помилка"); } }} data-testid="mobile-edit-delete"><Trash2 className="w-4 h-4 inline mr-1" />видалити</button>
                 )}
                 <button className={`btn-dark h-11 text-sm ${editingTask._isStandalone ? '' : 'col-span-2'}`} onClick={handleSaveTask} data-testid="mobile-edit-save">зберегти</button>
               </div>
@@ -4906,7 +4923,11 @@ const DesktopDashboard = () => {
       const insertAt = targetKey && targetIndex >= 0 ? targetIndex : targetDateTasks.length;
       targetDateTasks.splice(insertAt, 0, movedTask);
       try {
+        const previousAssignee = task.assignee;
+        const previousDate = getTaskDate(task);
+        const previousOrder = getTaskOrder(task);
         await Promise.all(targetDateTasks.map((item, index) => persistTaskPlacement(item, newAssignee, newDate, (index + 1) * 1000)));
+        pushUndo({ label: "перенесення таска", run: async () => { await persistTaskPlacement(task, previousAssignee, previousDate, previousOrder); refreshStandaloneTasks(); refreshEvents(); } });
         toast.success("порядок оновлено");
         refreshStandaloneTasks();
         refreshEvents();
@@ -4932,12 +4953,15 @@ const DesktopDashboard = () => {
           event_id: full.event_id || "",
           order: full.order || 0,
         });
+        pushUndo({ label: "перенесення таска", run: async () => { await api.updateStandaloneTaskFull(full.id, getStandaloneTaskPayload(full)); refreshStandaloneTasks(); } });
         toast.success(`перенесено на ${labels[newAssignee] || newAssignee}`);
         refreshStandaloneTasks();
       } else {
         const taskId = task.task_id || task.reminder_id;
         if (!taskId || taskId === "standalone") return;
+        const previousAssignee = task.assignee;
         await api.updateEventTask(task.event_id, taskId, { assignee: newAssignee });
+        pushUndo({ label: "перенесення таска", run: async () => { await api.updateEventTask(task.event_id, taskId, { assignee: previousAssignee }); refreshEvents(); } });
         toast.success(`перенесено на ${labels[newAssignee] || newAssignee}`);
         refreshEvents();
       }
@@ -4982,7 +5006,12 @@ const DesktopDashboard = () => {
 
   const handleDeleteStandaloneTask = async () => {
     if (!selectedStandaloneTask) return;
-    try { await api.deleteStandaloneTask(selectedStandaloneTask.id); toast.success("видалено!"); refreshStandaloneTasks(); setShowStandaloneTaskPopup(false); }
+    const before = { ...selectedStandaloneTask };
+    try {
+      await api.deleteStandaloneTask(selectedStandaloneTask.id);
+      pushUndo({ label: "видалення таска", run: async () => { await api.createStandaloneTask(getStandaloneTaskPayload(before)); refreshStandaloneTasks(); } });
+      toast.success("видалено!"); refreshStandaloneTasks(); setShowStandaloneTaskPopup(false);
+    }
     catch { toast.error("помилка"); }
   };
 
@@ -5092,6 +5121,8 @@ const DesktopDashboard = () => {
 
   const handleSaveStandaloneTask = async () => {
     if (!editingStandaloneTask?.title?.trim()) return;
+    const beforeStandalone = editingStandaloneTask._isStandalone === false ? null : standaloneTasks.find(t => t.id === editingStandaloneTask.id);
+    const beforeEventTask = editingStandaloneTask._isStandalone === false ? { ...editingStandaloneTask } : null;
     try {
       if (editingStandaloneTask._isStandalone === false) {
         await axios.patch(`${API}/events/${editingStandaloneTask._eventId}/tasks/${editingStandaloneTask._taskId}`, {
@@ -5102,6 +5133,7 @@ const DesktopDashboard = () => {
           date: editingStandaloneTask.date,
           order: editingStandaloneTask.order || 0,
         });
+        pushUndo({ label: "редагування таска", run: async () => { await api.updateEventTask(beforeEventTask._eventId, beforeEventTask._taskId, { color: beforeEventTask.color, icon: beforeEventTask.icon, title: beforeEventTask.title, assignee: beforeEventTask.assignee, date: beforeEventTask.date, order: beforeEventTask.order || 0 }); refreshEvents(); } });
         toast.success("збережено!");
         refreshEvents();
       } else {
@@ -5115,6 +5147,7 @@ const DesktopDashboard = () => {
           event_id: editingStandaloneTask.event_id || "",
           order: editingStandaloneTask.order || 0,
         });
+        if (beforeStandalone) pushUndo({ label: "редагування таска", run: async () => { await api.updateStandaloneTaskFull(beforeStandalone.id, getStandaloneTaskPayload(beforeStandalone)); refreshStandaloneTasks(); } });
         toast.success("збережено!");
         refreshStandaloneTasks();
       }
@@ -5125,6 +5158,8 @@ const DesktopDashboard = () => {
 
   const handleRescheduleStandaloneTask = async (nextDate) => {
     if (!editingStandaloneTask?.title?.trim() || !nextDate) return;
+    const beforeStandalone = editingStandaloneTask._isStandalone === false ? null : standaloneTasks.find(t => t.id === editingStandaloneTask.id);
+    const beforeEventTask = editingStandaloneTask._isStandalone === false ? { ...editingStandaloneTask } : null;
     const task = { ...editingStandaloneTask, date: nextDate };
     setReschedulingTaskDate(nextDate);
     try {
@@ -5137,6 +5172,7 @@ const DesktopDashboard = () => {
           date: task.date,
           order: task.order || 0,
         });
+        pushUndo({ label: "перенесення таска", run: async () => { await api.updateEventTask(beforeEventTask._eventId, beforeEventTask._taskId, { color: beforeEventTask.color, icon: beforeEventTask.icon, title: beforeEventTask.title, assignee: beforeEventTask.assignee, date: beforeEventTask.date, order: beforeEventTask.order || 0 }); refreshEvents(); } });
         refreshEvents();
       } else {
         await api.updateStandaloneTaskFull(task.id, {
@@ -5149,6 +5185,7 @@ const DesktopDashboard = () => {
           event_id: task.event_id || "",
           order: task.order || 0,
         });
+        if (beforeStandalone) pushUndo({ label: "перенесення таска", run: async () => { await api.updateStandaloneTaskFull(beforeStandalone.id, getStandaloneTaskPayload(beforeStandalone)); refreshStandaloneTasks(); } });
         refreshStandaloneTasks();
       }
       toast.success("перенесено!");
@@ -5164,12 +5201,15 @@ const DesktopDashboard = () => {
 
   const handleDeleteEditingTask = useCallback(async () => {
     if (!editingStandaloneTask) return;
+    const before = { ...editingStandaloneTask };
     try {
       if (editingStandaloneTask._isStandalone === false) {
         await api.deleteEventTask(editingStandaloneTask._eventId, editingStandaloneTask._taskId);
+        pushUndo({ label: "видалення таска", run: async () => { await api.updateEventTask(before._eventId, before._taskId, { color: before.color, icon: before.icon, title: before.title, assignee: before.assignee, date: before.date, order: before.order || 0, deleted: false }); refreshEvents(); } });
         refreshEvents();
       } else {
         await api.deleteStandaloneTask(editingStandaloneTask.id);
+        pushUndo({ label: "видалення таска", run: async () => { await api.createStandaloneTask(getStandaloneTaskPayload(before)); refreshStandaloneTasks(); } });
         refreshStandaloneTasks();
       }
       toast.success("видалено!");
@@ -5178,7 +5218,7 @@ const DesktopDashboard = () => {
     } catch {
       toast.error("помилка");
     }
-  }, [editingStandaloneTask, refreshEvents, refreshStandaloneTasks]);
+  }, [editingStandaloneTask, refreshEvents, refreshStandaloneTasks, pushUndo]);
 
   // Keyboard shortcut for save (Ctrl/Cmd + Enter)
   useEffect(() => {
