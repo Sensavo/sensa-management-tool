@@ -194,6 +194,67 @@ const showCancellationGuardOrError = (error, fallback = "помилка") => {
   toast.error(detail?.message || fallback);
 };
 
+
+const getBookedCount = (event) => Number(event?.altegio_booked_count ?? event?.booked_count ?? 0) || 0;
+
+const cancelEventAndArchive = async (event, { refreshEvents, onDone, confirmed = false } = {}) => {
+  if (!event?.id) return false;
+  try {
+    await axios.patch(`${API}/events/${event.id}`, confirmed ? { cancelled: true, manager_confirmed_cancellation: true } : { cancelled: true });
+    toast.success("подію скасовано і залишено в архіві");
+    refreshEvents?.();
+    onDone?.();
+    return true;
+  } catch (error) {
+    if (confirmCancellationGuard(error)) {
+      return cancelEventAndArchive(event, { refreshEvents, onDone, confirmed: true });
+    }
+    showCancellationGuardOrError(error);
+    return false;
+  }
+};
+
+const deleteEventPermanentlyFlow = async (event, { refreshEvents, onDeleted, onCancelled } = {}) => {
+  if (!event?.id) return false;
+  let latest = event;
+  try {
+    await api.syncEventFromAltegio(event.id);
+    const refreshed = await axios.get(`${API}/events/${event.id}`);
+    latest = refreshed.data || event;
+  } catch {
+    latest = event;
+  }
+
+  const booked = getBookedCount(latest);
+  if (booked > 0) {
+    const shouldCancel = window.confirm(`У події є ${booked} куплених/заброньованих місць. Видаляти назавжди не можна. Скасувати подію, закрити Google Calendar/Altegio і залишити в архіві?`);
+    if (!shouldCancel) return false;
+    return cancelEventAndArchive(latest, { refreshEvents, onDone: onCancelled });
+  }
+
+  const shouldDelete = window.confirm("Видалити подію назавжди? OK — видалити з історії. Cancel — лише скасувати і залишити в архіві.");
+  if (!shouldDelete) {
+    return cancelEventAndArchive(latest, { refreshEvents, onDone: onCancelled });
+  }
+
+  try {
+    await api.deleteEvent(latest.id);
+    toast.success("подію видалено назавжди");
+    refreshEvents?.();
+    onDeleted?.();
+    return true;
+  } catch (error) {
+    const detail = getCancellationGuardDetail(error);
+    if (detail) {
+      const shouldCancel = window.confirm(`${detail.message}\n\nВидалення зупинено. Скасувати подію і залишити її в архіві?`);
+      if (shouldCancel) return cancelEventAndArchive(latest, { refreshEvents, onDone: onCancelled });
+      return false;
+    }
+    showCancellationGuardOrError(error, "не вдалося видалити");
+    return false;
+  }
+};
+
 // Helper function to get booking status color
 const getBookingStatusColor = (event) => {
   if (!event.altegio_booked_count && event.altegio_booked_count !== 0) return 'default';
@@ -1515,15 +1576,11 @@ const EventsPage = () => {
 
   const handleEventClick = (event) => { setSelectedEvent(event); setShowEventDialog(true); };
   const handleDeleteEvent = async () => {
-    try {
-      await api.deleteEvent(selectedEvent.id);
-      toast.success("видалено!"); refreshEvents(); setShowEventDialog(false); setDeleteDialogOpen(false);
-    } catch (error) {
-      if (confirmCancellationGuard(error)) {
-        try { await api.deleteEvent(selectedEvent.id, true); toast.success("видалено!"); refreshEvents(); setShowEventDialog(false); setDeleteDialogOpen(false); }
-        catch (retryError) { showCancellationGuardOrError(retryError); }
-      } else showCancellationGuardOrError(error);
-    }
+    await deleteEventPermanentlyFlow(selectedEvent, {
+      refreshEvents,
+      onDeleted: () => { setShowEventDialog(false); setDeleteDialogOpen(false); },
+      onCancelled: () => { setShowEventDialog(false); setDeleteDialogOpen(false); },
+    });
   };
   const handleToggleTaskInDialog = async (reminderId, completed) => {
     try { await api.completeTask({ event_id: selectedEvent.id, reminder_id: reminderId, completed }); refreshEvents(); const r = await axios.get(`${API}/events/${selectedEvent.id}`); setSelectedEvent(r.data); }
@@ -1851,17 +1908,7 @@ const EventDetailPage = () => {
   };
 
   const handleCancel = async () => {
-    try {
-      await axios.patch(`${API}/events/${eventId}`, { cancelled: true });
-      toast.success("скасовано"); refreshEvents(); navigate(-1);
-    } catch (error) {
-      if (confirmCancellationGuard(error)) {
-        try {
-          await axios.patch(`${API}/events/${eventId}`, { cancelled: true, manager_confirmed_cancellation: true });
-          toast.success("скасовано"); refreshEvents(); navigate(-1);
-        } catch (retryError) { showCancellationGuardOrError(retryError); }
-      } else showCancellationGuardOrError(error);
-    }
+    await cancelEventAndArchive(event, { refreshEvents, onDone: () => navigate(-1) });
   };
 
   const handleRestore = async () => {
@@ -1872,15 +1919,7 @@ const EventDetailPage = () => {
   };
 
   const handleDelete = async () => {
-    try {
-      await api.deleteEvent(eventId);
-      toast.success("видалено!"); refreshEvents(); navigate(-1);
-    } catch (error) {
-      if (confirmCancellationGuard(error)) {
-        try { await api.deleteEvent(eventId, true); toast.success("видалено!"); refreshEvents(); navigate(-1); }
-        catch (retryError) { showCancellationGuardOrError(retryError); }
-      } else showCancellationGuardOrError(error);
-    }
+    await deleteEventPermanentlyFlow(event, { refreshEvents, onDeleted: () => navigate(-1), onCancelled: () => navigate(-1) });
   };
 
   const handleSyncAltegio = async () => {
@@ -1972,10 +2011,11 @@ const EventDetailPage = () => {
         <div className="desktop-header-right">
           <button className="desktop-header-btn" onClick={() => navigate(`/event/${eventId}`)} title="редагувати"><Edit className="w-4 h-4" /></button>
           {!event.cancelled ? (
-            <button className="desktop-header-btn text-orange-500" onClick={handleCancel} title="скасувати"><X className="w-5 h-5" /></button>
+            <button className="btn-dark h-10 px-4 text-sm" onClick={handleCancel} title="скасувати і залишити в архіві"><X className="w-4 h-4" /><span>скасувати</span></button>
           ) : (
             <button className="desktop-header-btn text-green-500" onClick={handleRestore} title="відновити"><RotateCcw className="w-4 h-4" /></button>
           )}
+          <button className="desktop-header-btn text-[#FF8370]" onClick={() => setDeleteDialogOpen(true)} title="видалити назавжди"><Trash2 className="w-4 h-4" /></button>
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate(-1)} style={{marginRight: '-24px', paddingRight: '24px'}} data-testid="event-detail-close-area">
             <div className="desktop-header-btn"><ChevronLeft className="w-5 h-5" /></div>
           </div>
@@ -2034,8 +2074,8 @@ const EventDetailPage = () => {
       </div>
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent className="dialog-content"><AlertDialogHeader><AlertDialogTitle>видалити?</AlertDialogTitle></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>скасувати</AlertDialogCancel><AlertDialogAction onClick={handleDelete} variant="danger">видалити</AlertDialogAction></AlertDialogFooter>
+        <AlertDialogContent className="dialog-content"><AlertDialogHeader><AlertDialogTitle>видалити подію назавжди?</AlertDialogTitle><AlertDialogDescription>Якщо є куплені місця, видалення зупиниться і буде запропоновано лише скасувати подію з архівом.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>назад</AlertDialogCancel><AlertDialogAction onClick={handleDelete} variant="danger">видалити назавжди</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
@@ -5023,22 +5063,8 @@ const DesktopDashboard = () => {
       setCancelSeriesDialogFor(ev);
       return;
     }
-    try {
-      await axios.patch(`${API}/events/${eventId}`, { cancelled: true });
-      pushUndo({ label: "скасування події", run: async () => { await axios.patch(`${API}/events/${eventId}`, { cancelled: false }); refreshEvents(); } });
-      toast.success("подію скасовано");
-      refreshEvents();
-      setShowEventDetail(false);
-    } catch (error) {
-      if (confirmCancellationGuard(error)) {
-        try {
-          await axios.patch(`${API}/events/${eventId}`, { cancelled: true, manager_confirmed_cancellation: true });
-          toast.success("подію скасовано");
-          refreshEvents();
-          setShowEventDetail(false);
-        } catch (retryError) { showCancellationGuardOrError(retryError); }
-      } else showCancellationGuardOrError(error);
-    }
+    const didCancel = await cancelEventAndArchive(ev || { id: eventId }, { refreshEvents, onDone: () => setShowEventDetail(false) });
+    if (didCancel) pushUndo({ label: "скасування події", run: async () => { await axios.patch(`${API}/events/${eventId}`, { cancelled: false }); refreshEvents(); } });
   };
 
   const cancelSeriesOnlyThis = async () => {
@@ -7544,13 +7570,15 @@ const EventsDesktopExpanded = () => {
   };
   const handleCancelSelected = async () => {
     if (!selectedEvent) return;
-    try { await axios.patch(`${API}/events/${selectedEvent.id}`, { cancelled: true }); toast.success("скасовано"); refreshEvents(); }
-    catch (error) {
-      if (confirmCancellationGuard(error)) {
-        try { await axios.patch(`${API}/events/${selectedEvent.id}`, { cancelled: true, manager_confirmed_cancellation: true }); toast.success("скасовано"); refreshEvents(); }
-        catch (retryError) { showCancellationGuardOrError(retryError); }
-      } else showCancellationGuardOrError(error);
-    }
+    await cancelEventAndArchive(selectedEvent, { refreshEvents });
+  };
+  const handleDeleteSelected = async () => {
+    if (!selectedEvent) return;
+    await deleteEventPermanentlyFlow(selectedEvent, {
+      refreshEvents,
+      onDeleted: () => setSelectedEventId(null),
+      onCancelled: () => setSelectedEventId(selectedEvent.id),
+    });
   };
   const handleRestoreSelected = async () => {
     if (!selectedEvent) return;
@@ -7781,6 +7809,9 @@ const EventsDesktopExpanded = () => {
                       <RotateCcw className="w-4 h-4 mr-2" />відновити
                     </Button>
                   )}
+                  <button className="w-11 h-11 rounded-full border border-[#FF8370]/35 text-[#FF8370] hover:bg-[#FF8370]/10 flex items-center justify-center" onClick={handleDeleteSelected} title="видалити назавжди">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </>
             )}
