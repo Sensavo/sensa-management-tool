@@ -119,8 +119,8 @@ const api = {
   getEvents: () => axios.get(`${API}/events`),
   createEvent: (data) => axios.post(`${API}/events`, data),
   updateEvent: (id, data) => axios.put(`${API}/events/${id}`, data),
-  deleteEvent: (id) => axios.delete(`${API}/events/${id}`),
-  cancelEventSeries: (id) => axios.post(`${API}/events/${id}/cancel-series`),
+  deleteEvent: (id, confirmed = false) => axios.delete(`${API}/events/${id}`, { params: confirmed ? { manager_confirmed_cancellation: "true" } : {} }),
+  cancelEventSeries: (id, confirmed = false) => axios.post(`${API}/events/${id}/cancel-series`, null, { params: confirmed ? { manager_confirmed_cancellation: "true" } : {} }),
   updateEventTask: (eventId, taskId, data) => axios.patch(`${API}/events/${eventId}/tasks/${taskId}`, data),
   deleteEventTask: async (eventId, taskId) => {
     try {
@@ -171,6 +171,22 @@ const api = {
   muteTelegram: (userId) => axios.post(`${API}/users/${userId}/telegram/mute`),
   unmuteTelegram: (userId) => axios.post(`${API}/users/${userId}/telegram/unmute`),
   unlinkTelegram: (userId) => axios.post(`${API}/users/${userId}/telegram/unlink`),
+};
+
+const getCancellationGuardDetail = (error) => {
+  const detail = error?.response?.data?.detail;
+  return detail?.code === "manager_confirmation_required" ? detail : null;
+};
+
+const confirmCancellationGuard = (error) => {
+  const detail = getCancellationGuardDetail(error);
+  if (!detail) return false;
+  return window.confirm(`${detail.message}\n\nПідтвердити, що менеджер вже узгодив з учасниками?`);
+};
+
+const showCancellationGuardOrError = (error, fallback = "помилка") => {
+  const detail = getCancellationGuardDetail(error);
+  toast.error(detail?.message || fallback);
 };
 
 // Helper function to get booking status color
@@ -1354,7 +1370,17 @@ const EventsPage = () => {
   };
 
   const handleEventClick = (event) => { setSelectedEvent(event); setShowEventDialog(true); };
-  const handleDeleteEvent = async () => { try { await api.deleteEvent(selectedEvent.id); toast.success("видалено!"); refreshEvents(); setShowEventDialog(false); setDeleteDialogOpen(false); } catch { toast.error("помилка"); } };
+  const handleDeleteEvent = async () => {
+    try {
+      await api.deleteEvent(selectedEvent.id);
+      toast.success("видалено!"); refreshEvents(); setShowEventDialog(false); setDeleteDialogOpen(false);
+    } catch (error) {
+      if (confirmCancellationGuard(error)) {
+        try { await api.deleteEvent(selectedEvent.id, true); toast.success("видалено!"); refreshEvents(); setShowEventDialog(false); setDeleteDialogOpen(false); }
+        catch (retryError) { showCancellationGuardOrError(retryError); }
+      } else showCancellationGuardOrError(error);
+    }
+  };
   const handleToggleTaskInDialog = async (reminderId, completed) => {
     try { await api.completeTask({ event_id: selectedEvent.id, reminder_id: reminderId, completed }); refreshEvents(); const r = await axios.get(`${API}/events/${selectedEvent.id}`); setSelectedEvent(r.data); }
     catch { toast.error("помилка"); }
@@ -1683,7 +1709,14 @@ const EventDetailPage = () => {
     try {
       await axios.patch(`${API}/events/${eventId}`, { cancelled: true });
       toast.success("скасовано"); refreshEvents(); navigate(-1);
-    } catch { toast.error("помилка"); }
+    } catch (error) {
+      if (confirmCancellationGuard(error)) {
+        try {
+          await axios.patch(`${API}/events/${eventId}`, { cancelled: true, manager_confirmed_cancellation: true });
+          toast.success("скасовано"); refreshEvents(); navigate(-1);
+        } catch (retryError) { showCancellationGuardOrError(retryError); }
+      } else showCancellationGuardOrError(error);
+    }
   };
 
   const handleRestore = async () => {
@@ -1697,7 +1730,12 @@ const EventDetailPage = () => {
     try {
       await api.deleteEvent(eventId);
       toast.success("видалено!"); refreshEvents(); navigate(-1);
-    } catch { toast.error("помилка"); }
+    } catch (error) {
+      if (confirmCancellationGuard(error)) {
+        try { await api.deleteEvent(eventId, true); toast.success("видалено!"); refreshEvents(); navigate(-1); }
+        catch (retryError) { showCancellationGuardOrError(retryError); }
+      } else showCancellationGuardOrError(error);
+    }
   };
 
   const handleSyncAltegio = async () => {
@@ -2805,14 +2843,14 @@ const TelegramSettingsSection = ({ compact = false }) => {
         </select>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        <button className="btn-dark h-9 text-xs" onClick={handleCreateCode} disabled={!currentUser}>
-          {status?.linked ? "перепривʼязати" : "привʼязати TG"}
+      <div className="grid grid-cols-3 gap-1.5">
+        <button className="btn-dark h-9 !px-2 text-[11px] whitespace-nowrap" onClick={handleCreateCode} disabled={!currentUser}>
+          {status?.linked ? "новий код" : "код TG"}
         </button>
-        <button className="btn-subtle h-9 text-xs" onClick={handleToggleMute} disabled={!currentUser || !status?.linked}>
-          {status?.muted ? "увімкнути" : "тимч. вимкнути"}
+        <button className="btn-subtle h-9 !px-2 text-[11px] whitespace-nowrap" onClick={handleToggleMute} disabled={!currentUser || !status?.linked}>
+          {status?.muted ? "увімкнути" : "mute"}
         </button>
-        <button className="btn-subtle h-9 text-xs" onClick={handleUnlink} disabled={!currentUser || !status?.linked}>
+        <button className="btn-subtle h-9 !px-2 text-[11px] whitespace-nowrap" onClick={handleUnlink} disabled={!currentUser || !status?.linked}>
           відвʼязати
         </button>
       </div>
@@ -4815,7 +4853,16 @@ const DesktopDashboard = () => {
       toast.success("подію скасовано");
       refreshEvents();
       setShowEventDetail(false);
-    } catch { toast.error("помилка"); }
+    } catch (error) {
+      if (confirmCancellationGuard(error)) {
+        try {
+          await axios.patch(`${API}/events/${eventId}`, { cancelled: true, manager_confirmed_cancellation: true });
+          toast.success("подію скасовано");
+          refreshEvents();
+          setShowEventDetail(false);
+        } catch (retryError) { showCancellationGuardOrError(retryError); }
+      } else showCancellationGuardOrError(error);
+    }
   };
 
   const cancelSeriesOnlyThis = async () => {
@@ -4827,7 +4874,17 @@ const DesktopDashboard = () => {
       setCancelSeriesDialogFor(null);
       setShowEventDetail(false);
       refreshEvents();
-    } catch { toast.error("помилка"); }
+    } catch (error) {
+      if (confirmCancellationGuard(error)) {
+        try {
+          await axios.patch(`${API}/events/${id}`, { cancelled: true, manager_confirmed_cancellation: true });
+          toast.success("подію скасовано");
+          setCancelSeriesDialogFor(null);
+          setShowEventDetail(false);
+          refreshEvents();
+        } catch (retryError) { showCancellationGuardOrError(retryError); }
+      } else showCancellationGuardOrError(error);
+    }
   };
 
   const cancelSeriesAllFuture = async () => {
@@ -4839,7 +4896,17 @@ const DesktopDashboard = () => {
       setCancelSeriesDialogFor(null);
       setShowEventDetail(false);
       refreshEvents();
-    } catch { toast.error("помилка"); }
+    } catch (error) {
+      if (confirmCancellationGuard(error)) {
+        try {
+          const r = await api.cancelEventSeries(id, true);
+          toast.success(`серію скасовано — ${r.data.cancelled_count} подій`);
+          setCancelSeriesDialogFor(null);
+          setShowEventDetail(false);
+          refreshEvents();
+        } catch (retryError) { showCancellationGuardOrError(retryError); }
+      } else showCancellationGuardOrError(error);
+    }
   };
 
   const handleRestoreEvent = async (eventId) => {
@@ -7281,7 +7348,12 @@ const EventsDesktopExpanded = () => {
   const handleCancelSelected = async () => {
     if (!selectedEvent) return;
     try { await axios.patch(`${API}/events/${selectedEvent.id}`, { cancelled: true }); toast.success("скасовано"); refreshEvents(); }
-    catch { toast.error("помилка"); }
+    catch (error) {
+      if (confirmCancellationGuard(error)) {
+        try { await axios.patch(`${API}/events/${selectedEvent.id}`, { cancelled: true, manager_confirmed_cancellation: true }); toast.success("скасовано"); refreshEvents(); }
+        catch (retryError) { showCancellationGuardOrError(retryError); }
+      } else showCancellationGuardOrError(error);
+    }
   };
   const handleRestoreSelected = async () => {
     if (!selectedEvent) return;

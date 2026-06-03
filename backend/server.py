@@ -361,6 +361,10 @@ class Event(BaseModel):
     task_overrides: Dict[str, dict] = {}
     # Google Calendar integration
     google_calendar_event_id: Optional[str] = None
+    cancellation_pending: bool = False
+    cancellation_manager_confirmed: bool = False
+    cancellation_requested_at: Optional[str] = None
+    cancellation_confirmed_at: Optional[str] = None
 
 class Settings(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1019,6 +1023,75 @@ def _actor_from_request(request: Request) -> str:
 def _event_line(event: dict) -> str:
     time_part = f" {event.get('start_time')}" if event.get("start_time") else ""
     return f"<b>{_html_escape(event.get('title'))}</b> {_format_task_date(event.get('date', ''))}{_html_escape(time_part)}"
+
+
+def _event_paid_count(event: Optional[dict]) -> int:
+    if not event:
+        return 0
+    for key in ("paid_count", "payments_count", "altegio_paid_count", "altegio_booked_count"):
+        try:
+            value = event.get(key)
+            if value is not None:
+                return max(0, int(value))
+        except Exception:
+            continue
+    return 0
+
+
+async def _refresh_event_payment_snapshot(event: dict) -> dict:
+    """Best-effort refresh of Altegio booking count before destructive actions."""
+    if not event:
+        return event
+    altegio_id = event.get("altegio_id") or event.get("altegio_activity_id")
+    if not altegio_id:
+        return event
+
+    booked_count = None
+    try:
+        bookings = await altegio_client.get_activity_bookings(str(altegio_id))
+        if bookings is not None:
+            booked_count = len(bookings)
+        else:
+            altegio_events = await altegio_client.get_group_events()
+            for altegio_event in altegio_events:
+                if str(altegio_event.get("id")) == str(altegio_id):
+                    booked_count = _altegio_booked_count(altegio_event)
+                    break
+    except Exception as e:
+        logging.error(f"Failed to refresh Altegio booking count for event {event.get('id')}: {e}")
+
+    if booked_count is None:
+        return event
+
+    event = {**event, "altegio_booked_count": max(0, int(booked_count))}
+    await db.events.update_one(
+        {"id": event.get("id")},
+        {"$set": {
+            "altegio_booked_count": event["altegio_booked_count"],
+            "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    return event
+
+
+def _event_cancellation_confirmed(event_data: dict, request: Request) -> bool:
+    return bool(
+        event_data.get("manager_confirmed_cancellation")
+        or event_data.get("force")
+        or request.query_params.get("manager_confirmed_cancellation") == "true"
+    )
+
+
+def _cancellation_guard_detail(event: dict, action: str) -> dict:
+    paid_count = _event_paid_count(event)
+    title = event.get("title") or "подія"
+    return {
+        "code": "manager_confirmation_required",
+        "action": action,
+        "event_id": event.get("id"),
+        "paid_count": paid_count,
+        "message": f"У події «{title}» є {paid_count} реєстрацій/оплат. Спершу менеджер має узгодити з учасниками; я створив таски.",
+    }
 
 
 def _notify_team(actor: str, text: str) -> None:
@@ -1878,7 +1951,7 @@ async def update_event(event_id: str, event_data: EventUpdate):
     
     return updated
 
-async def _create_cancellation_tasks(event: dict, series_count: int = 0) -> None:
+async def _create_cancellation_tasks(event: dict, series_count: int = 0) -> int:
     """Generate the manual follow-up tasks that fire when an event is cancelled.
 
     External cleanup (Altegio activity delete + Google Calendar event delete)
@@ -1894,29 +1967,44 @@ async def _create_cancellation_tasks(event: dict, series_count: int = 0) -> None
     title = event.get("title") or "подія"
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     suffix = f" (та ще {series_count - 1} в серії)" if series_count > 1 else ""
+    event_id = event.get("id") or "event"
 
     tasks = [
         {
+            "id": f"cancel-{event_id}-master",
             "title": f"повідомити майстра про скасування «{title}»{suffix}",
             "icon": "bell",
         },
         {
+            "id": f"cancel-{event_id}-participants",
             "title": f"повідомити учасників «{title}» — повернути кошти або занести на депозит",
             "icon": "wallet",
         },
     ]
 
+    created = 0
     for spec in tasks:
         standalone = StandaloneTask(
+            id=spec["id"],
             title=spec["title"],
             date=today_str,
             icon=spec["icon"],
             type="regular",
             color="manager",
             assignee="manager",
-            event_id=event.get("id") or "",
+            event_id=event_id,
         )
-        await db.standalone_tasks.insert_one(standalone.model_dump())
+        result = await db.standalone_tasks.update_one(
+            {"id": standalone.id},
+            {"$setOnInsert": standalone.model_dump()},
+            upsert=True,
+        )
+        if result.upserted_id:
+            created += 1
+
+    if created:
+        enqueue_telegram("manager", f"📋 створено таски для скасування: {_event_line(event)}\n{_poriadok_link()}")
+    return created
 
 
 @api_router.patch("/events/{event_id}", response_model=Event)
@@ -1930,7 +2018,26 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
 
     # Handle cancellation
     if event_data.get("cancelled") == True:
+        existing = await _refresh_event_payment_snapshot(existing)
+        if _event_paid_count(existing) > 0 and not _event_cancellation_confirmed(event_data, request):
+            try:
+                await _create_cancellation_tasks(existing)
+            except Exception as e:
+                logging.error(f"Failed to create cancellation tasks for {event_id}: {e}")
+            await db.events.update_one(
+                {"id": event_id},
+                {"$set": {
+                    "cancellation_pending": True,
+                    "cancellation_requested_at": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
+            raise HTTPException(status_code=409, detail=_cancellation_guard_detail(existing, "cancel"))
+
         update_dict["cancelled"] = True
+        update_dict["cancellation_pending"] = False
+        update_dict["cancellation_manager_confirmed"] = _event_cancellation_confirmed(event_data, request)
+        if update_dict["cancellation_manager_confirmed"]:
+            update_dict["cancellation_confirmed_at"] = datetime.now(timezone.utc).isoformat()
         # Clear all reminders and tasks when cancelling
         update_dict["reminders"] = {}
         update_dict["smm_tasks"] = {}
@@ -1958,6 +2065,9 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
     # Handle restoration
     elif event_data.get("cancelled") == False:
         update_dict["cancelled"] = False
+        update_dict["cancellation_pending"] = False
+        update_dict["cancellation_manager_confirmed"] = False
+        update_dict["cancellation_confirmed_at"] = None
         # Restore reminders and SMM tasks based on event date
         settings = await get_settings()
         update_dict["reminders"] = calculate_reminder_dates(existing["date"], settings.reminder_types)
@@ -2026,12 +2136,36 @@ async def cancel_event_series(event_id: str, request: Request):
     }, {"_id": 0})
     targets = await cursor.to_list(1000)
 
+    targets = [await _refresh_event_payment_snapshot(t) for t in targets]
+
+    if any(_event_paid_count(t) > 0 for t in targets) and request.query_params.get("manager_confirmed_cancellation") != "true":
+        anchor = next((t for t in targets if _event_paid_count(t) > 0), existing)
+        try:
+            await _create_cancellation_tasks(anchor, series_count=len(targets))
+        except Exception as e:
+            logging.error(f"Failed to create cancellation tasks for series {master_id}: {e}")
+        await db.events.update_many(
+            {"id": {"$in": [t["id"] for t in targets]}},
+            {"$set": {
+                "cancellation_pending": True,
+                "cancellation_requested_at": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+        raise HTTPException(status_code=409, detail=_cancellation_guard_detail(anchor, "cancel-series"))
+
     cancelled_ids: List[str] = []
     for t in targets:
         tid = t["id"]
         await db.events.update_one(
             {"id": tid},
-            {"$set": {"cancelled": True, "reminders": {}, "smm_tasks": {}}},
+            {"$set": {
+                "cancelled": True,
+                "reminders": {},
+                "smm_tasks": {},
+                "cancellation_pending": False,
+                "cancellation_manager_confirmed": request.query_params.get("manager_confirmed_cancellation") == "true",
+                "cancellation_confirmed_at": datetime.now(timezone.utc).isoformat() if request.query_params.get("manager_confirmed_cancellation") == "true" else None,
+            }},
         )
         cancelled_ids.append(tid)
 
@@ -2117,6 +2251,21 @@ async def get_event_series(event_id: str):
 @api_router.delete("/events/{event_id}")
 async def delete_event(event_id: str, request: Request):
     existing = await db.events.find_one({"id": event_id}, {"_id": 0})
+    existing = await _refresh_event_payment_snapshot(existing)
+    if existing and _event_paid_count(existing) > 0 and request.query_params.get("manager_confirmed_cancellation") != "true":
+        try:
+            await _create_cancellation_tasks(existing)
+        except Exception as e:
+            logging.error(f"Failed to create cancellation tasks for delete guard {event_id}: {e}")
+        await db.events.update_one(
+            {"id": event_id},
+            {"$set": {
+                "cancellation_pending": True,
+                "cancellation_requested_at": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+        raise HTTPException(status_code=409, detail=_cancellation_guard_detail(existing, "delete"))
+
     result = await db.events.delete_one({"id": event_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -2373,13 +2522,6 @@ async def update_standalone_task_full(task_id: str, task_data: StandaloneTaskCre
     
     await db.standalone_tasks.update_one({"id": task_id}, {"$set": update})
     updated = await db.standalone_tasks.find_one({"id": task_id}, {"_id": 0})
-    actor = _actor_from_request(request)
-    if (existing.get("date") or "")[:10] != (task_data.date or "")[:10]:
-        _notify_assignee(
-            actor,
-            normalize_assignee(task_data.assignee),
-            f"🔄 таск перенесено: <b>{_html_escape(task_data.title)}</b> — {_format_task_date(existing.get('date', ''))} → {_format_task_date(task_data.date)}\n{_poriadok_link()}",
-        )
     return updated
 
 @api_router.delete("/tasks/standalone/{task_id}")
@@ -2522,17 +2664,6 @@ async def update_event_task(event_id: str, task_id: str, data: dict, request: Re
         elif task_id in (event.get("marketing_tasks") or {}):
             update[f"marketing_tasks.{task_id}"] = new_date
     await db.events.update_one({"id": event_id}, {"$set": update})
-    if new_date and old_date and old_date[:10] != new_date[:10] and task_column:
-        actor = _actor_from_request(request)
-        assignee = normalize_assignee(overrides[task_id].get("assignee") or _event_task_owner(task_column, previous_override))
-        definition = _task_def_for_event_task(task_column, task_id)
-        title = overrides[task_id].get("title") or definition.get("name") or task_id
-        _notify_assignee(
-            actor,
-            assignee,
-            f"🔄 таск перенесено: <b>{_html_escape(title)}</b> · {_html_escape(event.get('title'))} — {_format_task_date(old_date)} → {_format_task_date(new_date)}\n{_poriadok_link()}",
-        )
-
 
 async def _delete_event_task_instance(event_id: str, task_id: str):
     """Remove an event-based task instance from its event maps."""
