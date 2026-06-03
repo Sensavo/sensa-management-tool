@@ -1022,39 +1022,56 @@ const Dashboard = () => {
       {showEditDialog && editingTask && (() => {
         const COLOR_MAP = {'manager':'#1A1717','red':'#FF8370','purple':'#9333EA','blue':'#3B82F6','orange':'#C4703D','emerald':'#059669','teal':'#14B8A6','smm':'#059669','pink':'#FF8370'};
         const selectedHex = COLOR_MAP[editingTask.color] || '#1A1717';
+        const linkedEventTitle = editingTask.eventTitle || (editingTask.event_id ? events.find(e => e.id === editingTask.event_id)?.title : '');
+        const editDateChips = [
+          { label: 'сьогодні', value: todayStr },
+          { label: 'завтра', value: shiftDateLocal(todayStr, 1) },
+          { label: '+2д', value: shiftDateLocal(todayStr, 2) },
+          { label: '+3д', value: shiftDateLocal(todayStr, 3) },
+          { label: '+1 тиж', value: shiftDateLocal(todayStr, 7) },
+        ];
         return (
         <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-          <DialogContent className="dialog-content max-w-sm" onOpenAutoFocus={(e) => e.preventDefault()}>
-            <DialogHeader><DialogTitle className="text-sm">
-              <span>завдання для </span>
-              <span className="relative inline-block">
-                <select value={editingTask.assignee || 'manager'} onChange={(e) => setEditingTask({...editingTask, assignee: e.target.value})} className="appearance-none bg-transparent font-semibold outline-none cursor-pointer pr-4">
-                  <option value="smm">SMM</option><option value="manager">Manager</option><option value="marketer">Marketer</option>
-                </select>
-                <ChevronDown className="w-2.5 h-2.5 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-secondary" />
-              </span>
-            </DialogTitle></DialogHeader>
-            <div className="space-y-3 pt-2">
-              <Input placeholder="що треба зробити?" value={editingTask.title} onChange={(e) => setEditingTask({...editingTask, title: e.target.value})} className="form-input text-sm h-9" data-testid="mobile-edit-input" />
-              <div className="flex items-center gap-2">
-                <button className="text-xs px-3 py-1.5 rounded-full bg-[rgba(0,0,0,0.05)]" onClick={() => setShowEditCalendar(!showEditCalendar)}>{formatDateUkrainian(editingTask.date)}</button>
-                <div className="flex gap-1.5 ml-auto">
+          <DialogContent className="dialog-content mobile-task-dialog max-w-[calc(100vw-24px)] sm:max-w-sm !p-5" onOpenAutoFocus={(e) => e.preventDefault()}>
+            <DialogHeader className="pr-10">
+              <DialogTitle className="text-[20px] leading-tight">завдання</DialogTitle>
+              <DialogDescription className="flex items-center gap-1.5 text-xs lowercase">
+                <span className="relative inline-flex items-center">
+                  <select value={editingTask.assignee || 'manager'} onChange={(e) => setEditingTask({...editingTask, assignee: e.target.value})} className="appearance-none bg-transparent font-semibold outline-none cursor-pointer pr-4 uppercase tracking-wide">
+                    <option value="manager">Manager</option><option value="smm">SMM</option><option value="marketer">Marketer</option>
+                  </select>
+                  <ChevronDown className="w-3 h-3 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-secondary" />
+                </span>
+                {linkedEventTitle && <span className="truncate">· {linkedEventTitle}</span>}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 pt-3">
+              <Input placeholder="що треба зробити?" value={editingTask.title} onChange={(e) => setEditingTask({...editingTask, title: e.target.value})} className="form-input text-base h-12" data-testid="mobile-edit-input" />
+              <div className="grid grid-cols-5 gap-1.5">
+                {editDateChips.map(chip => (
+                  <button key={chip.value} type="button" className={`mobile-date-chip ${editingTask.date === chip.value ? 'selected' : ''}`} onClick={() => setEditingTask({...editingTask, date: chip.value})}>{chip.label}</button>
+                ))}
+              </div>
+              <button type="button" className="mobile-date-wide" onClick={() => setShowEditCalendar(!showEditCalendar)}><CalendarIcon className="w-4 h-4" />{formatDateUkrainian(editingTask.date)}</button>
+              {showEditCalendar && <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(editingTask.date)} onSelect={(d) => { if (d) { setEditingTask({...editingTask, date: formatDateLocal(d)}); } setShowEditCalendar(false); }} className="w-full" />}
+              <div className="flex items-center justify-between gap-2 rounded-2xl bg-[#E8E5DC]/45 px-3 py-2">
+                <span className="text-[11px] uppercase tracking-wide text-secondary font-semibold">колір</span>
+                <div className="flex gap-2">
                   {["manager", "red", "purple", "blue", "orange", "emerald", "teal"].map(c => (
-                    <button key={c} onClick={() => setEditingTask({...editingTask, color: c})} className={`color-circle-perfect ${editingTask.color === c ? 'ring-2 ring-offset-1 ring-current' : ''}`} style={{ background: COLOR_MAP[c] || '#1A1717' }} />
+                    <button key={c} onClick={() => setEditingTask({...editingTask, color: c})} className={`color-circle-perfect ${editingTask.color === c ? 'ring-2 ring-offset-1 ring-current' : ''}`} style={{ background: COLOR_MAP[c] || '#1A1717' }} aria-label={c} />
                   ))}
                 </div>
               </div>
-              {showEditCalendar && <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(editingTask.date)} onSelect={(d) => { if (d) { setEditingTask({...editingTask, date: formatDateLocal(d)}); } setShowEditCalendar(false); }} className="w-full" />}
-              <div className="grid grid-cols-7 gap-1.5">
+              <div className="grid grid-cols-7 gap-2">
                 {TASK_ICONS.map(opt => { const IC = getIconComponent(opt.value); return (
-                  <button key={opt.value} className={`icon-selector-btn ${editingTask.icon === opt.value ? 'selected' : ''}`} style={{color: selectedHex}} onClick={() => setEditingTask({...editingTask, icon: opt.value})}><IC /></button>
+                  <button key={opt.value} className={`icon-selector-btn ${editingTask.icon === opt.value ? 'selected' : ''}`} style={{color: selectedHex}} onClick={() => setEditingTask({...editingTask, icon: opt.value})} aria-label={opt.value}><IC /></button>
                 ); })}
               </div>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-2 gap-2 pt-1">
                 {editingTask._isStandalone && (
-                  <button className="flex-1 h-9 text-xs rounded-full border border-red-200 text-red-600" onClick={async () => { try { await api.deleteStandaloneTask(editingTask.id); toast.success("видалено!"); refreshStandaloneTasks(); setShowEditDialog(false); } catch { toast.error("помилка"); } }} data-testid="mobile-edit-delete"><Trash2 className="w-3 h-3 inline mr-1" />видалити</button>
+                  <button className="h-11 text-sm rounded-full border border-red-200 text-red-600" onClick={async () => { try { await api.deleteStandaloneTask(editingTask.id); toast.success("видалено!"); refreshStandaloneTasks(); setShowEditDialog(false); } catch { toast.error("помилка"); } }} data-testid="mobile-edit-delete"><Trash2 className="w-4 h-4 inline mr-1" />видалити</button>
                 )}
-                <button className="btn-dark flex-1 h-9 text-xs" onClick={handleSaveTask} data-testid="mobile-edit-save">зберегти</button>
+                <button className={`btn-dark h-11 text-sm ${editingTask._isStandalone ? '' : 'col-span-2'}`} onClick={handleSaveTask} data-testid="mobile-edit-save">зберегти</button>
               </div>
             </div>
           </DialogContent>
@@ -1066,35 +1083,48 @@ const Dashboard = () => {
       {showNewTask && newTaskData && (() => {
         const COLOR_MAP = {'manager':'#1A1717','red':'#FF8370','purple':'#9333EA','blue':'#3B82F6','orange':'#C4703D','emerald':'#059669','teal':'#14B8A6','smm':'#059669','pink':'#FF8370'};
         const selectedHex = COLOR_MAP[newTaskData.color] || '#1A1717';
+        const newDateChips = [
+          { label: 'сьогодні', value: todayStr },
+          { label: 'завтра', value: shiftDateLocal(todayStr, 1) },
+          { label: '+2д', value: shiftDateLocal(todayStr, 2) },
+          { label: '+3д', value: shiftDateLocal(todayStr, 3) },
+          { label: '+1 тиж', value: shiftDateLocal(todayStr, 7) },
+        ];
         return (
         <Dialog open={showNewTask} onOpenChange={setShowNewTask}>
-          <DialogContent className="dialog-content max-w-sm" onOpenAutoFocus={(e) => e.preventDefault()}>
-            <DialogHeader><DialogTitle className="text-sm">
-              <span>нове завдання для </span>
-              <span className="relative inline-block">
-                <select value={newTaskData.assignee} onChange={(e) => setNewTaskData({...newTaskData, assignee: e.target.value})} className="appearance-none bg-transparent font-semibold outline-none cursor-pointer pr-4">
-                  <option value="smm">SMM</option><option value="manager">Manager</option><option value="marketer">Marketer</option>
+          <DialogContent className="dialog-content mobile-task-dialog max-w-[calc(100vw-24px)] sm:max-w-sm !p-5" onOpenAutoFocus={(e) => e.preventDefault()}>
+            <DialogHeader className="pr-10">
+              <DialogTitle className="text-[20px] leading-tight">нове завдання</DialogTitle>
+              <DialogDescription className="relative inline-flex items-center text-xs lowercase">
+                <select value={newTaskData.assignee} onChange={(e) => setNewTaskData({...newTaskData, assignee: e.target.value})} className="appearance-none bg-transparent font-semibold outline-none cursor-pointer pr-4 uppercase tracking-wide">
+                  <option value="manager">Manager</option><option value="smm">SMM</option><option value="marketer">Marketer</option>
                 </select>
-                <ChevronDown className="w-2.5 h-2.5 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-secondary" />
-              </span>
-            </DialogTitle></DialogHeader>
-            <div className="space-y-3 pt-2">
-              <Input autoFocus placeholder="що треба зробити?" value={newTaskData.title} onChange={(e) => setNewTaskData({...newTaskData, title: e.target.value})} onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleCreateTask(); }} className="form-input text-sm h-9" data-testid="mobile-new-input" />
-              <div className="flex items-center gap-2">
-                <button className="text-xs px-3 py-1.5 rounded-full bg-[rgba(0,0,0,0.05)]" onClick={() => setShowNewTaskCalendar(!showNewTaskCalendar)}>{formatDateUkrainian(newTaskData.date)}</button>
-                <div className="flex gap-1.5 ml-auto">
+                <ChevronDown className="w-3 h-3 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-secondary" />
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 pt-3">
+              <Input autoFocus placeholder="що треба зробити?" value={newTaskData.title} onChange={(e) => setNewTaskData({...newTaskData, title: e.target.value})} onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleCreateTask(); }} className="form-input text-base h-12" data-testid="mobile-new-input" />
+              <div className="grid grid-cols-5 gap-1.5">
+                {newDateChips.map(chip => (
+                  <button key={chip.value} type="button" className={`mobile-date-chip ${newTaskData.date === chip.value ? 'selected' : ''}`} onClick={() => setNewTaskData({...newTaskData, date: chip.value})}>{chip.label}</button>
+                ))}
+              </div>
+              <button type="button" className="mobile-date-wide" onClick={() => setShowNewTaskCalendar(!showNewTaskCalendar)}><CalendarIcon className="w-4 h-4" />{formatDateUkrainian(newTaskData.date)}</button>
+              {showNewTaskCalendar && <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(newTaskData.date)} onSelect={(d) => { if (d) { setNewTaskData({...newTaskData, date: formatDateLocal(d)}); } setShowNewTaskCalendar(false); }} className="w-full" />}
+              <div className="flex items-center justify-between gap-2 rounded-2xl bg-[#E8E5DC]/45 px-3 py-2">
+                <span className="text-[11px] uppercase tracking-wide text-secondary font-semibold">колір</span>
+                <div className="flex gap-2">
                   {["manager", "red", "purple", "blue", "orange", "emerald", "teal"].map(c => (
-                    <button key={c} onClick={() => setNewTaskData({...newTaskData, color: c})} className={`color-circle-perfect ${newTaskData.color === c ? 'ring-2 ring-offset-1 ring-current' : ''}`} style={{ background: COLOR_MAP[c] || '#1A1717' }} />
+                    <button key={c} onClick={() => setNewTaskData({...newTaskData, color: c})} className={`color-circle-perfect ${newTaskData.color === c ? 'ring-2 ring-offset-1 ring-current' : ''}`} style={{ background: COLOR_MAP[c] || '#1A1717' }} aria-label={c} />
                   ))}
                 </div>
               </div>
-              {showNewTaskCalendar && <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(newTaskData.date)} onSelect={(d) => { if (d) { setNewTaskData({...newTaskData, date: formatDateLocal(d)}); } setShowNewTaskCalendar(false); }} className="w-full" />}
-              <div className="grid grid-cols-7 gap-1.5">
+              <div className="grid grid-cols-7 gap-2">
                 {TASK_ICONS.map(opt => { const IC = getIconComponent(opt.value); return (
-                  <button key={opt.value} className={`icon-selector-btn ${newTaskData.icon === opt.value ? 'selected' : ''}`} style={{color: selectedHex}} onClick={() => setNewTaskData({...newTaskData, icon: opt.value})}><IC /></button>
+                  <button key={opt.value} className={`icon-selector-btn ${newTaskData.icon === opt.value ? 'selected' : ''}`} style={{color: selectedHex}} onClick={() => setNewTaskData({...newTaskData, icon: opt.value})} aria-label={opt.value}><IC /></button>
                 ); })}
               </div>
-              <button className="btn-dark w-full h-9 text-xs" onClick={handleCreateTask} data-testid="mobile-new-save">створити</button>
+              <button className="btn-dark w-full h-11 text-sm" onClick={handleCreateTask} data-testid="mobile-new-save">створити</button>
             </div>
           </DialogContent>
         </Dialog>

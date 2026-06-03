@@ -526,6 +526,55 @@
 
 
 
+
+.mobile-task-dialog .mobile-date-chip {
+  height: 40px;
+  min-height: 40px !important;
+  padding: 0 6px !important;
+  border-radius: 9999px !important;
+  border: 1.5px solid rgba(26, 23, 23, 0.08);
+  background: rgba(232, 229, 220, 0.48);
+  color: rgba(26, 23, 23, 0.74);
+  font-size: 12px !important;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mobile-task-dialog .mobile-date-chip.selected {
+  background: #1A1717;
+  border-color: #1A1717;
+  color: #F6F5F1;
+}
+.mobile-task-dialog .mobile-date-wide {
+  width: 100%;
+  height: 44px !important;
+  min-height: 44px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border-radius: 9999px !important;
+  border: 1.5px solid rgba(26, 23, 23, 0.08);
+  background: rgba(232, 229, 220, 0.48);
+  color: #1A1717;
+  font-size: 14px !important;
+  font-weight: 600;
+}
+.mobile-task-dialog .icon-selector-btn {
+  width: 40px !important;
+  height: 40px !important;
+}
+.mobile-task-dialog .color-circle-perfect {
+  width: 24px !important;
+  height: 24px !important;
+}
+@media (max-width: 640px) {
+  .mobile-task-dialog {
+    width: calc(100vw - 24px) !important;
+    max-height: min(86vh, 720px) !important;
+    overflow-y: auto;
+  }
+}
+
 .hotkey-kbd {
   min-width: 34px;
   height: 20px;
