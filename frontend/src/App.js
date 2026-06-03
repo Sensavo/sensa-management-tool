@@ -71,6 +71,8 @@ import { uk } from "date-fns/locale";
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 const ACTOR_USER_STORAGE_KEY = "poriadok_actor_user";
+const ACCESS_CODE_STORAGE_KEY = "poriadok_access_granted";
+const ACCESS_CODE = "111";
 const TEAM_USER_OPTIONS = [
   { id: "manager", label: "Manager" },
   { id: "smm", label: "SMM" },
@@ -7658,6 +7660,45 @@ const EventsDesktopExpanded = () => {
 // Renders the mobile `children` below 1024px; on desktop renders the
 // optional `desktop` prop or falls back to DesktopDashboard. Letting routes
 // supply their own desktop element keeps us from hard-coding one page.
+
+const AccessGate = ({ onUnlock }) => {
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    if (code.trim() === ACCESS_CODE) {
+      localStorage.setItem(ACCESS_CODE_STORAGE_KEY, "true");
+      setError("");
+      onUnlock();
+      return;
+    }
+    setError("невірний код");
+    setCode("");
+  };
+
+  return (
+    <div className="app-container min-h-screen flex items-center justify-center px-6">
+      <Toaster position="top-center" richColors />
+      <form onSubmit={handleSubmit} className="w-full max-w-sm rounded-[32px] p-8 shadow-sm" style={{ background: 'var(--panel-bg, #F1EEE7)' }}>
+        <h1 className="logo mb-8 text-center" style={{ textTransform: 'none' }}>Poriadok</h1>
+        <label className="block text-xs font-semibold uppercase tracking-wide text-secondary mb-2">код доступу</label>
+        <input
+          autoFocus
+          inputMode="numeric"
+          value={code}
+          onChange={(event) => { setCode(event.target.value); setError(""); }}
+          className="w-full h-14 rounded-2xl px-5 text-center text-2xl font-semibold outline-none border border-black/10 bg-white/45 focus:border-black"
+          type="password"
+          aria-label="код доступу"
+        />
+        <button type="submit" className="btn-dark w-full h-12 mt-5">увійти</button>
+        {error && <p className="text-center text-sm mt-4" style={{ color: '#FF8370' }}>{error}</p>}
+      </form>
+    </div>
+  );
+};
+
 const ResponsiveWrapper = ({ children, desktop }) => {
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1024);
   useEffect(() => { const h = () => setIsDesktop(window.innerWidth >= 1024); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
@@ -7676,6 +7717,7 @@ function App() {
   const [allTaskDefs, setAllTaskDefs] = useState({ management: [], smm: [], marketing: [], monthly: [], daily: [] });
   const [googleCalendarStatus, setGoogleCalendarStatus] = useState({ connected: false, email: null });
   const [loading, setLoading] = useState(true);
+  const [accessGranted, setAccessGranted] = useState(() => localStorage.getItem(ACCESS_CODE_STORAGE_KEY) === "true");
 
   const refreshEvents = async () => { try { const r = await api.getEvents(); setEvents(r.data); } catch (e) { console.error(e); } };
   const refreshSettings = async () => { try { const r = await api.getSettings(); setSettings(r.data); } catch (e) { console.error(e); } };
@@ -7703,6 +7745,7 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!accessGranted) return;
     Promise.all([
       refreshEvents(),
       refreshSettings(),
@@ -7710,7 +7753,9 @@ function App() {
       refreshSMMTasksDefinition(),
       refreshGoogleStatus()
     ]).then(() => setLoading(false));
-  }, []);
+  }, [accessGranted]);
+
+  if (!accessGranted) return <AccessGate onUnlock={() => { setAccessGranted(true); setLoading(true); }} />;
 
   if (loading) return <div className="app-container flex items-center justify-center min-h-screen"><div className="text-center"><h1 className="logo mb-2" style={{ textTransform: 'none' }}>Poriadok</h1><p className="text-secondary text-sm">завантажую...</p></div></div>;
 
