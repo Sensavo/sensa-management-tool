@@ -116,6 +116,9 @@ axios.interceptors.request.use((config) => {
 
 const AppContext = createContext();
 export const useApp = () => useContext(AppContext);
+const UndoContext = createContext({ pushUndo: () => {}, performUndo: () => false });
+export const useUndo = () => useContext(UndoContext);
+
 
 const api = {
   getEvents: () => axios.get(`${API}/events`),
@@ -226,6 +229,82 @@ const getBookingColorClass = (color) => {
     case 'red': return 'text-red-500';
     default: return 'text-secondary';
   }
+};
+
+
+const startOfLocalMonth = (date) => {
+  const d = new Date(date);
+  d.setDate(1);
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
+const isArchiveMonth = (monthDate, todayDate = new Date()) => startOfLocalMonth(monthDate) < startOfLocalMonth(todayDate);
+const getEventDateKey = (event) => String(event?.date || '').split('T')[0];
+
+const getEventArchiveStatus = (event, todayDate = new Date()) => {
+  if (!event) return 'active';
+  if (event.cancelled) return 'cancelled';
+  const eventDate = new Date(event.date);
+  eventDate.setHours(0, 0, 0, 0);
+  const today = new Date(todayDate);
+  today.setHours(0, 0, 0, 0);
+  return eventDate < today ? 'completed' : 'active';
+};
+
+const getVisibleEventsForMonth = (events, currentMonth, todayDate = new Date()) => {
+  const archiveMode = isArchiveMonth(currentMonth, todayDate);
+  const monthPrefix = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
+  const today = new Date(todayDate);
+  today.setHours(0, 0, 0, 0);
+  return [...events]
+    .filter((event) => {
+      const dateKey = getEventDateKey(event);
+      if (archiveMode) return dateKey.startsWith(monthPrefix);
+      return !event.cancelled && !event.archived && new Date(event.date) >= today;
+    })
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+};
+
+const getDayEventStatus = (events, date, currentMonth, todayDate = new Date()) => {
+  const dateKey = formatDateLocal(date);
+  const archiveMode = isArchiveMonth(currentMonth, todayDate);
+  const dayEvents = events.filter(event => getEventDateKey(event) === dateKey && (archiveMode || (!event.cancelled && !event.archived)));
+  if (!dayEvents.length) return '';
+  if (!archiveMode) return 'active';
+  if (dayEvents.some(event => event.cancelled)) return 'cancelled';
+  return 'completed';
+};
+
+const getEventArchiveClass = (event, todayDate = new Date()) => {
+  const status = getEventArchiveStatus(event, todayDate);
+  if (status === 'cancelled') return ' event-archive-cancelled';
+  if (status === 'completed') return ' event-archive-completed';
+  return '';
+};
+
+const EventArchiveIcon = ({ event, today }) => {
+  const status = getEventArchiveStatus(event, today);
+  if (status === 'cancelled') return <span className="event-archive-icon cancelled" title="скасовано"><X className="w-3.5 h-3.5" /></span>;
+  if (status === 'completed') return <span className="event-archive-icon completed" title="відбулося"><Check className="w-3.5 h-3.5" /></span>;
+  return null;
+};
+
+const renderEventCalendarDay = (date, events, currentMonth, today) => {
+  const status = getDayEventStatus(events, date, currentMonth, today);
+  return (
+    <div className="calendar-day-content">
+      <span>{date.getDate()}</span>
+      {status === 'active' && <span className="event-dot" />}
+      {status === 'cancelled' && <X className="archive-day-icon cancelled" />}
+      {status === 'completed' && <Check className="archive-day-icon completed" />}
+    </div>
+  );
+};
+
+const isEditableTarget = (target) => {
+  const tag = target?.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable;
 };
 
 // Extended icon mapping
@@ -742,6 +821,7 @@ const OverlapResolverDialog = ({ task, open, onClose, onResolved }) => {
 // Dashboard Page (Mobile)
 const Dashboard = () => {
   const { events, settings, standaloneTasks, smmTasksDefinition, refreshEvents, refreshStandaloneTasks } = useApp();
+  const { pushUndo } = useUndo();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('events');
   const [overdueExpanded, setOverdueExpanded] = useState(false);
@@ -850,18 +930,32 @@ const Dashboard = () => {
     };
   }, [allSmmTasks, regularTasks]);
 
-  const upcomingEvents = events.filter(e => !e.cancelled && !e.archived && new Date(e.date) >= today).sort((a, b) => new Date(a.date) - new Date(b.date));
+  const upcomingEvents = getVisibleEventsForMonth(events, currentMonth, today);
 
   const handleToggleTask = async (eventId, reminderId, completed, isStandalone) => {
     try {
-      if (isStandalone) { await api.updateStandaloneTask(eventId, completed); refreshStandaloneTasks(); }
-      else { await api.completeTask({ event_id: eventId, reminder_id: reminderId, completed }); refreshEvents(); }
+      if (isStandalone) {
+        await api.updateStandaloneTask(eventId, completed);
+        pushUndo({ label: "таск", run: async () => { await api.updateStandaloneTask(eventId, !completed); refreshStandaloneTasks(); } });
+        refreshStandaloneTasks();
+      } else {
+        await api.completeTask({ event_id: eventId, reminder_id: reminderId, completed });
+        pushUndo({ label: "таск", run: async () => { await api.completeTask({ event_id: eventId, reminder_id: reminderId, completed: !completed }); refreshEvents(); } });
+        refreshEvents();
+      }
     } catch { toast.error("помилка"); }
   };
   const handleToggleSMMTask = async (eventId, taskId, completed, isStandalone) => {
     try {
-      if (isStandalone) { await api.updateStandaloneTask(eventId, completed); refreshStandaloneTasks(); }
-      else { await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed }); refreshEvents(); }
+      if (isStandalone) {
+        await api.updateStandaloneTask(eventId, completed);
+        pushUndo({ label: "таск", run: async () => { await api.updateStandaloneTask(eventId, !completed); refreshStandaloneTasks(); } });
+        refreshStandaloneTasks();
+      } else {
+        await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed });
+        pushUndo({ label: "таск", run: async () => { await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed: !completed }); refreshEvents(); } });
+        refreshEvents();
+      }
     } catch { toast.error("помилка"); }
   };
   const handleEventClick = (eventId) => { navigate(`/event/${eventId}/view`); };
@@ -911,7 +1005,8 @@ const Dashboard = () => {
   const handleCreateTask = async () => {
     if (!newTaskData?.title?.trim()) return;
     try {
-      await axios.post(`${API}/tasks/standalone`, { title: newTaskData.title, date: newTaskData.date, icon: newTaskData.icon, type: newTaskData.type === 'smm' ? 'smm' : undefined, color: newTaskData.color, assignee: newTaskData.assignee });
+      const r = await api.createStandaloneTask({ title: newTaskData.title, date: newTaskData.date, icon: newTaskData.icon, type: newTaskData.type === 'smm' ? 'smm' : undefined, color: newTaskData.color, assignee: newTaskData.assignee });
+      if (r.data?.id) pushUndo({ label: "створення таска", run: async () => { await api.deleteStandaloneTask(r.data.id); refreshStandaloneTasks(); } });
       toast.success('створено!'); refreshStandaloneTasks(); setShowNewTask(false); setNewTaskData(null);
     } catch { toast.error('помилка'); }
   };
@@ -979,20 +1074,19 @@ const Dashboard = () => {
                 classNames={{ month: "space-y-0 w-full", caption: "flex justify-center items-center py-1", caption_label: "text-sm font-medium", row: "flex w-full", head_row: "flex w-full", table: "w-full border-collapse", nav_button: "w-7 h-7 bg-transparent hover:bg-black/5 rounded-full flex items-center justify-center" }}
                 modifiersClassNames={{ today: "calendar-today-visible" }}
                 components={{ DayContent: ({ date }) => {
-                  const checkDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-                  const hasEvent = events.some(e => !e.cancelled && e.date.startsWith(checkDate));
-                  return <div className="calendar-day-content"><span>{date.getDate()}</span>{hasEvent && <span className="event-dot" />}</div>;
+                  return renderEventCalendarDay(date, events, currentMonth, today);
                 }}}
               />
             </div>
             {upcomingEvents.length > 0 ? upcomingEvents.map(event => (
-              <div key={event.id} className="event-card-desktop cursor-pointer" onClick={() => handleEventClick(event.id)} data-testid={`mobile-event-${event.id}`}>
+              <div key={event.id} className={`event-card-desktop cursor-pointer${getEventArchiveClass(event, today)}`} onClick={() => handleEventClick(event.id)} data-testid={`mobile-event-${event.id}`}>
                 <div className="flex items-center gap-3">
                   <div className="date-badge-desktop"><span className="text-[9px] uppercase">{UK_MONTHS_SHORT[new Date(event.date).getMonth()]}</span><span className="text-base font-bold">{new Date(event.date).getDate()}</span></div>
                   <div className="flex-1 min-w-0">
                     <h3 className="text-sm font-semibold truncate">{event.title}</h3>
                     <p className="text-xs text-secondary">{event.start_time && `${event.start_time} • `}{event.price} ₴</p>
                   </div>
+                  <EventArchiveIcon event={event} today={today} />
                   {event.altegio_booked_count != null && (
                     <div className="text-right">
                       <span className={`text-base font-bold ${getBookingColorClass(getBookingStatusColor(event))}`}>{event.altegio_booked_count}</span>
@@ -1379,13 +1473,13 @@ const NewSMMTaskPage = () => {
 // Events Page
 const EventsPage = () => {
   const { events, settings, refreshEvents } = useApp();
+  const { pushUndo } = useUndo();
   const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showArchive, setShowArchive] = useState(false);
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const eventDates = new Set(events.filter(e => !e.cancelled && !e.archived).map(e => e.date.split('T')[0]));
-  const allEvents = [...events].filter(e => !e.cancelled && !e.archived && new Date(e.date) >= today).sort((a, b) => new Date(a.date) - new Date(b.date));
+  const allEvents = getVisibleEventsForMonth(events, currentMonth, today);
 
   // Archive: cancelled events + past events + archived events
   const archivedEvents = events.filter(e => {
@@ -1422,6 +1516,7 @@ const EventsPage = () => {
   const handleRestoreEvent = async (eventId) => {
     try {
       await axios.patch(`${API}/events/${eventId}`, { cancelled: false });
+      pushUndo({ label: "відновлення події", run: async () => { await axios.patch(`${API}/events/${eventId}`, { cancelled: true }); refreshEvents(); } });
       toast.success("подію відновлено");
       refreshEvents();
     } catch { toast.error("помилка"); }
@@ -1438,8 +1533,7 @@ const EventsPage = () => {
           <Calendar mode="single" locale={uk} weekStartsOn={1} onSelect={handleDateSelect} month={currentMonth} onMonthChange={setCurrentMonth} className="w-full calendar-minimal"
             modifiersClassNames={{ today: "calendar-today-hidden" }}
             components={{ DayContent: ({ date }) => {
-              const dateStr = formatDateLocal(date);
-              return <div className="calendar-day-content"><span>{date.getDate()}</span>{eventDates.has(dateStr) && <span className="event-dot" />}</div>;
+              return renderEventCalendarDay(date, events, currentMonth, today);
             }}}
           />
         </div>
@@ -1448,12 +1542,13 @@ const EventsPage = () => {
           <div className="section-header mb-3"><span className="section-title">всі події</span></div>
           {allEvents.length > 0 ? (
             <div className="space-y-3">{allEvents.map(event => (
-              <div key={event.id} className="event-card flex items-center gap-4" onClick={() => navigate(`/event/${event.id}/view`)} data-event-date={event.date.split('T')[0]}>
+              <div key={event.id} className={`event-card flex items-center gap-4${getEventArchiveClass(event, today)}`} onClick={() => navigate(`/event/${event.id}/view`)} data-event-date={event.date.split('T')[0]}>
                 <div className="date-badge"><span className="text-xs">{UK_MONTHS_SHORT[new Date(event.date).getMonth()]}</span><span className="text-lg font-bold">{new Date(event.date).getDate()}</span></div>
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold truncate">{event.title}</h3>
                   <p className="text-sm text-secondary">{event.spots} місць • {event.price} ₴</p>
                 </div>
+                <EventArchiveIcon event={event} today={today} />
                 {event.altegio_booked_count !== undefined && event.altegio_booked_count !== null && (
                   <div className="text-right">
                     <span className={`text-lg font-bold ${getBookingColorClass(getBookingStatusColor(event))}`}>
@@ -4390,6 +4485,7 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
 
 const DesktopDashboard = () => {
   const { events, settings, standaloneTasks, smmTasksDefinition, allTaskDefs, refreshEvents, refreshStandaloneTasks } = useApp();
+  const { pushUndo } = useUndo();
   const navigate = useNavigate();
   const [showSettings, setShowSettings] = useState(false);
   const [showStats, setShowStats] = useState(false);
@@ -4626,18 +4722,33 @@ const DesktopDashboard = () => {
     };
   }, [allSmmTasks, regularTasks]);
 
-  const eventDates = new Set(events.filter(e => !e.cancelled && !e.archived).map(e => e.date.split('T')[0]));
-  const allEvents = [...events].filter(e => !e.cancelled && !e.archived).sort((a, b) => new Date(a.date) - new Date(b.date));
+  const allEvents = getVisibleEventsForMonth(events, currentMonth, today);
 
   const handleToggleTask = async (eventId, reminderId, completed, isStandalone) => {
-    try { if (isStandalone) { await api.updateStandaloneTask(eventId, completed); refreshStandaloneTasks(); } else { await api.completeTask({ event_id: eventId, reminder_id: reminderId, completed }); refreshEvents(); } }
-    catch { toast.error("помилка"); }
+    try {
+      if (isStandalone) {
+        await api.updateStandaloneTask(eventId, completed);
+        pushUndo({ label: "таск", run: async () => { await api.updateStandaloneTask(eventId, !completed); refreshStandaloneTasks(); } });
+        refreshStandaloneTasks();
+      } else {
+        await api.completeTask({ event_id: eventId, reminder_id: reminderId, completed });
+        pushUndo({ label: "таск", run: async () => { await api.completeTask({ event_id: eventId, reminder_id: reminderId, completed: !completed }); refreshEvents(); } });
+        refreshEvents();
+      }
+    } catch { toast.error("помилка"); }
   };
 
   const handleToggleSMMTask = async (eventId, taskId, completed, isStandalone) => {
     try {
-      if (isStandalone) { await api.updateStandaloneTask(eventId, completed); refreshStandaloneTasks(); }
-      else { await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed }); refreshEvents(); }
+      if (isStandalone) {
+        await api.updateStandaloneTask(eventId, completed);
+        pushUndo({ label: "таск", run: async () => { await api.updateStandaloneTask(eventId, !completed); refreshStandaloneTasks(); } });
+        refreshStandaloneTasks();
+      } else {
+        await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed });
+        pushUndo({ label: "таск", run: async () => { await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed: !completed }); refreshEvents(); } });
+        refreshEvents();
+      }
     } catch { toast.error("помилка"); }
   };
   const loadArchive = async () => { try { const r = await api.getTaskArchive(); setArchive(r.data); setShowArchive(true); } catch { toast.error("помилка"); } };
@@ -4885,6 +4996,7 @@ const DesktopDashboard = () => {
     }
     try {
       await axios.patch(`${API}/events/${eventId}`, { cancelled: true });
+      pushUndo({ label: "скасування події", run: async () => { await axios.patch(`${API}/events/${eventId}`, { cancelled: false }); refreshEvents(); } });
       toast.success("подію скасовано");
       refreshEvents();
       setShowEventDetail(false);
@@ -4956,19 +5068,20 @@ const DesktopDashboard = () => {
 
   const handleCreateTask = async () => {
     if (!newTask.title.trim()) return;
-    try { await api.createStandaloneTask({ ...newTask, type: "regular", assignee: newTask.assignee || (dialogColumnName === "SMM" ? "smm" : dialogColumnName === "Marketer" ? "marketer" : "manager"), event_id: newTask.event_id || "" }); toast.success("додано!"); refreshStandaloneTasks(); setShowTaskDialog(false); setNewTask({ title: "", date: todayStr, icon: "coffee", color: "manager", event_id: "", assignee: "manager" }); }
+    try { const r = await api.createStandaloneTask({ ...newTask, type: "regular", assignee: newTask.assignee || (dialogColumnName === "SMM" ? "smm" : dialogColumnName === "Marketer" ? "marketer" : "manager"), event_id: newTask.event_id || "" }); if (r.data?.id) pushUndo({ label: "створення таска", run: async () => { await api.deleteStandaloneTask(r.data.id); refreshStandaloneTasks(); } }); toast.success("додано!"); refreshStandaloneTasks(); setShowTaskDialog(false); setNewTask({ title: "", date: todayStr, icon: "coffee", color: "manager", event_id: "", assignee: "manager" }); }
     catch { toast.error("помилка"); }
   };
 
   const handleCreateSMMTask = async () => {
     if (!newSMMTask.title.trim()) return;
     try {
-      await api.createStandaloneTask({
+      const r = await api.createStandaloneTask({
         ...newSMMTask,
         type: "smm",
         assignee: newSMMTask.assignee || (dialogColumnName === "SMM" ? "smm" : dialogColumnName === "Marketer" ? "marketer" : "manager"),
         event_id: newSMMTask.event_id || "",
       });
+      if (r.data?.id) pushUndo({ label: "створення таска", run: async () => { await api.deleteStandaloneTask(r.data.id); refreshStandaloneTasks(); } });
       toast.success("додано!");
       refreshStandaloneTasks();
       setShowSMMTaskDialog(false);
@@ -5172,16 +5285,14 @@ const DesktopDashboard = () => {
                   classNames={{ month: "space-y-0 w-full", caption: "hidden", row: "flex w-full", head_row: "flex w-full", table: "w-full border-collapse" }}
                   modifiersClassNames={{ today: "calendar-today-visible" }}
                   components={{ DayContent: ({ date }) => {
-                    const checkDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-                    const hasEvent = events.some(e => !e.cancelled && e.date.startsWith(checkDate));
-                    return <div className="calendar-day-content"><span>{date.getDate()}</span>{hasEvent && <span className="event-dot" />}</div>;
+                    return renderEventCalendarDay(date, events, currentMonth, today);
                   }}}
                 />
               </div>
               <div className="events-list">{allEvents.slice(0, 10).map(event => {
                 const eventDate = new Date(event.date);
                 return (
-                  <div key={event.id} className="event-card-desktop" onClick={() => handleEventClick(event.id)} data-event-date={event.date.split('T')[0]}>
+                  <div key={event.id} className={`event-card-desktop${getEventArchiveClass(event, today)}`} onClick={() => handleEventClick(event.id)} data-event-date={event.date.split('T')[0]}>
                     <div className="date-badge-desktop">
                       <span className="date-badge-month">{['нд','пн','вт','ср','чт','пт','сб'][eventDate.getDay()]}</span>
                       <span className="date-badge-day">{eventDate.getDate()}</span>
@@ -5190,6 +5301,7 @@ const DesktopDashboard = () => {
                       <p className="text-sm font-semibold truncate">{event.title}</p>
                       <p className="text-xs text-secondary">{event.price} ₴</p>
                     </div>
+                    <EventArchiveIcon event={event} today={today} />
                     <div className="text-right">
                       <span className={`text-sm font-bold ${getBookingColorClass(getBookingStatusColor(event))}`}>
                         {event.altegio_booked_count != null ? event.altegio_booked_count : 0}/{event.spots || 10}
@@ -5305,9 +5417,7 @@ const DesktopDashboard = () => {
                   classNames={{ month: "space-y-0 w-full", caption: "hidden", row: "flex w-full", head_row: "flex w-full", table: "w-full border-collapse" }}
                   modifiersClassNames={{ today: "calendar-today-visible" }}
                   components={{ DayContent: ({ date }) => {
-                    const checkDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-                    const hasEvent = events.some(e => !e.cancelled && e.date.startsWith(checkDate));
-                    return <div className="calendar-day-content"><span>{date.getDate()}</span>{hasEvent && <span className="event-dot" />}</div>;
+                    return renderEventCalendarDay(date, events, currentMonth, today);
                   }}}
                 />
               </div>
@@ -5322,7 +5432,7 @@ const DesktopDashboard = () => {
               <div className="events-list">{allEvents.map(event => {
                 const eventDate = new Date(event.date);
                 return (
-                  <div key={event.id} className="event-card-desktop" onClick={() => handleEventClick(event.id)} data-event-date={event.date.split('T')[0]}>
+                  <div key={event.id} className={`event-card-desktop${getEventArchiveClass(event, today)}`} onClick={() => handleEventClick(event.id)} data-event-date={event.date.split('T')[0]}>
                     <div className="date-badge-desktop">
                       <span className="date-badge-month">{UK_MONTHS_SHORT[eventDate.getMonth()]}</span>
                       <span className="date-badge-day">{eventDate.getDate()}</span>
@@ -5331,6 +5441,7 @@ const DesktopDashboard = () => {
                       <p className="text-sm font-semibold truncate">{event.title}</p>
                       <p className="text-xs text-secondary">{event.price} ₴</p>
                     </div>
+                    <EventArchiveIcon event={event} today={today} />
                     {event.altegio_booked_count !== undefined && event.altegio_booked_count !== null && (
                       <div className="text-right">
                         <span className={`text-sm font-bold ${getBookingColorClass(getBookingStatusColor(event))}`}>
@@ -7330,15 +7441,15 @@ const EventsDesktopExpanded = () => {
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
   const todayStr = formatDateLocal(today);
 
-  const allEvents = useMemo(() =>
-    [...events]
-      .filter(e => !e.cancelled && !e.archived && new Date(e.date) >= today)
-      .sort((a, b) => new Date(a.date) - new Date(b.date)),
-  [events, today]);
+  const allEvents = useMemo(() => getVisibleEventsForMonth(events, currentMonth, today), [events, currentMonth, today]);
 
-  // Auto-select the closest upcoming event on first render / when list changes.
+  // Auto-select the closest visible event when month/list changes.
   useEffect(() => {
-    if (!selectedEventId && allEvents.length > 0) {
+    if (allEvents.length === 0) {
+      setSelectedEventId(null);
+      return;
+    }
+    if (!selectedEventId || !allEvents.some(event => event.id === selectedEventId)) {
       setSelectedEventId(allEvents[0].id);
     }
   }, [allEvents, selectedEventId]);
@@ -7498,9 +7609,7 @@ const EventsDesktopExpanded = () => {
                 modifiersClassNames={{ today: "calendar-today-visible" }}
                 components={{
                   DayContent: ({ date }) => {
-                    const checkDate = formatDateLocal(date);
-                    const hasEvent = events.some(e => !e.cancelled && e.date.startsWith(checkDate));
-                    return <div className="calendar-day-content"><span>{date.getDate()}</span>{hasEvent && <span className="event-dot" />}</div>;
+                    return renderEventCalendarDay(date, events, currentMonth, today);
                   }
                 }}
               />
@@ -7523,7 +7632,7 @@ const EventsDesktopExpanded = () => {
                 return (
                   <div
                     key={event.id}
-                    className={`event-card-desktop cursor-pointer transition-all ${isSelected ? 'ring-2 ring-[#1A1717]/20 bg-black/[0.04]' : 'hover:bg-black/[0.02]'}`}
+                    className={`event-card-desktop cursor-pointer transition-all${getEventArchiveClass(event, today)} ${isSelected ? 'ring-2 ring-[#1A1717]/20 bg-black/[0.04]' : 'hover:bg-black/[0.02]'}`}
                     onClick={() => setSelectedEventId(event.id)}
                     data-event-date={event.date.split('T')[0]}
                   >
@@ -7535,6 +7644,7 @@ const EventsDesktopExpanded = () => {
                       <p className="text-sm font-semibold truncate">{event.title}</p>
                       <p className="text-xs text-secondary">{UK_MONTHS_SHORT[eventDate.getMonth()]} · {event.price} ₴</p>
                     </div>
+                    <EventArchiveIcon event={event} today={today} />
                     {event.altegio_booked_count != null && (
                       <div className="text-right">
                         <span className={`text-sm font-bold ${getBookingColorClass(getBookingStatusColor(event))}`}>
@@ -7762,6 +7872,29 @@ function App() {
   const [googleCalendarStatus, setGoogleCalendarStatus] = useState({ connected: false, email: null });
   const [loading, setLoading] = useState(true);
   const [accessGranted, setAccessGranted] = useState(() => localStorage.getItem(ACCESS_CODE_STORAGE_KEY) === "true");
+  const undoStackRef = useRef([]);
+
+  const pushUndo = useCallback((entry) => {
+    if (!entry?.run) return;
+    undoStackRef.current = [entry, ...undoStackRef.current].slice(0, 20);
+  }, []);
+
+  const performUndo = useCallback(async ({ silentEmpty = false } = {}) => {
+    const entry = undoStackRef.current.shift();
+    if (!entry) {
+      if (!silentEmpty) toast.message("немає що відміняти");
+      return false;
+    }
+    try {
+      await entry.run();
+      toast.success(`відмінено: ${entry.label || "остання дія"}`);
+      return true;
+    } catch (error) {
+      console.error(error);
+      toast.error("не вдалося відмінити");
+      return false;
+    }
+  }, []);
 
   const refreshEvents = async () => { try { const r = await api.getEvents(); setEvents(r.data); } catch (e) { console.error(e); } };
   const refreshSettings = async () => { try { const r = await api.getSettings(); setSettings(r.data); } catch (e) { console.error(e); } };
@@ -7799,11 +7932,56 @@ function App() {
     ]).then(() => setLoading(false));
   }, [accessGranted]);
 
+  useEffect(() => {
+    if (!accessGranted) return;
+    const handleUndoKey = (event) => {
+      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || String(event.key).toLowerCase() !== 'z') return;
+      if (isEditableTarget(event.target)) return;
+      event.preventDefault();
+      performUndo();
+    };
+    window.addEventListener('keydown', handleUndoKey);
+    return () => window.removeEventListener('keydown', handleUndoKey);
+  }, [accessGranted, performUndo]);
+
+  useEffect(() => {
+    if (!accessGranted) return;
+    let lastShakeAt = 0;
+    let permissionAsked = false;
+    const handleMotion = (event) => {
+      const a = event.accelerationIncludingGravity;
+      if (!a) return;
+      const force = Math.abs(a.x || 0) + Math.abs(a.y || 0) + Math.abs(a.z || 0);
+      const now = Date.now();
+      if (force > 45 && now - lastShakeAt > 1400) {
+        lastShakeAt = now;
+        performUndo({ silentEmpty: true });
+      }
+    };
+    const enableMotion = async () => {
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function' && !permissionAsked) {
+        permissionAsked = true;
+        try {
+          const result = await DeviceMotionEvent.requestPermission();
+          if (result !== 'granted') return;
+        } catch { return; }
+      }
+      window.addEventListener('devicemotion', handleMotion);
+    };
+    window.addEventListener('devicemotion', handleMotion);
+    window.addEventListener('pointerdown', enableMotion, { once: true });
+    return () => {
+      window.removeEventListener('devicemotion', handleMotion);
+      window.removeEventListener('pointerdown', enableMotion);
+    };
+  }, [accessGranted, performUndo]);
+
   if (!accessGranted) return <AccessGate onUnlock={() => { setAccessGranted(true); setLoading(true); }} />;
 
   if (loading) return <div className="app-container flex items-center justify-center min-h-screen"><div className="text-center"><h1 className="logo mb-2" style={{ textTransform: 'none' }}>Poriadok</h1><p className="text-secondary text-sm">завантажую...</p></div></div>;
 
   return (
+      <UndoContext.Provider value={{ pushUndo, performUndo }}>
       <AppContext.Provider value={{ events, settings, standaloneTasks, smmTasksDefinition, allTaskDefs, googleCalendarStatus, refreshEvents, refreshSettings, refreshStandaloneTasks, refreshGoogleStatus, refreshSMMTasksDefinition }}>
         <BrowserRouter>
           <div className="app-container">
@@ -7826,6 +8004,7 @@ function App() {
           </div>
         </BrowserRouter>
       </AppContext.Provider>
+      </UndoContext.Provider>
   );
 }
 
