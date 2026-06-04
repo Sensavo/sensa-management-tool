@@ -6148,8 +6148,8 @@ const DesktopDashboard = () => {
         <DialogContent className="sm:max-w-[420px] !p-5 sm:!p-6" onOpenAutoFocus={(e) => e.preventDefault()}>
           {editingStandaloneTask && (
             <div
-              className="hidden md:block fixed z-[160] w-36 rounded-2xl border border-black/5 bg-[#F1EEE7]/95 px-3 py-3 shadow-sm backdrop-blur"
-              style={{ left: "max(16px, calc(50vw - 360px))", top: "50%", transform: "translateY(-50%)" }}
+              className="hidden lg:block fixed z-[160] w-36 rounded-2xl border border-black/5 bg-[#F1EEE7]/95 px-3 py-3 shadow-sm backdrop-blur"
+              style={{ left: "calc(50vw - 390px)", top: "50%", transform: "translateY(-50%)" }}
               data-testid="task-hotkeys-panel"
             >
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#1A1717]/45 mb-2">хоткеї</p>
@@ -6157,6 +6157,7 @@ const DesktopDashboard = () => {
                 <div className="flex items-center justify-between gap-2"><span>сьогодні</span><kbd className="hotkey-kbd">` / 0</kbd></div>
                 <div className="flex items-center justify-between gap-2"><span>+ день</span><kbd className="hotkey-kbd">1-9</kbd></div>
                 <div className="flex items-center justify-between gap-2"><span>видалити</span><kbd className="hotkey-kbd">d / в</kbd></div>
+                <div className="flex items-center justify-between gap-2"><span>закрити</span><kbd className="hotkey-kbd">ESC</kbd></div>
                 <div className="flex items-center justify-between gap-2"><span>зберегти</span><kbd className="hotkey-kbd">⌘↵</kbd></div>
               </div>
             </div>
@@ -6238,6 +6239,7 @@ const DesktopDashboard = () => {
                   <kbd className="hotkey-kbd">` / 0</kbd>
                   <kbd className="hotkey-kbd">1-9</kbd>
                   <kbd className="hotkey-kbd">d / в</kbd>
+                  <kbd className="hotkey-kbd">ESC</kbd>
                   <kbd className="hotkey-kbd">⌘↵</kbd>
                 </div>
 
