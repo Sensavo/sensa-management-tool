@@ -119,6 +119,41 @@ export const useApp = () => useContext(AppContext);
 const UndoContext = createContext({ pushUndo: () => {}, performUndo: () => false });
 export const useUndo = () => useContext(UndoContext);
 
+const TASK_HOTKEYS = [
+  { label: "сьогодні", key: "` / 0" },
+  { label: "+ день", key: "1-9" },
+  { label: "видалити", key: "d / в" },
+  { label: "закрити", key: "ESC" },
+  { label: "зберегти", key: "⌘↵" },
+];
+
+const TaskHotkeysPanel = () => (
+  <div
+    className="hidden lg:block fixed z-[160] w-36 rounded-2xl border border-black/5 bg-[#F1EEE7]/95 px-3 py-3 shadow-sm backdrop-blur"
+    style={{ left: "calc(50vw - 390px)", top: "50%", transform: "translateY(-50%)" }}
+    data-testid="task-hotkeys-panel"
+  >
+    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#1A1717]/45 mb-2">хоткеї</p>
+    <div className="space-y-1.5 text-[11px] text-[#1A1717]/55">
+      {TASK_HOTKEYS.map((hotkey) => (
+        <div key={hotkey.key} className="flex items-center justify-between gap-2">
+          <span>{hotkey.label}</span>
+          <kbd className="hotkey-kbd">{hotkey.key}</kbd>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const TaskHotkeysInline = () => (
+  <div className="md:hidden task-hotkeys-inline" data-testid="task-hotkeys-inline">
+    <span>хоткеї</span>
+    {TASK_HOTKEYS.map((hotkey) => (
+      <kbd key={hotkey.key} className="hotkey-kbd">{hotkey.key}</kbd>
+    ))}
+  </div>
+);
+
 
 const api = {
   getEvents: () => axios.get(`${API}/events`),
@@ -6146,22 +6181,7 @@ const DesktopDashboard = () => {
       {/* Edit Task Dialog (both standalone and event-based) */}
       <Dialog open={showEditStandaloneDialog} onOpenChange={setShowEditStandaloneDialog}>
         <DialogContent className="sm:max-w-[420px] !p-5 sm:!p-6" onOpenAutoFocus={(e) => e.preventDefault()}>
-          {editingStandaloneTask && (
-            <div
-              className="hidden lg:block fixed z-[160] w-36 rounded-2xl border border-black/5 bg-[#F1EEE7]/95 px-3 py-3 shadow-sm backdrop-blur"
-              style={{ left: "calc(50vw - 390px)", top: "50%", transform: "translateY(-50%)" }}
-              data-testid="task-hotkeys-panel"
-            >
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#1A1717]/45 mb-2">хоткеї</p>
-              <div className="space-y-1.5 text-[11px] text-[#1A1717]/55">
-                <div className="flex items-center justify-between gap-2"><span>сьогодні</span><kbd className="hotkey-kbd">` / 0</kbd></div>
-                <div className="flex items-center justify-between gap-2"><span>+ день</span><kbd className="hotkey-kbd">1-9</kbd></div>
-                <div className="flex items-center justify-between gap-2"><span>видалити</span><kbd className="hotkey-kbd">d / в</kbd></div>
-                <div className="flex items-center justify-between gap-2"><span>закрити</span><kbd className="hotkey-kbd">ESC</kbd></div>
-                <div className="flex items-center justify-between gap-2"><span>зберегти</span><kbd className="hotkey-kbd">⌘↵</kbd></div>
-              </div>
-            </div>
-          )}
+          {editingStandaloneTask && <TaskHotkeysPanel />}
           {editingStandaloneTask && (() => {
             const getAssigneeName = () => {
               const a = editingStandaloneTask.assignee;
@@ -6234,14 +6254,7 @@ const DesktopDashboard = () => {
                   ))}
                 </div>
 
-                <div className="md:hidden task-hotkeys-inline" data-testid="task-hotkeys-inline">
-                  <span>хоткеї</span>
-                  <kbd className="hotkey-kbd">` / 0</kbd>
-                  <kbd className="hotkey-kbd">1-9</kbd>
-                  <kbd className="hotkey-kbd">d / в</kbd>
-                  <kbd className="hotkey-kbd">ESC</kbd>
-                  <kbd className="hotkey-kbd">⌘↵</kbd>
-                </div>
+                <TaskHotkeysInline />
 
                 <Input
                   placeholder="що треба зробити?"
