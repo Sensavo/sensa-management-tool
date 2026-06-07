@@ -2213,13 +2213,37 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
         if google_calendar_event_id:
             try:
                 service = await get_google_calendar_service()
-                if service:
-                    service.events().delete(calendarId='primary', eventId=google_calendar_event_id).execute()
-                    logging.info(f"Deleted event {event_id} from Google Calendar")
-                    update_dict["google_calendar_event_id"] = None
-                    update_dict["google_calendar_id"] = None
+                if not service:
+                    raise HTTPException(status_code=502, detail="Google Calendar не доступний для скасування — подію не скасовано локально")
+                service.events().delete(calendarId='primary', eventId=google_calendar_event_id).execute()
+                logging.info(f"Deleted event {event_id} from Google Calendar")
+                update_dict["google_calendar_event_id"] = None
+                update_dict["google_calendar_id"] = None
             except Exception as e:
+                if isinstance(e, HTTPException):
+                    raise
                 logging.error(f"Failed to delete from Google Calendar: {e}")
+                raise HTTPException(status_code=502, detail="не вдалося видалити подію з Google Calendar — подію не скасовано локально")
+
+        # Delete from Altegio before local cancellation, otherwise the UI can
+        # show a cancelled event while tickets remain bookable externally.
+        altegio_id = existing.get("altegio_activity_id") or existing.get("altegio_id")
+        if altegio_id:
+            if not ALTEGIO_PARTNER_TOKEN:
+                raise HTTPException(status_code=502, detail="Altegio не налаштований для скасування — подію не скасовано локально")
+            deleted = await altegio_client.delete_activity(altegio_id)
+            if not deleted:
+                await db.events.update_one(
+                    {"id": event_id},
+                    {"$set": {
+                        "altegio_last_error": f"Failed to delete Altegio activity {altegio_id}",
+                        "altegio_last_status_code": 502,
+                        "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+                    }},
+                )
+                raise HTTPException(status_code=502, detail="не вдалося видалити подію з Altegio — подію не скасовано локально")
+            update_dict["altegio_activity_id"] = None
+            update_dict["altegio_id"] = None
     
     # Handle restoration
     elif event_data.get("cancelled") == False:
@@ -2231,6 +2255,38 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
         settings = await get_settings()
         update_dict["reminders"] = calculate_reminder_dates(existing["date"], settings.reminder_types)
         update_dict["smm_tasks"] = calculate_smm_dates(existing["date"])
+
+        if existing.get("cancelled") and ALTEGIO_PARTNER_TOKEN and not (existing.get("altegio_activity_id") or existing.get("altegio_id")):
+            service_id = await _resolve_altegio_service_id(
+                existing.get("title", ""),
+                explicit_service_id=existing.get("altegio_service_id") or ALTEGIO_DEFAULT_SERVICE_ID or None,
+                spots=existing.get("spots") or 10,
+            )
+            result = await altegio_client.create_activity_result(
+                title=existing.get("title", ""),
+                date=existing.get("date", "")[:10],
+                start_time=existing.get("start_time") or "14:00",
+                end_time=existing.get("end_time") or "16:00",
+                capacity=existing.get("spots") or 10,
+                comment=existing.get("description") or "",
+                service_id=int(service_id) if service_id else None,
+            )
+            if not result.get("ok") or not result.get("activity_id"):
+                await db.events.update_one(
+                    {"id": event_id},
+                    {"$set": {
+                        "altegio_last_error": str(result.get("body"))[:1000],
+                        "altegio_last_status_code": result.get("status_code"),
+                        "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+                    }},
+                )
+                raise HTTPException(status_code=502, detail="не вдалося відновити подію в Altegio — локальну подію не відновлено")
+            update_dict["altegio_activity_id"] = str(result["activity_id"])
+            update_dict["altegio_id"] = str(result["activity_id"])
+            update_dict["altegio_service_id"] = int(service_id) if service_id else existing.get("altegio_service_id")
+            update_dict["altegio_last_error"] = None
+            update_dict["altegio_last_status_code"] = result.get("status_code")
+            update_dict["altegio_last_sync"] = datetime.now(timezone.utc).isoformat()
     
     if update_dict:
         await db.events.update_one({"id": event_id}, {"$set": update_dict})
@@ -2241,35 +2297,6 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
         _notify_team(actor, f"📅 скасовано подію: {_event_line(existing)}\n{_poriadok_link()}")
     elif event_data.get("cancelled") == False and existing.get("cancelled"):
         _notify_team(actor, f"📅 відновлено подію: {_event_line(updated)}\n{_poriadok_link()}")
-    
-    # Sync cancel/restore to Altegio
-    try:
-        altegio_id = existing.get("altegio_activity_id")
-        if altegio_id and ALTEGIO_PARTNER_TOKEN:
-            if update_dict.get("cancelled"):
-                await altegio_client.delete_activity(altegio_id)
-            elif event_data.get("cancelled") == False:
-                # Recreate activity on restore
-                new_id = await altegio_client.create_activity(
-                    title=updated.get("title", ""),
-                    date=updated.get("date", "")[:10],
-                    start_time=updated.get("start_time") or "14:00",
-                    end_time=updated.get("end_time") or "16:00",
-                    capacity=updated.get("spots") or 10,
-                    comment=updated.get("description") or "",
-                    service_id=await _resolve_altegio_service_id(
-                        updated.get("title", existing.get("title", "")),
-                        explicit_service_id=updated.get("altegio_service_id") or existing.get("altegio_service_id"),
-                        spots=updated.get("spots") or existing.get("spots") or 10,
-                    )
-                )
-                if new_id:
-                    await db.events.update_one(
-                        {"id": event_id},
-                        {"$set": {"altegio_activity_id": str(new_id), "altegio_id": str(new_id)}}
-                    )
-    except Exception as e:
-        logging.error(f"Failed to sync cancel/restore to Altegio: {e}")
     
     return updated
 
