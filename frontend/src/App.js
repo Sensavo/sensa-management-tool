@@ -229,6 +229,14 @@ const showCancellationGuardOrError = (error, fallback = "помилка") => {
   toast.error(detail?.message || fallback);
 };
 
+const getApiErrorMessage = (error, fallback = "помилка") => {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (detail?.message) return detail.message;
+  if (detail?.body) return String(detail.body);
+  return fallback;
+};
+
 
 const getBookedCount = (event) => Number(event?.altegio_booked_count ?? event?.booked_count ?? 0) || 0;
 
@@ -1960,7 +1968,7 @@ const EventDetailPage = () => {
   const handleSyncAltegio = async () => {
     setSyncing(true);
     try { await api.syncEventFromAltegio(eventId); toast.success("синхронізовано"); loadEvent(); refreshEvents(); }
-    catch { toast.error("помилка синхронізації"); }
+    catch (error) { toast.error(getApiErrorMessage(error, "помилка синхронізації")); }
     finally { setSyncing(false); }
   };
 
@@ -4902,7 +4910,7 @@ const DesktopDashboard = () => {
       const r = await axios.get(`${API}/events/${selectedEvent.id}`);
       setSelectedEvent(r.data);
       refreshEvents();
-    } catch { toast.error("помилка синхронізації"); }
+    } catch (error) { toast.error(getApiErrorMessage(error, "помилка синхронізації")); }
     finally { setSyncingEvent(false); }
   };
 
@@ -7583,7 +7591,7 @@ const EventsDesktopExpanded = () => {
     if (!selectedEvent) return;
     setSyncingEvent(true);
     try { await api.syncEventFromAltegio(selectedEvent.id); toast.success("синхронізовано"); refreshEvents(); }
-    catch { toast.error("помилка синхронізації"); }
+    catch (error) { toast.error(getApiErrorMessage(error, "помилка синхронізації")); }
     finally { setSyncingEvent(false); }
   };
   const handleOpenAltegio = async () => {

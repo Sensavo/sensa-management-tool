@@ -4462,7 +4462,15 @@ async def sync_single_event_from_altegio(event_id: str):
                         "message": "Синхронізовано"
                     }
             
-            return {"event_id": event_id, "message": "Event not found in Altegio"}
+            await db.events.update_one(
+                {"id": event_id},
+                {"$set": {
+                    "altegio_last_error": f"Altegio activity {altegio_id} not found",
+                    "altegio_last_status_code": 404,
+                    "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+                }}
+            )
+            raise HTTPException(status_code=404, detail="подію не знайдено в Altegio за збереженим id")
         else:
             # Try to find by title
             altegio_events = await altegio_client.get_group_events()
@@ -4489,7 +4497,15 @@ async def sync_single_event_from_altegio(event_id: str):
                         "message": "Знайдено та синхронізовано"
                     }
             
-            return {"event_id": event_id, "message": "Не знайдено в Altegio"}
+            await db.events.update_one(
+                {"id": event_id},
+                {"$set": {
+                    "altegio_last_error": "No matching Altegio activity by title/date",
+                    "altegio_last_status_code": 404,
+                    "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+                }}
+            )
+            raise HTTPException(status_code=404, detail="не знайдено відповідної події в Altegio за назвою і датою")
     except HTTPException:
         raise
     except Exception as e:
