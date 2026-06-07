@@ -1485,7 +1485,15 @@ def _google_calendar_event_id(event: Optional[dict]) -> Optional[str]:
 
 
 def _altegio_event_title(altegio_event: dict) -> str:
-    return altegio_event.get("service", {}).get("title", "") or altegio_event.get("title", "") or ""
+    # V2 activities do not have an independent display title; Poriadok writes
+    # the event name into comment. Keep service.title as the service, not the
+    # activity name, otherwise KADL appears as the Kadli service label.
+    return (
+        altegio_event.get("comment")
+        or altegio_event.get("title")
+        or altegio_event.get("service", {}).get("title", "")
+        or ""
+    )
 
 
 def _altegio_event_date(altegio_event: dict) -> str:

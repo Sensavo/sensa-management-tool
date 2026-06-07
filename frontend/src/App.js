@@ -2934,7 +2934,7 @@ const AltegioSyncSection = () => {
           {altegioEvents.slice(0, 5).map(event => (
             <div key={event.id} className="flex items-center justify-between py-2 border-b border-[#E8E5DC] last:border-0">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{event.service?.title || event.title}</p>
+                <p className="text-sm font-medium truncate">{event.comment || event.title || event.service?.title}</p>
                 <p className="text-xs text-secondary">
                   {new Date(event.date).toLocaleDateString('uk-UA')} • {event.capacity} місць
                 </p>
