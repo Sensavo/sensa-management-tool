@@ -299,6 +299,14 @@ api_router = APIRouter(prefix="/api")
 
 # ==================== MODELS ====================
 
+DEFAULT_ALTEGIO_SERVICE_MAPPINGS = {
+    # Stable Poriadok event-type keys -> Altegio service ids.
+    # Can be overridden via /api/settings without code deploy.
+    "kadli_short": 12999207,
+    "kadli_medium": 13170797,
+    "acro_yoga": 13294345,
+}
+
 class ReminderType(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
@@ -371,6 +379,7 @@ class Settings(BaseModel):
     
     id: str = "global_settings"
     reminder_types: List[ReminderType] = []
+    altegio_service_mappings: Dict[str, int] = Field(default_factory=lambda: dict(DEFAULT_ALTEGIO_SERVICE_MAPPINGS))
 
 class TaskCompletionRequest(BaseModel):
     event_id: str
@@ -770,6 +779,11 @@ def get_daily_quote():
 async def get_settings() -> Settings:
     settings_doc = await db.settings.find_one({"id": "global_settings"}, {"_id": 0})
     if settings_doc:
+        merged_mappings = {
+            **DEFAULT_ALTEGIO_SERVICE_MAPPINGS,
+            **(settings_doc.get("altegio_service_mappings") or {}),
+        }
+        settings_doc["altegio_service_mappings"] = merged_mappings
         return Settings(**settings_doc)
     # Default reminders from actual usage
     default_reminders = [
@@ -1581,24 +1595,35 @@ async def _altegio_match_service_by_title(title: str) -> Optional[int]:
     return int(best["id"]) if best else None
 
 
-async def _resolve_altegio_service_id(title: str, explicit_service_id: Optional[int] = None, spots: Optional[int] = None) -> Optional[int]:
-    """Resolve the Altegio service for an event.
-
-    A stored per-event service normally wins, but KADL has multiple similarly named
-    services and once picked the children's party service by mistake. For Kadli
-    titles we force a catalogue-backed exact match to the Kadli services.
-    """
+def _altegio_event_type_key(title: str, spots: Optional[int] = None) -> Optional[str]:
     title_norm = _normalize_for_match(title)
 
     if "кадл" in title_norm or "kadl" in title_norm:
-        preferred_title = "Кадли середні" if (spots or 0) > 10 else "Кадли короткі"
-        matched = await _altegio_service_id_by_normalized_title(preferred_title)
-        if matched:
-            return matched
+        return "kadli_medium" if (spots or 0) > 10 else "kadli_short"
+    if "акро" in title_norm or "acro" in title_norm:
+        return "acro_yoga"
+    return None
 
-        fallback = await _altegio_match_service_by_title("кадли")
-        if fallback:
-            return fallback
+
+async def _mapped_altegio_service_id(title: str, spots: Optional[int] = None) -> Optional[int]:
+    event_type_key = _altegio_event_type_key(title, spots)
+    if not event_type_key:
+        return None
+
+    settings = await get_settings()
+    service_id = (settings.altegio_service_mappings or {}).get(event_type_key)
+    return int(service_id) if service_id else None
+
+
+async def _resolve_altegio_service_id(title: str, explicit_service_id: Optional[int] = None, spots: Optional[int] = None) -> Optional[int]:
+    """Resolve the Altegio service for an event.
+
+    Known Poriadok event types use the settings-backed mapping first. That keeps
+    booking-critical pushes deterministic and leaves fuzzy matching as fallback.
+    """
+    mapped = await _mapped_altegio_service_id(title, spots)
+    if mapped:
+        return mapped
 
     if explicit_service_id:
         return int(explicit_service_id)
@@ -2140,7 +2165,11 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
                     end_time=updated.get("end_time") or "16:00",
                     capacity=updated.get("spots") or 10,
                     comment=updated.get("description") or "",
-                    service_id=updated.get("altegio_service_id") or existing.get("altegio_service_id")
+                    service_id=await _resolve_altegio_service_id(
+                        updated.get("title", existing.get("title", "")),
+                        explicit_service_id=updated.get("altegio_service_id") or existing.get("altegio_service_id"),
+                        spots=updated.get("spots") or existing.get("spots") or 10,
+                    )
                 )
                 if new_id:
                     await db.events.update_one(
@@ -3315,6 +3344,19 @@ async def get_settings_endpoint():
 async def update_settings(settings_data: dict):
     current = await get_settings()
     
+    if "altegio_service_mappings" in settings_data:
+        mappings = {**DEFAULT_ALTEGIO_SERVICE_MAPPINGS}
+        for key, value in (settings_data.get("altegio_service_mappings") or {}).items():
+            try:
+                mappings[str(key)] = int(value)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail=f"Invalid Altegio service id for {key}")
+        await db.settings.update_one(
+            {"id": "global_settings"},
+            {"$set": {"altegio_service_mappings": mappings}},
+            upsert=True,
+        )
+
     if "reminder_types" in settings_data:
         new_reminders = []
         for rt in settings_data["reminder_types"]:
