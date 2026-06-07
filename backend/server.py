@@ -4352,6 +4352,8 @@ async def push_single_event_to_altegio(event_id: str):
             "altegio_activity_id": altegio_id,
             "altegio_service_id": int(service_id),
             "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+            "altegio_last_error": None,
+            "altegio_last_status_code": result.get("status_code"),
         }},
     )
 
