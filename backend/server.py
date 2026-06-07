@@ -3,7 +3,8 @@ from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo import UpdateOne
+from pymongo import ReturnDocument, UpdateOne
+from pymongo.errors import DuplicateKeyError
 import os
 import logging
 import asyncio
@@ -92,6 +93,51 @@ def normalize_assignee(value: Optional[str], default: str = "manager") -> str:
 def assignee_storage_aliases(value: str) -> List[str]:
     return ASSIGNEE_STORAGE_ALIASES.get(normalize_assignee(value), [normalize_assignee(value)])
 
+
+async def _acquire_job_lock(name: str, ttl_seconds: int) -> Optional[str]:
+    owner = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(seconds=ttl_seconds)
+    try:
+        doc = await db.job_locks.find_one_and_update(
+            {
+                "_id": f"job:{name}",
+                "$or": [
+                    {"expires_at": {"$lte": now}},
+                    {"expires_at": {"$exists": False}},
+                ],
+            },
+            {"$set": {"owner": owner, "expires_at": expires_at, "updated_at": now}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+    except DuplicateKeyError:
+        return None
+    except Exception as e:
+        logging.error(f"Failed to acquire job lock {name}: {e}")
+        return None
+    return owner if doc and doc.get("owner") == owner else None
+
+
+async def _release_job_lock(name: str, owner: str) -> None:
+    try:
+        await db.job_locks.delete_one({"_id": f"job:{name}", "owner": owner})
+    except Exception as e:
+        logging.error(f"Failed to release job lock {name}: {e}")
+
+
+async def _run_with_job_lock(name: str, ttl_seconds: int, job, release: bool = True):
+    owner = await _acquire_job_lock(name, ttl_seconds)
+    if not owner:
+        logging.info(f"Background job skipped, lock is active: {name}")
+        return None
+    try:
+        return await job()
+    finally:
+        if release:
+            await _release_job_lock(name, owner)
+
+
 async def altegio_auto_sync():
     """Background task to sync Altegio data every 60 minutes"""
     while True:
@@ -102,10 +148,13 @@ async def altegio_auto_sync():
             if not ALTEGIO_USER_TOKEN:
                 logging.warning("Altegio token not configured, skipping sync")
                 continue
-            
-            altegio_events = await altegio_client.get_group_events()
-            synced_count, _ = await _sync_altegio_events_to_local(altegio_events)
-            logging.info(f"Altegio auto-sync completed: {synced_count} events updated")
+
+            async def run_sync():
+                altegio_events = await altegio_client.get_group_events()
+                synced_count, _ = await _sync_altegio_events_to_local(altegio_events)
+                logging.info(f"Altegio auto-sync completed: {synced_count} events updated")
+
+            await _run_with_job_lock("altegio_auto_sync", 30 * 60, run_sync)
         except asyncio.CancelledError:
             logging.info("Altegio sync task cancelled")
             break
@@ -177,9 +226,12 @@ async def lifespan(app: FastAPI):
         if ALTEGIO_USER_TOKEN:
             logging.info("Running initial Altegio sync...")
             try:
-                altegio_events = await altegio_client.get_group_events()
-                synced_count, _ = await _sync_altegio_events_to_local(altegio_events)
-                logging.info(f"Initial Altegio sync: {len(altegio_events)} events processed, {synced_count} events updated")
+                async def run_initial_sync():
+                    altegio_events = await altegio_client.get_group_events()
+                    synced_count, _ = await _sync_altegio_events_to_local(altegio_events)
+                    logging.info(f"Initial Altegio sync: {len(altegio_events)} events processed, {synced_count} events updated")
+
+                await _run_with_job_lock("altegio_initial_sync", 10 * 60, run_initial_sync)
             except Exception as e:
                 logging.error(f"Initial sync error: {e}")
     
@@ -188,58 +240,62 @@ async def lifespan(app: FastAPI):
     # Auto-generate monthly tasks — check every 2 weeks, not on every restart
     async def auto_generate_monthly():
         await asyncio.sleep(3)
-        now = datetime.now(timezone.utc)
-        
-        # Check if we ran this recently (within 2 weeks)
-        last_check = await db.generated_months.find_one({"id": "last_monthly_check"})
-        if last_check:
-            last_checked_at = datetime.fromisoformat(last_check["checked_at"])
-            if (now - last_checked_at).days < 14:
-                logging.info(f"Monthly tasks check skipped — last check was {last_check['checked_at']}")
-                return
-        
-        # Generate for current month and next month
-        for offset in [0, 1]:
-            target = now.replace(day=1) + timedelta(days=32 * offset)
-            y, m = target.year, target.month
-            month_key = f"{y}-{str(m).zfill(2)}"
-            existing = await db.generated_months.find_one({"month_key": month_key})
-            if not existing:
-                calculated = calculate_monthly_tasks(y, m)
-                column_to_assignee = {"management": "manager", "smm": "smm", "marketing": "marketer"}
-                count = 0
-                for task_id, task_info in calculated.items():
-                    assignee = column_to_assignee.get(task_info["column"], "manager")
-                    standalone = {
-                        "id": f"monthly-{month_key}-{task_id}",
-                        "title": task_info["name"],
-                        "date": task_info["date"],
-                        "icon": "calendar",
-                        "type": "monthly",
-                        "color": "standard",
-                        "assignee": assignee,
-                        "completed": False,
-                        "completed_at": None,
-                        "created_at": datetime.now(timezone.utc).isoformat(),
-                        "monthly_source": task_id,
-                        "target_month": month_key,
-                        "column": task_info["column"],
-                    }
-                    await db.standalone_tasks.update_one({"id": standalone["id"]}, {"$setOnInsert": standalone}, upsert=True)
-                    count += 1
-                await db.generated_months.update_one(
-                    {"month_key": month_key},
-                    {"$set": {"month_key": month_key, "generated_at": datetime.now(timezone.utc).isoformat(), "count": count}},
-                    upsert=True
-                )
-                logging.info(f"Auto-generated {count} monthly tasks for {month_key}")
-        
-        # Update last check timestamp
-        await db.generated_months.update_one(
-            {"id": "last_monthly_check"},
-            {"$set": {"id": "last_monthly_check", "checked_at": now.isoformat()}},
-            upsert=True
-        )
+
+        async def run_monthly_generation():
+            now = datetime.now(timezone.utc)
+
+            # Check if we ran this recently (within 2 weeks)
+            last_check = await db.generated_months.find_one({"id": "last_monthly_check"})
+            if last_check:
+                last_checked_at = datetime.fromisoformat(last_check["checked_at"])
+                if (now - last_checked_at).days < 14:
+                    logging.info(f"Monthly tasks check skipped — last check was {last_check['checked_at']}")
+                    return
+
+            # Generate for current month and next month
+            for offset in [0, 1]:
+                target = now.replace(day=1) + timedelta(days=32 * offset)
+                y, m = target.year, target.month
+                month_key = f"{y}-{str(m).zfill(2)}"
+                existing = await db.generated_months.find_one({"month_key": month_key})
+                if not existing:
+                    calculated = calculate_monthly_tasks(y, m)
+                    column_to_assignee = {"management": "manager", "smm": "smm", "marketing": "marketer"}
+                    count = 0
+                    for task_id, task_info in calculated.items():
+                        assignee = column_to_assignee.get(task_info["column"], "manager")
+                        standalone = {
+                            "id": f"monthly-{month_key}-{task_id}",
+                            "title": task_info["name"],
+                            "date": task_info["date"],
+                            "icon": "calendar",
+                            "type": "monthly",
+                            "color": "standard",
+                            "assignee": assignee,
+                            "completed": False,
+                            "completed_at": None,
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                            "monthly_source": task_id,
+                            "target_month": month_key,
+                            "column": task_info["column"],
+                        }
+                        await db.standalone_tasks.update_one({"id": standalone["id"]}, {"$setOnInsert": standalone}, upsert=True)
+                        count += 1
+                    await db.generated_months.update_one(
+                        {"month_key": month_key},
+                        {"$set": {"month_key": month_key, "generated_at": datetime.now(timezone.utc).isoformat(), "count": count}},
+                        upsert=True
+                    )
+                    logging.info(f"Auto-generated {count} monthly tasks for {month_key}")
+
+            # Update last check timestamp
+            await db.generated_months.update_one(
+                {"id": "last_monthly_check"},
+                {"$set": {"id": "last_monthly_check", "checked_at": now.isoformat()}},
+                upsert=True
+            )
+
+        await _run_with_job_lock("monthly_tasks_generation", 30 * 60, run_monthly_generation)
     
     asyncio.create_task(auto_generate_monthly())
     
@@ -248,27 +304,31 @@ async def lifespan(app: FastAPI):
         await asyncio.sleep(4)
         now = datetime.now(timezone.utc)
         today_str = now.strftime("%Y-%m-%d")
-        column_to_assignee = {"management": "manager", "smm": "smm", "marketing": "marketer"}
-        for task in DAILY_TASKS:
-            task_id = f"daily-{today_str}-{task['id']}"
-            existing = await db.standalone_tasks.find_one({"id": task_id})
-            if not existing:
-                standalone = {
-                    "id": task_id,
-                    "title": task["name"],
-                    "date": today_str,
-                    "icon": "coffee" if task["column"] == "management" else "hash",
-                    "type": "daily",
-                    "color": "standard",
-                    "assignee": column_to_assignee.get(task["column"], "manager"),
-                    "completed": False,
-                    "completed_at": None,
-                    "created_at": now.isoformat(),
-                    "daily_source": task["id"],
-                    "column": task["column"],
-                }
-                await db.standalone_tasks.insert_one(standalone)
-                logging.info(f"Auto-generated daily task: {task_id}")
+
+        async def run_daily_generation():
+            column_to_assignee = {"management": "manager", "smm": "smm", "marketing": "marketer"}
+            for task in DAILY_TASKS:
+                task_id = f"daily-{today_str}-{task['id']}"
+                existing = await db.standalone_tasks.find_one({"id": task_id})
+                if not existing:
+                    standalone = {
+                        "id": task_id,
+                        "title": task["name"],
+                        "date": today_str,
+                        "icon": "coffee" if task["column"] == "management" else "hash",
+                        "type": "daily",
+                        "color": "standard",
+                        "assignee": column_to_assignee.get(task["column"], "manager"),
+                        "completed": False,
+                        "completed_at": None,
+                        "created_at": now.isoformat(),
+                        "daily_source": task["id"],
+                        "column": task["column"],
+                    }
+                    await db.standalone_tasks.insert_one(standalone)
+                    logging.info(f"Auto-generated daily task: {task_id}")
+
+        await _run_with_job_lock(f"daily_tasks_generation:{today_str}", 36 * 60 * 60, run_daily_generation, release=False)
     
     asyncio.create_task(auto_generate_daily())
 
@@ -1265,8 +1325,13 @@ async def telegram_summary_loop():
             if target <= now:
                 target = target + timedelta(days=1)
             await asyncio.sleep(max(1, (target - now).total_seconds()))
-            result = await _send_morning_summaries()
-            logging.info(f"Telegram morning summary completed: {result}")
+            summary_date = datetime.now(_telegram_tz()).date().isoformat()
+
+            async def run_summary():
+                result = await _send_morning_summaries()
+                logging.info(f"Telegram morning summary completed: {result}")
+
+            await _run_with_job_lock(f"telegram_morning_summary:{summary_date}", 26 * 60 * 60, run_summary, release=False)
         except asyncio.CancelledError:
             logging.info("Telegram summary task cancelled")
             break
