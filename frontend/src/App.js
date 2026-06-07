@@ -260,11 +260,13 @@ const cancelEventAndArchive = async (event, { refreshEvents, onDone, confirmed =
 const deleteEventPermanentlyFlow = async (event, { refreshEvents, onDeleted, onCancelled } = {}) => {
   if (!event?.id) return false;
   let latest = event;
+  let syncWarning = "";
   try {
     await api.syncEventFromAltegio(event.id);
     const refreshed = await axios.get(`${API}/events/${event.id}`);
     latest = refreshed.data || event;
-  } catch {
+  } catch (error) {
+    syncWarning = getApiErrorMessage(error, "не вдалося оновити дані Altegio перед видаленням");
     latest = event;
   }
 
@@ -275,7 +277,7 @@ const deleteEventPermanentlyFlow = async (event, { refreshEvents, onDeleted, onC
     return cancelEventAndArchive(latest, { refreshEvents, onDone: onCancelled });
   }
 
-  const shouldDelete = window.confirm("Видалити подію назавжди? OK — видалити з історії. Cancel — лише скасувати і залишити в архіві.");
+  const shouldDelete = window.confirm(`${syncWarning ? `${syncWarning}\n\nPoriadok ще раз перевірить бронювання перед видаленням.\n\n` : ""}Видалити подію назавжди? OK — видалити з історії. Cancel — лише скасувати і залишити в архіві.`);
   if (!shouldDelete) {
     return cancelEventAndArchive(latest, { refreshEvents, onDone: onCancelled });
   }

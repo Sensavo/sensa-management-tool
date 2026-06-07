@@ -1053,11 +1053,64 @@ def _event_paid_count(event: Optional[dict]) -> int:
 
 
 async def _refresh_event_payment_snapshot(event: dict) -> dict:
-    """Best-effort refresh of Altegio booking count before destructive actions."""
+    """Refresh Altegio booking count before destructive actions.
+
+    Destructive flows must be fail-closed: if Altegio is configured but we
+    cannot prove the matching activity has zero bookings, mark the snapshot as
+    unverified so callers require manager confirmation instead of trusting stale
+    local data.
+    """
     if not event:
         return event
+    event = {**event, "_payment_snapshot_verified": True}
+    if not ALTEGIO_USER_TOKEN:
+        return event
+
+    event_date = (event.get("date") or "")[:10] or None
     altegio_id = event.get("altegio_id") or event.get("altegio_activity_id")
     if not altegio_id:
+        result = await altegio_client.get_group_events_result(date_from=event_date, date_to=event_date)
+        if not result.get("ok"):
+            event["_payment_snapshot_verified"] = False
+            event["_payment_snapshot_error"] = result.get("body") or "Altegio activities request failed"
+            return event
+
+        date_part = (event.get("date") or "")[:10]
+        matches = []
+        for altegio_event in result.get("data", []):
+            same_title = _titles_match(event.get("title", ""), _altegio_event_title(altegio_event))
+            same_date = not _altegio_event_date(altegio_event) or (date_part and date_part == _altegio_event_date(altegio_event))
+            if same_title and same_date:
+                matches.append(altegio_event)
+
+        if len(matches) > 1:
+            event["_payment_snapshot_verified"] = False
+            event["_payment_snapshot_error"] = "Multiple matching Altegio activities"
+            return event
+        if not matches:
+            return event
+
+        matched = matches[0]
+        altegio_id = str(matched.get("id"))
+        booked_count = _altegio_booked_count(matched)
+        event = {
+            **event,
+            "altegio_id": altegio_id,
+            "altegio_activity_id": altegio_id,
+            "altegio_booked_count": max(0, int(booked_count)),
+            "spots": int(matched.get("capacity") or event.get("spots") or 10),
+        }
+        await db.events.update_one(
+            {"id": event.get("id")},
+            {"$set": {
+                "altegio_id": altegio_id,
+                "altegio_activity_id": altegio_id,
+                "altegio_booked_count": event["altegio_booked_count"],
+                "spots": event["spots"],
+                "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+                "altegio_last_error": None,
+            }},
+        )
         return event
 
     booked_count = None
@@ -1066,8 +1119,12 @@ async def _refresh_event_payment_snapshot(event: dict) -> dict:
         if bookings is not None:
             booked_count = len(bookings)
         else:
-            altegio_events = await altegio_client.get_group_events()
-            for altegio_event in altegio_events:
+            result = await altegio_client.get_group_events_result(date_from=event_date, date_to=event_date)
+            if not result.get("ok"):
+                event["_payment_snapshot_verified"] = False
+                event["_payment_snapshot_error"] = result.get("body") or "Altegio activities request failed"
+                return event
+            for altegio_event in result.get("data", []):
                 if str(altegio_event.get("id")) == str(altegio_id):
                     booked_count = _altegio_booked_count(altegio_event)
                     break
@@ -1075,6 +1132,8 @@ async def _refresh_event_payment_snapshot(event: dict) -> dict:
         logging.error(f"Failed to refresh Altegio booking count for event {event.get('id')}: {e}")
 
     if booked_count is None:
+        event["_payment_snapshot_verified"] = False
+        event["_payment_snapshot_error"] = f"Altegio activity {altegio_id} not found"
         return event
 
     event = {**event, "altegio_booked_count": max(0, int(booked_count))}
@@ -1088,6 +1147,10 @@ async def _refresh_event_payment_snapshot(event: dict) -> dict:
     return event
 
 
+def _event_payment_snapshot_verified(event: Optional[dict]) -> bool:
+    return bool(event and event.get("_payment_snapshot_verified", True))
+
+
 def _event_cancellation_confirmed(event_data: dict, request: Request) -> bool:
     return bool(
         event_data.get("manager_confirmed_cancellation")
@@ -1099,6 +1162,15 @@ def _event_cancellation_confirmed(event_data: dict, request: Request) -> bool:
 def _cancellation_guard_detail(event: dict, action: str) -> dict:
     paid_count = _event_paid_count(event)
     title = event.get("title") or "подія"
+    if not _event_payment_snapshot_verified(event):
+        error = event.get("_payment_snapshot_error") or "не вдалося перевірити Altegio"
+        return {
+            "code": "manager_confirmation_required",
+            "action": action,
+            "event_id": event.get("id"),
+            "paid_count": paid_count,
+            "message": f"Не можу точно перевірити реєстрації в Altegio для «{title}» ({error}). Спершу менеджер має вручну перевірити подію.",
+        }
     return {
         "code": "manager_confirmation_required",
         "action": action,
@@ -1999,6 +2071,9 @@ async def update_event(event_id: str, event_data: EventUpdate):
         raise HTTPException(status_code=404, detail="Event not found")
     
     update_dict = {k: v for k, v in event_data.model_dump().items() if v is not None}
+
+    if update_dict.get("cancelled") is True:
+        raise HTTPException(status_code=400, detail="Use PATCH /events/{event_id} to cancel events so payment guards and cleanup tasks run.")
     
     if "date" in update_dict:
         settings = await get_settings()
@@ -2006,14 +2081,6 @@ async def update_event(event_id: str, event_data: EventUpdate):
         smm_tasks = calculate_smm_dates(update_dict["date"])
         update_dict["reminders"] = reminders
         update_dict["smm_tasks"] = smm_tasks
-    
-    # If cancelling event, clear all pending tasks
-    if update_dict.get("cancelled") == True:
-        update_dict["completed_tasks"] = {}
-        update_dict["completed_smm_tasks"] = {}
-        update_dict["completed_marketing_tasks"] = {}
-        update_dict["reminders"] = {}
-        update_dict["smm_tasks"] = {}
     
     if update_dict:
         await db.events.update_one({"id": event_id}, {"$set": update_dict})
@@ -2024,24 +2091,20 @@ async def update_event(event_id: str, event_data: EventUpdate):
     try:
         altegio_id = updated.get("altegio_activity_id") or existing.get("altegio_activity_id")
         if altegio_id and ALTEGIO_PARTNER_TOKEN:
-            if update_dict.get("cancelled"):
-                await altegio_client.delete_activity(altegio_id)
-                await db.events.update_one({"id": event_id}, {"$set": {"altegio_activity_id": None, "altegio_id": None}})
-            else:
-                await altegio_client.update_activity(
-                    activity_id=altegio_id,
-                    title=updated.get("title", existing.get("title", "")),
-                    date=updated.get("date", existing.get("date", ""))[:10],
-                    start_time=updated.get("start_time") or existing.get("start_time") or "14:00",
-                    end_time=updated.get("end_time") or existing.get("end_time") or "16:00",
-                    capacity=updated.get("spots") or existing.get("spots") or 10,
-                    comment=updated.get("description") or existing.get("description") or "",
-                    service_id=await _resolve_altegio_service_id(
-                        updated.get("title", existing.get("title", "")),
-                        explicit_service_id=updated.get("altegio_service_id") or existing.get("altegio_service_id"),
-                        spots=updated.get("spots") or existing.get("spots") or 10,
-                    )
+            await altegio_client.update_activity(
+                activity_id=altegio_id,
+                title=updated.get("title", existing.get("title", "")),
+                date=updated.get("date", existing.get("date", ""))[:10],
+                start_time=updated.get("start_time") or existing.get("start_time") or "14:00",
+                end_time=updated.get("end_time") or existing.get("end_time") or "16:00",
+                capacity=updated.get("spots") or existing.get("spots") or 10,
+                comment=updated.get("description") or existing.get("description") or "",
+                service_id=await _resolve_altegio_service_id(
+                    updated.get("title", existing.get("title", "")),
+                    explicit_service_id=updated.get("altegio_service_id") or existing.get("altegio_service_id"),
+                    spots=updated.get("spots") or existing.get("spots") or 10,
                 )
+            )
     except Exception as e:
         logging.error(f"Failed to sync event update to Altegio: {e}")
     
@@ -2115,7 +2178,7 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
     # Handle cancellation
     if event_data.get("cancelled") == True:
         existing = await _refresh_event_payment_snapshot(existing)
-        if _event_paid_count(existing) > 0 and not _event_cancellation_confirmed(event_data, request):
+        if (not _event_payment_snapshot_verified(existing) or _event_paid_count(existing) > 0) and not _event_cancellation_confirmed(event_data, request):
             try:
                 await _create_cancellation_tasks(existing)
             except Exception as e:
@@ -2238,8 +2301,8 @@ async def cancel_event_series(event_id: str, request: Request):
 
     targets = [await _refresh_event_payment_snapshot(t) for t in targets]
 
-    if any(_event_paid_count(t) > 0 for t in targets) and request.query_params.get("manager_confirmed_cancellation") != "true":
-        anchor = next((t for t in targets if _event_paid_count(t) > 0), existing)
+    if any((not _event_payment_snapshot_verified(t)) or _event_paid_count(t) > 0 for t in targets) and request.query_params.get("manager_confirmed_cancellation") != "true":
+        anchor = next((t for t in targets if (not _event_payment_snapshot_verified(t)) or _event_paid_count(t) > 0), existing)
         try:
             await _create_cancellation_tasks(anchor, series_count=len(targets))
         except Exception as e:
@@ -2352,7 +2415,7 @@ async def get_event_series(event_id: str):
 async def delete_event(event_id: str, request: Request):
     existing = await db.events.find_one({"id": event_id}, {"_id": 0})
     existing = await _refresh_event_payment_snapshot(existing)
-    if existing and _event_paid_count(existing) > 0 and request.query_params.get("manager_confirmed_cancellation") != "true":
+    if existing and ((not _event_payment_snapshot_verified(existing)) or _event_paid_count(existing) > 0) and request.query_params.get("manager_confirmed_cancellation") != "true":
         try:
             await _create_cancellation_tasks(existing)
         except Exception as e:
@@ -4116,20 +4179,25 @@ class AltegioClient:
         Fetch group events (activities) from Altegio
         Returns list of group events
         """
+        result = await self.get_group_events_result()
+        return result.get("data", []) if result.get("ok") else []
+
+    async def get_group_events_result(self, date_from: str = None, date_to: str = None):
+        """Fetch group activities and preserve error details for critical guards."""
         url = f"{self.base_url}/activity/{self.company_id}/search/"
         params = {
-            "from": datetime.now().strftime("%Y-%m-%d"),
-            "till": (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%d")
+            "from": date_from or datetime.now().strftime("%Y-%m-%d"),
+            "till": date_to or (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%d")
         }
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(url, headers=self.get_v2_headers(), params=params)
             if response.status_code == 200:
                 data = response.json()
-                return data.get("data", [])
+                return {"ok": True, "status_code": response.status_code, "data": data.get("data", []), "body": data}
             else:
                 logging.error(f"Altegio activities error: {response.status_code} - {response.text}")
-                return []
+                return {"ok": False, "status_code": response.status_code, "data": [], "body": response.text[:1000]}
     
     async def get_activity_bookings(self, activity_id: str):
         """
@@ -4387,11 +4455,36 @@ async def push_single_event_to_altegio(event_id: str):
 
     existing_altegio_id = event.get("altegio_id") or event.get("altegio_activity_id")
     if existing_altegio_id:
-        return {
-            "event_id": event_id,
-            "altegio_id": str(existing_altegio_id),
-            "message": "Event already linked to Altegio",
-        }
+        event_date = (event.get("date") or "")[:10] or None
+        activities = await altegio_client.get_group_events_result(date_from=event_date, date_to=event_date)
+        if not activities.get("ok"):
+            raise HTTPException(status_code=502, detail={
+                "code": "altegio_link_unverified",
+                "message": "не вдалося перевірити існуючу подію в Altegio",
+                "body": activities.get("body"),
+            })
+        if not any(str(item.get("id")) == str(existing_altegio_id) for item in activities.get("data", [])):
+            await db.events.update_one(
+                {"id": event_id},
+                {"$set": {
+                    "altegio_id": None,
+                    "altegio_activity_id": None,
+                    "altegio_last_error": f"Altegio activity {existing_altegio_id} not found during push",
+                    "altegio_last_status_code": 404,
+                    "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
+            event = {**event, "altegio_id": None, "altegio_activity_id": None}
+        else:
+            await db.events.update_one(
+                {"id": event_id},
+                {"$set": {"altegio_last_error": None, "altegio_last_sync": datetime.now(timezone.utc).isoformat()}},
+            )
+            return {
+                "event_id": event_id,
+                "altegio_id": str(existing_altegio_id),
+                "message": "Event already linked to Altegio",
+            }
 
     service_id = await _resolve_altegio_service_id(
         event.get("title", ""),
@@ -4448,7 +4541,14 @@ async def get_event_bookings_from_altegio(event_id: str):
         event = await db.events.find_one({"id": event_id})
         if not event:
             raise HTTPException(status_code=404, detail="Event not found")
-        
+
+        event = await _refresh_event_payment_snapshot(event)
+        if not _event_payment_snapshot_verified(event):
+            raise HTTPException(status_code=502, detail={
+                "code": "altegio_bookings_unverified",
+                "message": _cancellation_guard_detail(event, "bookings")["message"],
+            })
+
         altegio_id = event.get("altegio_id") or event.get("altegio_activity_id")
         
         if altegio_id:
