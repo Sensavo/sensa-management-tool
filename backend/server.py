@@ -62,6 +62,8 @@ PORIADOK_APP_URL = (os.environ.get("FRONTEND_URL") or "https://app.sensa.events"
 
 telegram_app = None
 telegram_summary_task = None
+telegram_bot_lock_owner = None
+telegram_bot_lock_heartbeat_task = None
 TEAM_USERS = ("manager", "smm", "marketer")
 TEAM_USER_LABELS = {
     "manager": "Manager",
@@ -138,6 +140,24 @@ async def _run_with_job_lock(name: str, ttl_seconds: int, job, release: bool = T
             await _release_job_lock(name, owner)
 
 
+async def _heartbeat_job_lock(name: str, owner: str, ttl_seconds: int, interval_seconds: int) -> None:
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            now = datetime.now(timezone.utc)
+            result = await db.job_locks.update_one(
+                {"_id": f"job:{name}", "owner": owner},
+                {"$set": {"expires_at": now + timedelta(seconds=ttl_seconds), "updated_at": now}},
+            )
+            if result.matched_count == 0:
+                logging.warning(f"Job lock heartbeat lost: {name}")
+                return
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            logging.error(f"Failed to heartbeat job lock {name}: {e}")
+
+
 async def altegio_auto_sync():
     """Background task to sync Altegio data every 60 minutes"""
     while True:
@@ -168,7 +188,7 @@ def _telegram_enabled() -> bool:
 
 async def start_telegram_bot():
     """Start Telegram polling if the token is configured."""
-    global telegram_app
+    global telegram_app, telegram_bot_lock_owner, telegram_bot_lock_heartbeat_task
     if not TELEGRAM_BOT_TOKEN:
         logging.info("Telegram bot disabled — TELEGRAM_BOT_TOKEN is not configured")
         return
@@ -176,35 +196,56 @@ async def start_telegram_bot():
         logging.error("Telegram bot disabled — python-telegram-bot is not installed")
         return
 
-    telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    telegram_app.add_handler(CommandHandler("start", telegram_start_command))
-    telegram_app.add_handler(CommandHandler("link", telegram_link_command))
-    telegram_app.add_handler(CommandHandler("today", telegram_today_command))
-    telegram_app.add_handler(CommandHandler("overdue", telegram_overdue_command))
-    telegram_app.add_handler(CommandHandler("mute", telegram_mute_command))
-    telegram_app.add_handler(CommandHandler("unmute", telegram_unmute_command))
+    telegram_bot_lock_owner = await _acquire_job_lock("telegram_bot_polling", 2 * 60)
+    if not telegram_bot_lock_owner:
+        logging.info("Telegram bot polling skipped — another instance holds the lock")
+        return
+    telegram_bot_lock_heartbeat_task = asyncio.create_task(
+        _heartbeat_job_lock("telegram_bot_polling", telegram_bot_lock_owner, 2 * 60, 60)
+    )
 
-    await telegram_app.initialize()
-    await telegram_app.start()
-    if telegram_app.updater:
-        await telegram_app.updater.start_polling(drop_pending_updates=True)
-    logging.info("Telegram bot polling started")
+    try:
+        telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        telegram_app.add_handler(CommandHandler("start", telegram_start_command))
+        telegram_app.add_handler(CommandHandler("link", telegram_link_command))
+        telegram_app.add_handler(CommandHandler("today", telegram_today_command))
+        telegram_app.add_handler(CommandHandler("overdue", telegram_overdue_command))
+        telegram_app.add_handler(CommandHandler("mute", telegram_mute_command))
+        telegram_app.add_handler(CommandHandler("unmute", telegram_unmute_command))
+
+        await telegram_app.initialize()
+        await telegram_app.start()
+        if telegram_app.updater:
+            await telegram_app.updater.start_polling(drop_pending_updates=True)
+        logging.info("Telegram bot polling started")
+    except Exception:
+        await stop_telegram_bot()
+        raise
 
 
 async def stop_telegram_bot():
-    global telegram_app
-    if not telegram_app:
-        return
+    global telegram_app, telegram_bot_lock_owner, telegram_bot_lock_heartbeat_task
     try:
-        if telegram_app.updater:
+        if telegram_app and telegram_app.updater:
             await telegram_app.updater.stop()
-        await telegram_app.stop()
-        await telegram_app.shutdown()
-        logging.info("Telegram bot stopped")
+        if telegram_app:
+            await telegram_app.stop()
+            await telegram_app.shutdown()
+            logging.info("Telegram bot stopped")
     except Exception as e:
         logging.error(f"Telegram bot shutdown error: {e}")
     finally:
         telegram_app = None
+        if telegram_bot_lock_heartbeat_task:
+            telegram_bot_lock_heartbeat_task.cancel()
+            try:
+                await telegram_bot_lock_heartbeat_task
+            except asyncio.CancelledError:
+                pass
+        telegram_bot_lock_heartbeat_task = None
+        if telegram_bot_lock_owner:
+            await _release_job_lock("telegram_bot_polling", telegram_bot_lock_owner)
+        telegram_bot_lock_owner = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
