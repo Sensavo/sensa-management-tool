@@ -4479,6 +4479,27 @@ async def sync_single_event_from_altegio(event_id: str):
                 same_date = not _altegio_event_date(altegio_event) or event.get("date", "").startswith(_altegio_event_date(altegio_event))
                 if same_title and same_date:
                     altegio_id = str(altegio_event.get("id"))
+                    linked_event = await db.events.find_one({
+                        "id": {"$ne": event_id},
+                        "$or": [
+                            {"altegio_id": altegio_id},
+                            {"altegio_activity_id": altegio_id},
+                        ],
+                    }, {"_id": 0, "id": 1, "title": 1, "date": 1})
+                    if linked_event:
+                        await db.events.update_one(
+                            {"id": event_id},
+                            {"$set": {
+                                "altegio_last_error": f"Altegio activity {altegio_id} already linked to {linked_event.get('id')}",
+                                "altegio_last_status_code": 409,
+                                "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+                            }}
+                        )
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"ця подія в Altegio вже привʼязана до іншої події Poriadok: {linked_event.get('title')} {linked_event.get('date')}",
+                        )
+
                     records_count = _altegio_booked_count(altegio_event)
                     await db.events.update_one(
                         {"id": event_id},
