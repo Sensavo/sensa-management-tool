@@ -1761,6 +1761,29 @@ async def _resolve_altegio_service_id(title: str, explicit_service_id: Optional[
     return await _altegio_match_service_by_title(title)
 
 
+async def _ensure_no_duplicate_active_event(title: str, date_str: str, start_time: str = "") -> None:
+    title_norm = _normalize_for_match(title)
+    date_part = (date_str or "")[:10]
+    if not title_norm or not date_part:
+        return
+
+    candidates = await db.events.find(
+        {
+            "date": {"$regex": f"^{re.escape(date_part)}"},
+            "start_time": start_time or "",
+            "cancelled": {"$ne": True},
+            "archived": {"$ne": True},
+        },
+        {"_id": 0, "id": 1, "title": 1, "date": 1, "start_time": 1},
+    ).to_list(100)
+    duplicate = next((event for event in candidates if _normalize_for_match(event.get("title", "")) == title_norm), None)
+    if duplicate:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Схожа активна подія вже існує: «{duplicate.get('title')}» {duplicate.get('date', '')[:10]} {duplicate.get('start_time') or ''}".strip(),
+        )
+
+
 async def _persist_event(event_data: EventCreate, settings, source_event_id: str = "", sync_external: bool = True) -> Event:
     """Insert one event into DB; optionally push to Google Calendar + Altegio.
 
@@ -1925,6 +1948,7 @@ async def create_event(event_data: EventCreate, request: Request):
 
     if not is_regular:
         # Single one-off event — full external sync
+        await _ensure_no_duplicate_active_event(event_data.title, event_data.date, event_data.start_time or "")
         event = await _persist_event(event_data, settings, sync_external=True)
         _notify_team(actor, f"📅 створено подію: {_event_line(event.model_dump())}\n{_poriadok_link()}")
         return {**event.model_dump(), "series_count": 1}
@@ -1950,6 +1974,9 @@ async def create_event(event_data: EventCreate, request: Request):
 
     if not dates:
         raise HTTPException(status_code=400, detail="Жоден день тижня не потрапляє в найближчі 6 тижнів")
+
+    for d in dates:
+        await _ensure_no_duplicate_active_event(event_data.title, d.isoformat(), event_data.start_time or "")
 
     created_events: List[Event] = []
     try:
