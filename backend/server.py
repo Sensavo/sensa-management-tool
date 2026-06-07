@@ -1557,24 +1557,32 @@ async def _sync_altegio_events_to_local(altegio_events: list) -> tuple[int, list
     return synced_count, synced_events
 
 
+def _unique_altegio_service_id(services: list, reason: str) -> Optional[int]:
+    ids = {int(svc["id"]) for svc in services if svc.get("id")}
+    if len(ids) == 1:
+        return next(iter(ids))
+    if len(ids) > 1:
+        titles = ", ".join(f"{svc.get('id')}:{svc.get('title')}" for svc in services[:6])
+        logging.warning(f"Altegio service match is ambiguous for {reason}: {titles}")
+    return None
+
+
 async def _altegio_service_id_by_normalized_title(target_title: str) -> Optional[int]:
     services = await _get_altegio_services_cached()
     target_norm = _normalize_for_match(target_title)
     if not services or not target_norm:
         return None
 
-    for svc in services:
-        if _normalize_for_match(svc.get("title", "")) == target_norm:
-            return int(svc["id"])
-    return None
+    matches = [svc for svc in services if _normalize_for_match(svc.get("title", "")) == target_norm]
+    return _unique_altegio_service_id(matches, f"exact '{target_title}'")
 
 
 async def _altegio_match_service_by_title(title: str) -> Optional[int]:
-    """Fuzzy-match an event title to an Altegio service id.
+    """Safely match an event title to an Altegio service id.
 
-    Strategy: normalise both sides (lowercase, strip non-alphanumerics);
-    pick the service whose normalised title is the longest substring match
-    in either direction. Returns the service id or None.
+    Only deterministic matches are allowed: one exact normalised title match, or
+    one strong substring match. Ambiguous matches return None so callers fail
+    loudly instead of creating a booking under the wrong service.
     """
     services = await _get_altegio_services_cached()
     if not services:
@@ -1582,17 +1590,30 @@ async def _altegio_match_service_by_title(title: str) -> Optional[int]:
     t_norm = _normalize_for_match(title)
     if not t_norm:
         return None
-    best = None
-    best_len = 0
+
+    exact = [svc for svc in services if _normalize_for_match(svc.get("title", "")) == t_norm]
+    exact_id = _unique_altegio_service_id(exact, f"exact '{title}'")
+    if exact_id:
+        return exact_id
+    if exact:
+        return None
+
+    # Substring fallback is intentionally conservative: tiny titles and very
+    # short overlaps are too risky for booking-critical service selection.
+    if len(t_norm) < 5:
+        return None
+
+    substring_matches = []
     for svc in services:
         s_norm = _normalize_for_match(svc.get("title", ""))
-        if not s_norm:
+        if not s_norm or len(s_norm) < 5:
             continue
         if t_norm in s_norm or s_norm in t_norm:
-            if len(s_norm) > best_len:
-                best = svc
-                best_len = len(s_norm)
-    return int(best["id"]) if best else None
+            overlap = min(len(t_norm), len(s_norm))
+            if overlap >= 5:
+                substring_matches.append(svc)
+
+    return _unique_altegio_service_id(substring_matches, f"substring '{title}'")
 
 
 def _altegio_event_type_key(title: str, spots: Optional[int] = None) -> Optional[str]:
