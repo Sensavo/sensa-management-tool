@@ -1792,56 +1792,61 @@ async def _persist_event(event_data: EventCreate, settings, source_event_id: str
     await db.events.insert_one(event.model_dump())
 
     if sync_external:
-        await _sync_event_to_external(event)
+        sync_result = await _sync_event_to_external(event)
         updated = await db.events.find_one({"id": event.id}, {"_id": 0})
+        if ALTEGIO_PARTNER_TOKEN and not sync_result.get("altegio_ok"):
+            await _cleanup_created_event(updated or event.model_dump())
+            raise HTTPException(status_code=502, detail=sync_result.get("altegio_error") or "не вдалося створити подію в Altegio")
         if updated:
             return Event(**updated)
 
     return event
 
 
-async def _sync_event_to_external(event: Event) -> None:
-    """Best-effort push to Google Calendar + Altegio for a single event."""
+async def _cleanup_created_event(event: dict) -> None:
+    """Best-effort cleanup for a just-created event when strict create fails."""
+    if not event:
+        return
+    event_id = event.get("id")
+    altegio_id = event.get("altegio_activity_id") or event.get("altegio_id")
+    if altegio_id and ALTEGIO_PARTNER_TOKEN:
+        try:
+            await altegio_client.delete_activity(str(altegio_id))
+        except Exception as e:
+            logging.error(f"Failed to cleanup Altegio activity {altegio_id}: {e}")
+    gcal_id = _google_calendar_event_id(event)
+    if gcal_id:
+        try:
+            service = await get_google_calendar_service()
+            if service:
+                service.events().delete(calendarId='primary', eventId=gcal_id).execute()
+        except Exception as e:
+            logging.error(f"Failed to cleanup Google Calendar event {gcal_id}: {e}")
+    if event_id:
+        await db.events.delete_one({"id": event_id})
+
+
+async def _sync_event_to_external(event: Event) -> dict:
+    """Push to Google Calendar + Altegio for a single event.
+
+    Google remains best-effort because credentials are optional. Altegio returns
+    an explicit success/failure result so create flows do not report success when
+    the booking activity was not created.
+    """
+    result_status = {"google_ok": True, "altegio_ok": not bool(ALTEGIO_PARTNER_TOKEN), "altegio_error": None}
     # Google Calendar
     try:
         creds = await get_google_credentials()
         if creds:
             service = build('calendar', 'v3', credentials=creds)
-            try:
-                event_date = datetime.fromisoformat(event.date.replace('Z', '+00:00'))
-            except Exception:
-                event_date = datetime.strptime(event.date[:10], '%Y-%m-%d')
-
-            start_time = event.start_time or ''
-            end_time = event.end_time or ''
-            calendar_event = {
-                'summary': event.title,
-                'description': f"{event.description or ''}\n\nціна: {event.price} грн\nмісць: {event.spots}",
-            }
-            if start_time and end_time:
-                date_str = event_date.strftime('%Y-%m-%d')
-                calendar_event['start'] = {'dateTime': f"{date_str}T{start_time}:00", 'timeZone': 'Europe/Kyiv'}
-                calendar_event['end'] = {'dateTime': f"{date_str}T{end_time}:00", 'timeZone': 'Europe/Kyiv'}
-            elif start_time:
-                date_str = event_date.strftime('%Y-%m-%d')
-                start_hour, start_min = map(int, start_time.split(':'))
-                end_hour = (start_hour + 3) % 24
-                default_end = f"{end_hour:02d}:{start_min:02d}"
-                calendar_event['start'] = {'dateTime': f"{date_str}T{start_time}:00", 'timeZone': 'Europe/Kyiv'}
-                calendar_event['end'] = {'dateTime': f"{date_str}T{default_end}:00", 'timeZone': 'Europe/Kyiv'}
-            else:
-                calendar_event['start'] = {'date': event_date.strftime('%Y-%m-%d'), 'timeZone': 'Europe/Kyiv'}
-                calendar_event['end'] = {'date': (event_date + timedelta(days=1)).strftime('%Y-%m-%d'), 'timeZone': 'Europe/Kyiv'}
-
-            result = service.events().insert(calendarId='primary', body=calendar_event).execute()
-            await db.events.update_one({"id": event.id}, {"$set": {"google_calendar_id": result.get("id"), "google_calendar_event_id": result.get("id")}})
+            calendar_result = service.events().insert(calendarId='primary', body=_google_calendar_payload(event.model_dump())).execute()
+            await db.events.update_one({"id": event.id}, {"$set": {"google_calendar_id": calendar_result.get("id"), "google_calendar_event_id": calendar_result.get("id")}})
             logging.info(f"Auto-exported event {event.title} to Google Calendar")
     except Exception as e:
+        result_status["google_ok"] = False
         logging.error(f"Failed to auto-export to Google Calendar: {e}")
 
-    # Altegio: explicit service_id wins; otherwise fuzzy-match the event title
-    # against the Altegio service catalogue. If no match — silently skip push
-    # (Altegio API forbids us from creating services).
+    # Altegio is booking-critical: if configured, creation must be confirmed.
     try:
         if ALTEGIO_PARTNER_TOKEN:
             service_id = await _resolve_altegio_service_id(
@@ -1876,6 +1881,7 @@ async def _sync_event_to_external(event: Event) -> None:
                         }}
                     )
                     logging.info(f"Auto-pushed event '{event.title}' to Altegio: {altegio_id}")
+                    result_status["altegio_ok"] = True
                 else:
                     error_body = result.get("body")
                     if not isinstance(error_body, str):
@@ -1890,10 +1896,24 @@ async def _sync_event_to_external(event: Event) -> None:
                         }}
                     )
                     logging.error(f"Altegio auto-push failed for '{event.title}': {result.get('status_code')} - {error_body[:300]}")
+                    result_status["altegio_error"] = error_body[:1000]
             else:
-                logging.info(f"Altegio push skipped — no matching service for '{event.title}'")
+                message = f"Altegio push skipped — no matching service for '{event.title}'"
+                logging.error(message)
+                await db.events.update_one(
+                    {"id": event.id},
+                    {"$set": {
+                        "altegio_last_error": message,
+                        "altegio_last_status_code": None,
+                        "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+                    }},
+                )
+                result_status["altegio_error"] = message
     except Exception as e:
         logging.error(f"Failed to push event to Altegio: {e}")
+        result_status["altegio_error"] = str(e)
+
+    return result_status
 
 
 @api_router.post("/events")
@@ -1931,19 +1951,30 @@ async def create_event(event_data: EventCreate, request: Request):
     if not dates:
         raise HTTPException(status_code=400, detail="Жоден день тижня не потрапляє в найближчі 6 тижнів")
 
-    # First instance is the master; every generated instance is pushed to Altegio
-    # so the booking calendar has a real activity for each occurrence.
-    master_payload = event_data.model_copy(update={"date": dates[0].isoformat()})
-    master = await _persist_event(master_payload, settings, sync_external=True)
+    created_events: List[Event] = []
+    try:
+        # First instance is the master; every generated instance is pushed to Altegio
+        # so the booking calendar has a real activity for each occurrence.
+        master_payload = event_data.model_copy(update={"date": dates[0].isoformat()})
+        master = await _persist_event(master_payload, settings, sync_external=True)
+        created_events.append(master)
 
-    for d in dates[1:]:
-        child_payload = event_data.model_copy(update={"date": d.isoformat()})
-        await _persist_event(child_payload, settings, source_event_id=master.id, sync_external=True)
+        for d in dates[1:]:
+            child_payload = event_data.model_copy(update={"date": d.isoformat()})
+            child = await _persist_event(child_payload, settings, source_event_id=master.id, sync_external=True)
+            created_events.append(child)
 
-    # Post-process: pay_master fires once per calendar month — on the LAST
-    # instance of that month. Master/children otherwise skip mgmt_pay_master
-    # (series_master_only=True). This pass adds it back to the right instance.
-    await _attach_monthly_pay_master(master.id, dates)
+        # Post-process: pay_master fires once per calendar month — on the LAST
+        # instance of that month. Master/children otherwise skip mgmt_pay_master
+        # (series_master_only=True). This pass adds it back to the right instance.
+        await _attach_monthly_pay_master(master.id, dates)
+    except Exception:
+        for created in reversed(created_events):
+            try:
+                await _cleanup_created_event(created.model_dump())
+            except Exception as cleanup_error:
+                logging.error(f"Failed to rollback created series event {created.id}: {cleanup_error}")
+        raise
 
     _notify_team(actor, f"📅 створено серію подій: {_event_line(master.model_dump())} (+{len(dates) - 1})\n{_poriadok_link()}")
 
