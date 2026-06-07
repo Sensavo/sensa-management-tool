@@ -2429,27 +2429,50 @@ async def delete_event(event_id: str, request: Request):
         )
         raise HTTPException(status_code=409, detail=_cancellation_guard_detail(existing, "delete"))
 
-    result = await db.events.delete_one({"id": event_id})
-    if result.deleted_count == 0:
+    if not existing:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    # Delete from Altegio if linked
+    # Delete from Altegio before removing the local event. If this fails, keep
+    # the Poriadok record so the team still has a visible object to resolve.
     try:
-        altegio_id = existing.get("altegio_activity_id") if existing else None
+        altegio_id = existing.get("altegio_activity_id") or existing.get("altegio_id")
+        if altegio_id and not ALTEGIO_PARTNER_TOKEN:
+            raise HTTPException(status_code=502, detail="Altegio не налаштований для видалення — локальну подію залишено")
         if altegio_id and ALTEGIO_PARTNER_TOKEN:
-            await altegio_client.delete_activity(altegio_id)
+            deleted = await altegio_client.delete_activity(altegio_id)
+            if not deleted:
+                await db.events.update_one(
+                    {"id": event_id},
+                    {"$set": {
+                        "altegio_last_error": f"Failed to delete Altegio activity {altegio_id}",
+                        "altegio_last_status_code": 502,
+                        "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+                    }},
+                )
+                raise HTTPException(status_code=502, detail="не вдалося видалити подію з Altegio — локальну подію залишено")
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
         logging.error(f"Failed to delete event from Altegio: {e}")
+        raise HTTPException(status_code=502, detail="не вдалося видалити подію з Altegio — локальну подію залишено")
 
-    # Delete from Google Calendar if linked
+    # Delete from Google Calendar before removing the local event for the same reason.
     try:
         gcal_id = _google_calendar_event_id(existing)
         if gcal_id:
             service = await get_google_calendar_service()
-            if service:
-                service.events().delete(calendarId='primary', eventId=gcal_id).execute()
+            if not service:
+                raise HTTPException(status_code=502, detail="Google Calendar не доступний для видалення — локальну подію залишено")
+            service.events().delete(calendarId='primary', eventId=gcal_id).execute()
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
         logging.error(f"Failed to delete event from Google Calendar: {e}")
+        raise HTTPException(status_code=502, detail="не вдалося видалити подію з Google Calendar — локальну подію залишено")
+
+    result = await db.events.delete_one({"id": event_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
 
     # Spawn the same manual follow-up tasks as a soft cancel — deleting a
     # future event does not relieve the obligation to notify the master and
