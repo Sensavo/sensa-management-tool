@@ -2081,32 +2081,52 @@ async def update_event(event_id: str, event_data: EventUpdate):
         smm_tasks = calculate_smm_dates(update_dict["date"])
         update_dict["reminders"] = reminders
         update_dict["smm_tasks"] = smm_tasks
+
+    if not update_dict:
+        return existing
+
+    merged = {**existing, **update_dict}
+
+    # Push changes to Altegio before local persistence. If the external update
+    # fails, keep the local event unchanged so Poriadok does not drift from the
+    # booking system.
+    altegio_id = existing.get("altegio_activity_id") or existing.get("altegio_id")
+    if altegio_id:
+        if not ALTEGIO_PARTNER_TOKEN:
+            raise HTTPException(status_code=502, detail="Altegio не налаштований для оновлення — локальну подію не змінено")
+        service_id = await _resolve_altegio_service_id(
+            merged.get("title", existing.get("title", "")),
+            explicit_service_id=merged.get("altegio_service_id") or existing.get("altegio_service_id"),
+            spots=merged.get("spots") or existing.get("spots") or 10,
+        )
+        updated_external = await altegio_client.update_activity(
+            activity_id=altegio_id,
+            title=merged.get("title", existing.get("title", "")),
+            date=merged.get("date", existing.get("date", ""))[:10],
+            start_time=merged.get("start_time") or existing.get("start_time") or "14:00",
+            end_time=merged.get("end_time") or existing.get("end_time") or "16:00",
+            capacity=merged.get("spots") or existing.get("spots") or 10,
+            comment=merged.get("description") or existing.get("description") or "",
+            service_id=service_id,
+        )
+        if not updated_external:
+            await db.events.update_one(
+                {"id": event_id},
+                {"$set": {
+                    "altegio_last_error": f"Failed to update Altegio activity {altegio_id}",
+                    "altegio_last_status_code": 502,
+                    "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
+            raise HTTPException(status_code=502, detail="не вдалося оновити подію в Altegio — локальну подію не змінено")
+        update_dict["altegio_last_error"] = None
+        update_dict["altegio_last_sync"] = datetime.now(timezone.utc).isoformat()
+        if service_id:
+            update_dict["altegio_service_id"] = int(service_id)
     
-    if update_dict:
-        await db.events.update_one({"id": event_id}, {"$set": update_dict})
+    await db.events.update_one({"id": event_id}, {"$set": update_dict})
     
     updated = await db.events.find_one({"id": event_id}, {"_id": 0})
-    
-    # Push changes to Altegio if linked
-    try:
-        altegio_id = updated.get("altegio_activity_id") or existing.get("altegio_activity_id")
-        if altegio_id and ALTEGIO_PARTNER_TOKEN:
-            await altegio_client.update_activity(
-                activity_id=altegio_id,
-                title=updated.get("title", existing.get("title", "")),
-                date=updated.get("date", existing.get("date", ""))[:10],
-                start_time=updated.get("start_time") or existing.get("start_time") or "14:00",
-                end_time=updated.get("end_time") or existing.get("end_time") or "16:00",
-                capacity=updated.get("spots") or existing.get("spots") or 10,
-                comment=updated.get("description") or existing.get("description") or "",
-                service_id=await _resolve_altegio_service_id(
-                    updated.get("title", existing.get("title", "")),
-                    explicit_service_id=updated.get("altegio_service_id") or existing.get("altegio_service_id"),
-                    spots=updated.get("spots") or existing.get("spots") or 10,
-                )
-            )
-    except Exception as e:
-        logging.error(f"Failed to sync event update to Altegio: {e}")
     
     return updated
 
