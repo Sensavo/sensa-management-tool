@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -59,6 +59,7 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME", "")
 TELEGRAM_TIMEZONE = os.environ.get("TELEGRAM_TIMEZONE", "Europe/Kyiv")
 PORIADOK_APP_URL = (os.environ.get("FRONTEND_URL") or "https://app.sensa.events").rstrip("/")
+PORIADOK_ACCESS_CODE = os.environ.get("PORIADOK_ACCESS_CODE", "111")
 
 telegram_app = None
 telegram_summary_task = None
@@ -397,6 +398,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
+
+
+@app.middleware("http")
+async def require_access_code(request: Request, call_next):
+    if request.method == "OPTIONS" or not request.url.path.startswith("/api"):
+        return await call_next(request)
+    if request.url.path == "/api/oauth/calendar/callback":
+        return await call_next(request)
+
+    supplied = (request.headers.get("X-Access-Code") or "").strip()
+    if PORIADOK_ACCESS_CODE and supplied != PORIADOK_ACCESS_CODE:
+        return JSONResponse(status_code=401, content={"detail": "access code required"})
+    return await call_next(request)
 
 # ==================== MODELS ====================
 

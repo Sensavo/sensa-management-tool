@@ -105,14 +105,39 @@ const getActorUser = () => {
   }
 };
 
+const getStoredAccessCode = () => {
+  try {
+    const value = localStorage.getItem(ACCESS_CODE_STORAGE_KEY) || "";
+    return value === "true" ? ACCESS_CODE : "";
+  } catch {
+    return "";
+  }
+};
+
 axios.interceptors.request.use((config) => {
   const actor = getActorUser();
+  const accessCode = getStoredAccessCode();
+  if (accessCode && config.url?.includes("/api")) {
+    config.headers = config.headers || {};
+    config.headers["X-Access-Code"] = accessCode;
+  }
   if (actor) {
     config.headers = config.headers || {};
     config.headers["X-Actor-User"] = actor;
   }
   return config;
 });
+
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) {
+      try { localStorage.removeItem(ACCESS_CODE_STORAGE_KEY); } catch {}
+      if (window.location.pathname !== "/") window.location.href = "/";
+    }
+    return Promise.reject(error);
+  }
+);
 
 const AppContext = createContext();
 export const useApp = () => useContext(AppContext);
