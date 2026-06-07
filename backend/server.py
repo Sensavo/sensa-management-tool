@@ -8,6 +8,9 @@ from pymongo.errors import DuplicateKeyError
 import os
 import logging
 import asyncio
+import base64
+import hashlib
+import hmac
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict
@@ -60,6 +63,8 @@ TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME", "")
 TELEGRAM_TIMEZONE = os.environ.get("TELEGRAM_TIMEZONE", "Europe/Kyiv")
 PORIADOK_APP_URL = (os.environ.get("FRONTEND_URL") or "https://app.sensa.events").rstrip("/")
 PORIADOK_ACCESS_CODE = os.environ.get("PORIADOK_ACCESS_CODE", "111")
+PORIADOK_ACCESS_TOKEN_SECRET = os.environ.get("PORIADOK_ACCESS_TOKEN_SECRET") or PORIADOK_ACCESS_CODE
+PORIADOK_ACCESS_TOKEN_TTL_DAYS = int(os.environ.get("PORIADOK_ACCESS_TOKEN_TTL_DAYS", "30"))
 
 telegram_app = None
 telegram_summary_task = None
@@ -400,15 +405,49 @@ app = FastAPI(lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
 
 
+def _access_token_signature(payload: str) -> str:
+    return hmac.new(PORIADOK_ACCESS_TOKEN_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+
+
+def _issue_access_token() -> dict:
+    expires_at = int((datetime.now(timezone.utc) + timedelta(days=PORIADOK_ACCESS_TOKEN_TTL_DAYS)).timestamp())
+    nonce = uuid.uuid4().hex
+    payload = f"{expires_at}:{nonce}"
+    token = base64.urlsafe_b64encode(f"{payload}:{_access_token_signature(payload)}".encode()).decode()
+    return {"access_token": token, "expires_at": expires_at}
+
+
+def _verify_access_token(token: str) -> bool:
+    if not token:
+        return False
+    try:
+        decoded = base64.urlsafe_b64decode(token.encode()).decode()
+        expires_at, nonce, signature = decoded.split(":", 2)
+        payload = f"{expires_at}:{nonce}"
+        if not hmac.compare_digest(signature, _access_token_signature(payload)):
+            return False
+        return int(expires_at) > int(datetime.now(timezone.utc).timestamp())
+    except Exception:
+        return False
+
+
+def _request_has_access(request: Request) -> bool:
+    token = (request.headers.get("X-Access-Token") or "").strip()
+    if _verify_access_token(token):
+        return True
+    # Compatibility for already-deployed frontend/scripts during rollout.
+    supplied = (request.headers.get("X-Access-Code") or "").strip()
+    return bool(PORIADOK_ACCESS_CODE and supplied == PORIADOK_ACCESS_CODE)
+
+
 @app.middleware("http")
 async def require_access_code(request: Request, call_next):
     if request.method == "OPTIONS" or not request.url.path.startswith("/api"):
         return await call_next(request)
-    if request.url.path == "/api/oauth/calendar/callback":
+    if request.url.path in {"/api/auth/access-code", "/api/oauth/calendar/callback"}:
         return await call_next(request)
 
-    supplied = (request.headers.get("X-Access-Code") or "").strip()
-    if PORIADOK_ACCESS_CODE and supplied != PORIADOK_ACCESS_CODE:
+    if PORIADOK_ACCESS_CODE and not _request_has_access(request):
         return JSONResponse(status_code=401, content={"detail": "access code required"})
     return await call_next(request)
 
@@ -427,6 +466,17 @@ class ReminderType(BaseModel):
     name: str
     days_before: int
     icon: str = "bell"
+
+
+class AccessCodeRequest(BaseModel):
+    code: str
+
+
+@api_router.post("/auth/access-code")
+async def unlock_with_access_code(payload: AccessCodeRequest):
+    if not PORIADOK_ACCESS_CODE or payload.code.strip() != PORIADOK_ACCESS_CODE:
+        raise HTTPException(status_code=401, detail="невірний код")
+    return _issue_access_token()
 
 class EventCreate(BaseModel):
     title: str

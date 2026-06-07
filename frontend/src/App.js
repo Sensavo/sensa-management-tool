@@ -72,7 +72,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 const ACTOR_USER_STORAGE_KEY = "poriadok_actor_user";
 const ACCESS_CODE_STORAGE_KEY = "poriadok_access_granted";
-const ACCESS_CODE = "111";
+const ACCESS_TOKEN_STORAGE_KEY = "poriadok_access_token";
 const TEAM_USER_OPTIONS = [
   { id: "manager", label: "Manager" },
   { id: "smm", label: "SMM" },
@@ -105,10 +105,9 @@ const getActorUser = () => {
   }
 };
 
-const getStoredAccessCode = () => {
+const getStoredAccessToken = () => {
   try {
-    const value = localStorage.getItem(ACCESS_CODE_STORAGE_KEY) || "";
-    return value === "true" ? ACCESS_CODE : "";
+    return localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) || "";
   } catch {
     return "";
   }
@@ -116,10 +115,10 @@ const getStoredAccessCode = () => {
 
 axios.interceptors.request.use((config) => {
   const actor = getActorUser();
-  const accessCode = getStoredAccessCode();
-  if (accessCode && config.url?.includes("/api")) {
+  const accessToken = getStoredAccessToken();
+  if (accessToken && config.url?.includes("/api")) {
     config.headers = config.headers || {};
-    config.headers["X-Access-Code"] = accessCode;
+    config.headers["X-Access-Token"] = accessToken;
   }
   if (actor) {
     config.headers = config.headers || {};
@@ -131,8 +130,12 @@ axios.interceptors.request.use((config) => {
 axios.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error?.response?.status === 401) {
-      try { localStorage.removeItem(ACCESS_CODE_STORAGE_KEY); } catch {}
+    const isUnlockRequest = error?.config?.url?.includes("/auth/access-code");
+    if (error?.response?.status === 401 && !isUnlockRequest) {
+      try {
+        localStorage.removeItem(ACCESS_CODE_STORAGE_KEY);
+        localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+      } catch {}
       if (window.location.pathname !== "/") window.location.href = "/";
     }
     return Promise.reject(error);
@@ -7951,17 +7954,26 @@ const EventsDesktopExpanded = () => {
 const AccessGate = ({ onUnlock }) => {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    if (code.trim() === ACCESS_CODE) {
+    setSubmitting(true);
+    try {
+      const response = await axios.post(`${API}/auth/access-code`, { code: code.trim() });
+      const token = response.data?.access_token;
+      if (!token) throw new Error("No access token");
+      localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
       localStorage.setItem(ACCESS_CODE_STORAGE_KEY, "true");
       setError("");
       onUnlock();
       return;
+    } catch (err) {
+      setError(getApiErrorMessage(err, "невірний код"));
+      setCode("");
+    } finally {
+      setSubmitting(false);
     }
-    setError("невірний код");
-    setCode("");
   };
 
   return (
@@ -7979,7 +7991,7 @@ const AccessGate = ({ onUnlock }) => {
           type="password"
           aria-label="код доступу"
         />
-        <button type="submit" className="btn-dark w-full h-12 mt-5">увійти</button>
+        <button type="submit" className="btn-dark w-full h-12 mt-5" disabled={submitting}>{submitting ? "перевіряю" : "увійти"}</button>
         {error && <p className="text-center text-sm mt-4" style={{ color: '#FF8370' }}>{error}</p>}
       </form>
     </div>
@@ -8004,7 +8016,7 @@ function App() {
   const [allTaskDefs, setAllTaskDefs] = useState({ management: [], smm: [], marketing: [], monthly: [], daily: [] });
   const [googleCalendarStatus, setGoogleCalendarStatus] = useState({ connected: false, email: null });
   const [loading, setLoading] = useState(true);
-  const [accessGranted, setAccessGranted] = useState(() => localStorage.getItem(ACCESS_CODE_STORAGE_KEY) === "true");
+  const [accessGranted, setAccessGranted] = useState(() => Boolean(getStoredAccessToken()));
   const undoStackRef = useRef([]);
 
   const pushUndo = useCallback((entry) => {
