@@ -1543,6 +1543,18 @@ async def _sync_altegio_events_to_local(altegio_events: list) -> tuple[int, list
     return synced_count, synced_events
 
 
+async def _altegio_service_id_by_normalized_title(target_title: str) -> Optional[int]:
+    services = await _get_altegio_services_cached()
+    target_norm = _normalize_for_match(target_title)
+    if not services or not target_norm:
+        return None
+
+    for svc in services:
+        if _normalize_for_match(svc.get("title", "")) == target_norm:
+            return int(svc["id"])
+    return None
+
+
 async def _altegio_match_service_by_title(title: str) -> Optional[int]:
     """Fuzzy-match an event title to an Altegio service id.
 
@@ -1567,6 +1579,31 @@ async def _altegio_match_service_by_title(title: str) -> Optional[int]:
                 best = svc
                 best_len = len(s_norm)
     return int(best["id"]) if best else None
+
+
+async def _resolve_altegio_service_id(title: str, explicit_service_id: Optional[int] = None, spots: Optional[int] = None) -> Optional[int]:
+    """Resolve the Altegio service for an event.
+
+    A stored per-event service normally wins, but KADL has multiple similarly named
+    services and once picked the children's party service by mistake. For Kadli
+    titles we force a catalogue-backed exact match to the Kadli services.
+    """
+    title_norm = _normalize_for_match(title)
+
+    if "кадл" in title_norm or "kadl" in title_norm:
+        preferred_title = "Кадли середні" if (spots or 0) > 10 else "Кадли короткі"
+        matched = await _altegio_service_id_by_normalized_title(preferred_title)
+        if matched:
+            return matched
+
+        fallback = await _altegio_match_service_by_title("кадли")
+        if fallback:
+            return fallback
+
+    if explicit_service_id:
+        return int(explicit_service_id)
+
+    return await _altegio_match_service_by_title(title)
 
 
 async def _persist_event(event_data: EventCreate, settings, source_event_id: str = "", sync_external: bool = True) -> Event:
@@ -1652,13 +1689,14 @@ async def _sync_event_to_external(event: Event) -> None:
     # (Altegio API forbids us from creating services).
     try:
         if ALTEGIO_PARTNER_TOKEN:
-            service_id = event.altegio_service_id or ALTEGIO_DEFAULT_SERVICE_ID or None
-            if not service_id:
-                matched = await _altegio_match_service_by_title(event.title)
-                if matched:
-                    service_id = matched
-                    # Persist match so subsequent updates reuse it without re-matching
-                    await db.events.update_one({"id": event.id}, {"$set": {"altegio_service_id": int(service_id)}})
+            service_id = await _resolve_altegio_service_id(
+                event.title,
+                explicit_service_id=event.altegio_service_id or ALTEGIO_DEFAULT_SERVICE_ID or None,
+                spots=event.spots,
+            )
+            if service_id and int(service_id) != (event.altegio_service_id or 0):
+                # Persist match so subsequent updates reuse it without re-matching
+                await db.events.update_one({"id": event.id}, {"$set": {"altegio_service_id": int(service_id)}})
             if service_id:
                 result = await altegio_client.create_activity_result(
                     title=event.title,
@@ -1944,7 +1982,11 @@ async def update_event(event_id: str, event_data: EventUpdate):
                     end_time=updated.get("end_time") or existing.get("end_time") or "16:00",
                     capacity=updated.get("spots") or existing.get("spots") or 10,
                     comment=updated.get("description") or existing.get("description") or "",
-                    service_id=updated.get("altegio_service_id") or existing.get("altegio_service_id")
+                    service_id=await _resolve_altegio_service_id(
+                        updated.get("title", existing.get("title", "")),
+                        explicit_service_id=updated.get("altegio_service_id") or existing.get("altegio_service_id"),
+                        spots=updated.get("spots") or existing.get("spots") or 10,
+                    )
                 )
     except Exception as e:
         logging.error(f"Failed to sync event update to Altegio: {e}")
@@ -4280,11 +4322,11 @@ async def push_single_event_to_altegio(event_id: str):
             "message": "Event already linked to Altegio",
         }
 
-    service_id = event.get("altegio_service_id") or ALTEGIO_DEFAULT_SERVICE_ID or None
-    if not service_id:
-        matched = await _altegio_match_service_by_title(event.get("title", ""))
-        if matched:
-            service_id = matched
+    service_id = await _resolve_altegio_service_id(
+        event.get("title", ""),
+        explicit_service_id=event.get("altegio_service_id") or ALTEGIO_DEFAULT_SERVICE_ID or None,
+        spots=event.get("spots") or 10,
+    )
 
     if not service_id:
         raise HTTPException(status_code=400, detail="No matching Altegio service for event title")
