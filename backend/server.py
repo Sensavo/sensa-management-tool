@@ -1556,6 +1556,35 @@ def _google_calendar_event_id(event: Optional[dict]) -> Optional[str]:
     return event.get("google_calendar_event_id") or event.get("google_calendar_id")
 
 
+def _google_calendar_payload(event: dict) -> dict:
+    try:
+        event_date = datetime.fromisoformat(str(event.get("date", "")).replace('Z', '+00:00'))
+    except Exception:
+        event_date = datetime.strptime(str(event.get("date", ""))[:10], '%Y-%m-%d')
+
+    start_time = event.get("start_time") or ""
+    end_time = event.get("end_time") or ""
+    calendar_event = {
+        'summary': event.get("title", ""),
+        'description': f"{event.get('description') or ''}\n\nціна: {event.get('price', 0)} грн\nмісць: {event.get('spots', 10)}",
+    }
+    if start_time and end_time:
+        date_str = event_date.strftime('%Y-%m-%d')
+        calendar_event['start'] = {'dateTime': f"{date_str}T{start_time}:00", 'timeZone': 'Europe/Kyiv'}
+        calendar_event['end'] = {'dateTime': f"{date_str}T{end_time}:00", 'timeZone': 'Europe/Kyiv'}
+    elif start_time:
+        date_str = event_date.strftime('%Y-%m-%d')
+        start_hour, start_min = map(int, start_time.split(':'))
+        end_hour = (start_hour + 3) % 24
+        default_end = f"{end_hour:02d}:{start_min:02d}"
+        calendar_event['start'] = {'dateTime': f"{date_str}T{start_time}:00", 'timeZone': 'Europe/Kyiv'}
+        calendar_event['end'] = {'dateTime': f"{date_str}T{default_end}:00", 'timeZone': 'Europe/Kyiv'}
+    else:
+        calendar_event['start'] = {'date': event_date.strftime('%Y-%m-%d'), 'timeZone': 'Europe/Kyiv'}
+        calendar_event['end'] = {'date': (event_date + timedelta(days=1)).strftime('%Y-%m-%d'), 'timeZone': 'Europe/Kyiv'}
+    return calendar_event
+
+
 def _altegio_event_title(altegio_event: dict) -> str:
     # V2 activities do not have an independent display title; Poriadok writes
     # the event name into comment. Keep service.title as the service, not the
@@ -2123,6 +2152,23 @@ async def update_event(event_id: str, event_data: EventUpdate):
         update_dict["altegio_last_sync"] = datetime.now(timezone.utc).isoformat()
         if service_id:
             update_dict["altegio_service_id"] = int(service_id)
+
+    gcal_id = _google_calendar_event_id(existing)
+    if gcal_id:
+        try:
+            service = await get_google_calendar_service()
+            if not service:
+                raise HTTPException(status_code=502, detail="Google Calendar не доступний для оновлення — локальну подію не змінено")
+            service.events().update(
+                calendarId='primary',
+                eventId=gcal_id,
+                body=_google_calendar_payload(merged),
+            ).execute()
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                raise
+            logging.error(f"Failed to update Google Calendar event {gcal_id}: {e}")
+            raise HTTPException(status_code=502, detail="не вдалося оновити подію в Google Calendar — локальну подію не змінено")
     
     await db.events.update_one({"id": event_id}, {"$set": update_dict})
     
