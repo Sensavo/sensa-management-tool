@@ -672,3 +672,111 @@
   text-transform: none;
   letter-spacing: 0;
 }
+
+.teamwork-fields {
+  margin-top: 14px;
+  border-radius: 18px;
+  background: rgba(232, 229, 220, 0.48);
+  box-shadow: inset 0 0 0 1px rgba(26, 23, 23, 0.055);
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.teamwork-fields.active {
+  background: rgba(232, 229, 220, 0.78);
+  box-shadow: inset 0 0 0 1px rgba(26, 23, 23, 0.075);
+}
+
+.teamwork-toggle {
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, auto) 1fr;
+  align-items: center;
+  column-gap: 9px;
+  padding: 0 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.teamwork-checkbox,
+.teamwork-member-checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  border-color: rgba(26, 23, 23, 0.24);
+  background: rgba(246, 245, 241, 0.58);
+}
+
+.teamwork-checkbox[data-state="checked"],
+.teamwork-member-checkbox[data-state="checked"] {
+  border-color: #1A1717;
+  background: #1A1717;
+  color: #F6F5F1;
+}
+
+.teamwork-label {
+  color: #1A1717;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.teamwork-hint {
+  min-width: 0;
+  justify-self: end;
+  color: rgba(26, 23, 23, 0.42);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.teamwork-member-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 0 8px 8px;
+}
+
+.teamwork-member-pill {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 9999px;
+  background: rgba(246, 245, 241, 0.46);
+  color: rgba(26, 23, 23, 0.58);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.teamwork-member-pill.selected {
+  background: #F6F5F1;
+  color: #1A1717;
+  box-shadow: inset 0 0 0 1px rgba(26, 23, 23, 0.08);
+}
+
+@media (max-width: 480px) {
+  .teamwork-toggle {
+    grid-template-columns: 18px 1fr;
+    row-gap: 3px;
+    padding: 10px 12px;
+  }
+  .teamwork-hint {
+    grid-column: 2;
+    justify-self: start;
+    font-size: 9px;
+  }
+  .teamwork-member-grid {
+    grid-template-columns: 1fr;
+  }
+  .teamwork-member-pill {
+    justify-content: flex-start;
+    padding: 0 12px;
+  }
+}

@@ -112,10 +112,11 @@ const TeamworkTaskFields = ({ task, setTask }) => {
   const teamwork = !!task?.teamwork;
   const selectedMembers = normalizeTeamMembers(task?.team_members || [], "").filter(Boolean);
   return (
-    <div className="mt-3 rounded-2xl bg-[#F1EEE7] ring-1 ring-black/[0.06] px-3 py-2.5">
-      <label className="flex items-center gap-2 text-[13px] font-medium text-[#1A1717] cursor-pointer select-none">
+    <div className={`teamwork-fields ${teamwork ? "active" : ""}`}>
+      <label className="teamwork-toggle">
         <Checkbox
           checked={teamwork}
+          className="teamwork-checkbox"
           onCheckedChange={(checked) => {
             const next = Boolean(checked);
             setTask({
@@ -125,16 +126,18 @@ const TeamworkTaskFields = ({ task, setTask }) => {
             });
           }}
         />
-        <span>teamwork</span>
+        <span className="teamwork-label">teamwork</span>
+        <span className="teamwork-hint">додати в Google Calendar</span>
       </label>
       {teamwork && (
-        <div className="mt-2 grid grid-cols-3 gap-1.5">
+        <div className="teamwork-member-grid">
           {TEAM_USER_OPTIONS.map((user) => {
             const checked = selectedMembers.includes(user.id) || normalizeAssignee(task?.assignee, "") === user.id;
             return (
-              <label key={user.id} className="flex items-center gap-1.5 rounded-full bg-[#E8E5DC]/70 px-2.5 py-1.5 text-[11px] font-medium text-[#1A1717]/75 cursor-pointer select-none">
+              <label key={user.id} className={`teamwork-member-pill ${checked ? "selected" : ""}`}>
                 <Checkbox
                   checked={checked}
+                  className="teamwork-member-checkbox"
                   onCheckedChange={() => setTask({ ...task, team_members: toggleTeamMember(task?.team_members || [], user.id) })}
                 />
                 <span>{user.label}</span>
