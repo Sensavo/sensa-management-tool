@@ -2908,6 +2908,9 @@ async def create_standalone_task(task_data: StandaloneTaskCreate, request: Reque
     task_data.team_members = _normalize_team_members(task_data.team_members, task_data.assignee) if task_data.teamwork else []
     task_data.start_time = task_data.start_time or ("14:00" if task_data.teamwork else None)
     task_data.end_time = task_data.end_time or ("15:00" if task_data.teamwork else None)
+    if task_data.teamwork:
+        task_data.icon = "users"
+        task_data.color = "blue"
     task = StandaloneTask(**task_data.model_dump())
     if task.teamwork:
         try:
@@ -3123,9 +3126,9 @@ async def update_standalone_task_full(task_id: str, task_data: StandaloneTaskCre
     update = {
         "title": task_data.title,
         "date": task_data.date,
-        "icon": task_data.icon,
+        "icon": "users" if task_data.teamwork else task_data.icon,
         "type": task_data.type,
-        "color": task_data.color,
+        "color": "blue" if task_data.teamwork else task_data.color,
         "assignee": normalize_assignee(task_data.assignee),
         "event_id": task_data.event_id or "",
         "order": task_data.order or 0,
