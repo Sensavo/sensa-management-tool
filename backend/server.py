@@ -2721,6 +2721,58 @@ async def cancel_event_series(event_id: str, request: Request):
         )
         raise HTTPException(status_code=409, detail=_cancellation_guard_detail(anchor, "cancel-series"))
 
+    manager_confirmed = request.query_params.get("manager_confirmed_cancellation") == "true"
+    confirmed_at = datetime.now(timezone.utc).isoformat() if manager_confirmed else None
+    external_clear_by_id: Dict[str, dict] = {}
+    google_service = None
+
+    for t in targets:
+        tid = t["id"]
+        external_clear: dict = {}
+
+        altegio_id = t.get("altegio_activity_id") or t.get("altegio_id")
+        if altegio_id:
+            if not ALTEGIO_PARTNER_TOKEN:
+                raise HTTPException(status_code=502, detail="Altegio не налаштований для скасування серії — серію не скасовано локально")
+            try:
+                deleted = await altegio_client.delete_activity(altegio_id)
+            except Exception as e:
+                logging.error(f"Failed to delete series instance {tid} from Altegio: {e}")
+                raise HTTPException(status_code=502, detail="не вдалося видалити подію серії з Altegio — серію не скасовано локально") from e
+            if not deleted:
+                await db.events.update_one(
+                    {"id": tid},
+                    {"$set": {
+                        "altegio_last_error": "Altegio delete_activity returned no success",
+                        "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+                    }},
+                )
+                raise HTTPException(status_code=502, detail="не вдалося видалити подію серії з Altegio — серію не скасовано локально")
+            external_clear.update({
+                "altegio_activity_id": None,
+                "altegio_id": None,
+                "altegio_last_error": None,
+                "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+            })
+
+        gcal_id = _google_calendar_event_id(t)
+        if gcal_id:
+            if google_service is None:
+                google_service = await get_google_calendar_service()
+            if not google_service:
+                raise HTTPException(status_code=502, detail="Google Calendar не доступний для скасування серії — серію не скасовано локально")
+            try:
+                google_service.events().delete(calendarId='primary', eventId=gcal_id).execute()
+            except Exception as e:
+                logging.error(f"Failed to delete series instance {tid} from Google Calendar: {e}")
+                raise HTTPException(status_code=502, detail="не вдалося видалити подію серії з Google Calendar — серію не скасовано локально") from e
+            external_clear.update({
+                "google_calendar_event_id": None,
+                "google_calendar_id": None,
+            })
+
+        external_clear_by_id[tid] = external_clear
+
     cancelled_ids: List[str] = []
     for t in targets:
         tid = t["id"]
@@ -2731,30 +2783,12 @@ async def cancel_event_series(event_id: str, request: Request):
                 "reminders": {},
                 "smm_tasks": {},
                 "cancellation_pending": False,
-                "cancellation_manager_confirmed": request.query_params.get("manager_confirmed_cancellation") == "true",
-                "cancellation_confirmed_at": datetime.now(timezone.utc).isoformat() if request.query_params.get("manager_confirmed_cancellation") == "true" else None,
+                "cancellation_manager_confirmed": manager_confirmed,
+                "cancellation_confirmed_at": confirmed_at,
+                **external_clear_by_id.get(tid, {}),
             }},
         )
         cancelled_ids.append(tid)
-
-        # Best-effort external cleanup per instance
-        gcal_id = _google_calendar_event_id(t)
-        if gcal_id:
-            try:
-                service = await get_google_calendar_service()
-                if service:
-                    service.events().delete(calendarId='primary', eventId=gcal_id).execute()
-                    await db.events.update_one({"id": tid}, {"$set": {"google_calendar_event_id": None, "google_calendar_id": None}})
-            except Exception as e:
-                logging.error(f"Failed to delete series instance {tid} from Google Calendar: {e}")
-
-        altegio_id = t.get("altegio_activity_id")
-        if altegio_id and ALTEGIO_PARTNER_TOKEN:
-            try:
-                await altegio_client.delete_activity(altegio_id)
-                await db.events.update_one({"id": tid}, {"$set": {"altegio_activity_id": None}})
-            except Exception as e:
-                logging.error(f"Failed to delete series instance {tid} from Altegio: {e}")
 
     # One set of follow-up tasks for the whole series (master event used as
     # the anchor; suffix indicates additional instances).
@@ -4321,6 +4355,13 @@ async def get_google_credentials():
         logging.error(f"Error refreshing Google token: {e}")
     
     return None
+
+async def get_google_calendar_service():
+    """Build a Google Calendar service when the workspace is connected."""
+    creds = await get_google_credentials()
+    if not creds:
+        return None
+    return build('calendar', 'v3', credentials=creds)
 
 @api_router.post("/calendar/events/{event_id}/export")
 async def export_event_to_google_calendar(event_id: str):
