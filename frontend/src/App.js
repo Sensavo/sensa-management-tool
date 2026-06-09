@@ -496,18 +496,22 @@ const isEditableTarget = (target) => {
 };
 
 
-const getStandaloneTaskPayload = (task) => ({
-  title: task.title,
-  date: task.date,
-  icon: task.icon || 'coffee',
-  type: task.type || 'regular',
-  color: task.color || 'manager',
-  assignee: task.assignee || 'manager',
-  event_id: task.event_id || '',
-  order: task.order || 0,
-  teamwork: !!task.teamwork,
-  team_members: task.teamwork ? normalizeTeamMembers(task.team_members, task.assignee || 'manager') : [],
-});
+const getStandaloneTaskPayload = (task, overrides = {}) => {
+  const source = { ...(task || {}), ...overrides };
+  const assignee = normalizeAssignee(source.assignee, 'manager');
+  return {
+    title: source.title || '',
+    date: source.date,
+    icon: source.icon || 'coffee',
+    type: source.type || 'regular',
+    color: source.color || 'manager',
+    assignee,
+    event_id: source.event_id || '',
+    order: source.order || 0,
+    teamwork: !!source.teamwork,
+    team_members: source.teamwork ? normalizeTeamMembers(source.team_members, assignee) : [],
+  };
+};
 
 
 // Extended icon mapping
@@ -1187,17 +1191,7 @@ const Dashboard = () => {
         pushUndo({ label: "редагування таска", run: async () => { await api.updateEventTask(beforeEventTask._eventId, beforeEventTask._taskId, { color: beforeEventTask.color, icon: beforeEventTask.icon, title: beforeEventTask.title, assignee: beforeEventTask.assignee, date: beforeEventTask.date, order: beforeEventTask.order || 0 }); refreshEvents(); } });
         toast.success("збережено!"); refreshEvents();
       } else {
-        await api.updateStandaloneTaskFull(editingTask.id, {
-          title: editingTask.title,
-          date: editingTask.date,
-          icon: editingTask.icon,
-          type: editingTask.type,
-          color: editingTask.color,
-          assignee: editingTask.assignee || 'manager',
-          event_id: editingTask.event_id || "",
-          teamwork: !!editingTask.teamwork,
-          team_members: editingTask.teamwork ? normalizeTeamMembers(editingTask.team_members, editingTask.assignee || 'manager') : [],
-        });
+        await api.updateStandaloneTaskFull(editingTask.id, getStandaloneTaskPayload(editingTask));
         if (beforeStandalone) pushUndo({ label: "редагування таска", run: async () => { await api.updateStandaloneTaskFull(beforeStandalone.id, getStandaloneTaskPayload(beforeStandalone)); refreshStandaloneTasks(); } });
         toast.success("збережено!"); refreshStandaloneTasks();
       }
@@ -1214,7 +1208,7 @@ const Dashboard = () => {
   const handleCreateTask = async () => {
     if (!newTaskData?.title?.trim()) return;
     try {
-      const r = await api.createStandaloneTask({ title: newTaskData.title, date: newTaskData.date, icon: newTaskData.icon, type: newTaskData.type === 'smm' ? 'smm' : undefined, color: newTaskData.color, assignee: newTaskData.assignee, teamwork: !!newTaskData.teamwork, team_members: newTaskData.teamwork ? normalizeTeamMembers(newTaskData.team_members, newTaskData.assignee) : [] });
+      const r = await api.createStandaloneTask(getStandaloneTaskPayload(newTaskData, { type: newTaskData.type === 'smm' ? 'smm' : 'regular' }));
       if (r.data?.id) pushUndo({ label: "створення таска", run: async () => { await api.deleteStandaloneTask(r.data.id); refreshStandaloneTasks(); } });
       toast.success('створено!'); refreshStandaloneTasks(); setShowNewTask(false); setNewTaskData(null);
     } catch { toast.error('помилка'); }
@@ -1451,7 +1445,7 @@ const NewTaskPage = () => {
     if (!newTask.title.trim()) return;
     setLoading(true);
     try {
-      await api.createStandaloneTask({ ...newTask, team_members: newTask.teamwork ? normalizeTeamMembers(newTask.team_members, newTask.assignee || "manager") : [] });
+      await api.createStandaloneTask(getStandaloneTaskPayload(newTask));
       toast.success("додано!");
       refreshStandaloneTasks();
       navigate(-1);
@@ -1573,7 +1567,7 @@ const NewSMMTaskPage = () => {
     if (!newTask.title.trim()) return;
     setLoading(true);
     try {
-      await api.createStandaloneTask({ ...newTask, team_members: newTask.teamwork ? normalizeTeamMembers(newTask.team_members, newTask.assignee || "smm") : [] });
+      await api.createStandaloneTask(getStandaloneTaskPayload(newTask, { type: "smm", assignee: newTask.assignee || "smm" }));
       toast.success("додано!");
       refreshStandaloneTasks();
       navigate(-1);
@@ -5048,8 +5042,7 @@ const DesktopDashboard = () => {
     if (task.is_standalone) {
       const full = standaloneTasks.find(t => t.id === task.event_id);
       if (!full) return;
-      await api.updateStandaloneTaskFull(full.id, {
-        title: full.title,
+      await api.updateStandaloneTaskFull(full.id, getStandaloneTaskPayload(full, {
         date,
         icon: full.icon || task.icon || "coffee",
         type: full.type || task.type || "regular",
@@ -5057,9 +5050,7 @@ const DesktopDashboard = () => {
         assignee,
         event_id: full.event_id || task.event_id_link || "",
         order,
-        teamwork: !!full.teamwork,
-        team_members: full.teamwork ? normalizeTeamMembers(full.team_members, assignee) : [],
-      });
+      }));
       return;
     }
     const taskId = task.task_id || task.reminder_id;
@@ -5119,18 +5110,7 @@ const DesktopDashboard = () => {
         // Find full standalone task and PATCH with new assignee
         const full = standaloneTasks.find(t => t.id === task.event_id);
         if (!full) return;
-        await api.updateStandaloneTaskFull(full.id, {
-          title: full.title,
-          date: full.date,
-          icon: full.icon || "coffee",
-          type: full.type || "regular",
-          color: full.color || "standard",
-          assignee: newAssignee,
-          event_id: full.event_id || "",
-          order: full.order || 0,
-          teamwork: !!full.teamwork,
-          team_members: full.teamwork ? normalizeTeamMembers(full.team_members, newAssignee) : [],
-        });
+        await api.updateStandaloneTaskFull(full.id, getStandaloneTaskPayload(full, { assignee: newAssignee }));
         pushUndo({ label: "перенесення таска", run: async () => { await api.updateStandaloneTaskFull(full.id, getStandaloneTaskPayload(full)); refreshStandaloneTasks(); } });
         toast.success(`перенесено на ${labels[newAssignee] || newAssignee}`);
         refreshStandaloneTasks();
@@ -5262,21 +5242,17 @@ const DesktopDashboard = () => {
   const handleCreateTask = async () => {
     if (!newTask.title.trim()) return;
     const assignee = newTask.assignee || (dialogColumnName === "SMM" ? "smm" : dialogColumnName === "Marketer" ? "marketer" : "manager");
-    try { const r = await api.createStandaloneTask({ ...newTask, type: "regular", assignee, event_id: newTask.event_id || "", teamwork: !!newTask.teamwork, team_members: newTask.teamwork ? normalizeTeamMembers(newTask.team_members, assignee) : [] }); if (r.data?.id) pushUndo({ label: "створення таска", run: async () => { await api.deleteStandaloneTask(r.data.id); refreshStandaloneTasks(); } }); toast.success("додано!"); refreshStandaloneTasks(); setShowTaskDialog(false); setNewTask({ title: "", date: todayStr, icon: "coffee", color: "manager", event_id: "", assignee: "manager", teamwork: false, team_members: [] }); }
+    try { const r = await api.createStandaloneTask(getStandaloneTaskPayload(newTask, { type: "regular", assignee })); if (r.data?.id) pushUndo({ label: "створення таска", run: async () => { await api.deleteStandaloneTask(r.data.id); refreshStandaloneTasks(); } }); toast.success("додано!"); refreshStandaloneTasks(); setShowTaskDialog(false); setNewTask({ title: "", date: todayStr, icon: "coffee", color: "manager", event_id: "", assignee: "manager", teamwork: false, team_members: [] }); }
     catch { toast.error("помилка"); }
   };
 
   const handleCreateSMMTask = async () => {
     if (!newSMMTask.title.trim()) return;
     try {
-      const r = await api.createStandaloneTask({
-        ...newSMMTask,
+      const r = await api.createStandaloneTask(getStandaloneTaskPayload(newSMMTask, {
         type: "smm",
         assignee: newSMMTask.assignee || (dialogColumnName === "SMM" ? "smm" : dialogColumnName === "Marketer" ? "marketer" : "manager"),
-        event_id: newSMMTask.event_id || "",
-        teamwork: !!newSMMTask.teamwork,
-        team_members: newSMMTask.teamwork ? normalizeTeamMembers(newSMMTask.team_members, newSMMTask.assignee || (dialogColumnName === "SMM" ? "smm" : dialogColumnName === "Marketer" ? "marketer" : "manager")) : [],
-      });
+      }));
       if (r.data?.id) pushUndo({ label: "створення таска", run: async () => { await api.deleteStandaloneTask(r.data.id); refreshStandaloneTasks(); } });
       toast.success("додано!");
       refreshStandaloneTasks();
@@ -5304,18 +5280,7 @@ const DesktopDashboard = () => {
         toast.success("збережено!");
         refreshEvents();
       } else {
-        await api.updateStandaloneTaskFull(editingStandaloneTask.id, {
-          title: editingStandaloneTask.title,
-          date: editingStandaloneTask.date,
-          icon: editingStandaloneTask.icon,
-          type: editingStandaloneTask.type,
-          color: editingStandaloneTask.color,
-          assignee: editingStandaloneTask.assignee || 'manager',
-          event_id: editingStandaloneTask.event_id || "",
-          order: editingStandaloneTask.order || 0,
-          teamwork: !!editingStandaloneTask.teamwork,
-          team_members: editingStandaloneTask.teamwork ? normalizeTeamMembers(editingStandaloneTask.team_members, editingStandaloneTask.assignee || 'manager') : [],
-        });
+        await api.updateStandaloneTaskFull(editingStandaloneTask.id, getStandaloneTaskPayload(editingStandaloneTask));
         if (beforeStandalone) pushUndo({ label: "редагування таска", run: async () => { await api.updateStandaloneTaskFull(beforeStandalone.id, getStandaloneTaskPayload(beforeStandalone)); refreshStandaloneTasks(); } });
         toast.success("збережено!");
         refreshStandaloneTasks();
@@ -5344,18 +5309,7 @@ const DesktopDashboard = () => {
         pushUndo({ label: "перенесення таска", run: async () => { await api.updateEventTask(beforeEventTask._eventId, beforeEventTask._taskId, { color: beforeEventTask.color, icon: beforeEventTask.icon, title: beforeEventTask.title, assignee: beforeEventTask.assignee, date: beforeEventTask.date, order: beforeEventTask.order || 0 }); refreshEvents(); } });
         refreshEvents();
       } else {
-        await api.updateStandaloneTaskFull(task.id, {
-          title: task.title,
-          date: task.date,
-          icon: task.icon,
-          type: task.type,
-          color: task.color,
-          assignee: task.assignee || 'manager',
-          event_id: task.event_id || "",
-          order: task.order || 0,
-          teamwork: !!task.teamwork,
-          team_members: task.teamwork ? normalizeTeamMembers(task.team_members, task.assignee || 'manager') : [],
-        });
+        await api.updateStandaloneTaskFull(task.id, getStandaloneTaskPayload(task));
         if (beforeStandalone) pushUndo({ label: "перенесення таска", run: async () => { await api.updateStandaloneTaskFull(beforeStandalone.id, getStandaloneTaskPayload(beforeStandalone)); refreshStandaloneTasks(); } });
         refreshStandaloneTasks();
       }
