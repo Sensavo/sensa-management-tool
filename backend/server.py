@@ -5080,10 +5080,25 @@ async def sync_single_event_from_altegio(event_id: str):
             raise HTTPException(status_code=404, detail="Event not found")
         
         altegio_id = event.get("altegio_id") or event.get("altegio_activity_id")
+        event_date = (event.get("date") or "")[:10] or None
+        activities_result = await altegio_client.get_group_events_result(date_from=event_date, date_to=event_date)
+        if not activities_result.get("ok"):
+            await db.events.update_one(
+                {"id": event_id},
+                {"$set": {
+                    "altegio_last_error": str(activities_result.get("body"))[:1000],
+                    "altegio_last_status_code": activities_result.get("status_code"),
+                    "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+                }}
+            )
+            raise HTTPException(status_code=502, detail={
+                "message": "не вдалося отримати події з Altegio",
+                "status_code": activities_result.get("status_code"),
+                "body": activities_result.get("body"),
+            })
+        altegio_events = activities_result.get("data", [])
         
         if altegio_id:
-            # Fetch all Altegio events and find the matching one
-            altegio_events = await altegio_client.get_group_events()
             for altegio_event in altegio_events:
                 if str(altegio_event.get("id")) == str(altegio_id):
                     records_count = _altegio_booked_count(altegio_event)
@@ -5094,6 +5109,8 @@ async def sync_single_event_from_altegio(event_id: str):
                             "altegio_activity_id": str(altegio_id),
                             "altegio_booked_count": records_count,
                             "spots": int(altegio_event.get("capacity") or event.get("spots") or 10),
+                            "altegio_last_error": None,
+                            "altegio_last_status_code": activities_result.get("status_code"),
                             "altegio_last_sync": datetime.now(timezone.utc).isoformat()
                         }}
                     )
@@ -5115,7 +5132,6 @@ async def sync_single_event_from_altegio(event_id: str):
             raise HTTPException(status_code=404, detail="подію не знайдено в Altegio за збереженим id")
         else:
             # Try to find by title
-            altegio_events = await altegio_client.get_group_events()
             for altegio_event in altegio_events:
                 same_title = _titles_match(event.get("title", ""), _altegio_event_title(altegio_event))
                 same_date = not _altegio_event_date(altegio_event) or event.get("date", "").startswith(_altegio_event_date(altegio_event))
@@ -5150,6 +5166,8 @@ async def sync_single_event_from_altegio(event_id: str):
                             "altegio_activity_id": altegio_id,
                             "altegio_booked_count": records_count,
                             "spots": int(altegio_event.get("capacity") or event.get("spots") or 10),
+                            "altegio_last_error": None,
+                            "altegio_last_status_code": activities_result.get("status_code"),
                             "altegio_last_sync": datetime.now(timezone.utc).isoformat()
                         }}
                     )
