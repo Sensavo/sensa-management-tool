@@ -95,6 +95,57 @@ const normalizeAssignee = (value, fallback = "manager") => {
   return aliases[raw] || fallback;
 };
 const getAssigneeLabel = (value) => ASSIGNEE_LABELS[normalizeAssignee(value)] || ASSIGNEE_LABELS.manager;
+const normalizeTeamMembers = (members = [], primary = "manager") => {
+  const result = [];
+  [primary, ...members].forEach((value) => {
+    const id = normalizeAssignee(value, "");
+    if (TEAM_USER_OPTIONS.some(user => user.id === id) && !result.includes(id)) result.push(id);
+  });
+  return result;
+};
+const toggleTeamMember = (members = [], id) => {
+  const normalized = normalizeTeamMembers(members, "").filter(Boolean);
+  return normalized.includes(id) ? normalized.filter(member => member !== id) : [...normalized, id];
+};
+
+const TeamworkTaskFields = ({ task, setTask }) => {
+  const teamwork = !!task?.teamwork;
+  const selectedMembers = normalizeTeamMembers(task?.team_members || [], "").filter(Boolean);
+  return (
+    <div className="mt-3 rounded-2xl bg-[#F1EEE7] ring-1 ring-black/[0.06] px-3 py-2.5">
+      <label className="flex items-center gap-2 text-[13px] font-medium text-[#1A1717] cursor-pointer select-none">
+        <Checkbox
+          checked={teamwork}
+          onCheckedChange={(checked) => {
+            const next = Boolean(checked);
+            setTask({
+              ...task,
+              teamwork: next,
+              team_members: next ? normalizeTeamMembers(task?.team_members || [], task?.assignee || "manager") : [],
+            });
+          }}
+        />
+        <span>teamwork</span>
+      </label>
+      {teamwork && (
+        <div className="mt-2 grid grid-cols-3 gap-1.5">
+          {TEAM_USER_OPTIONS.map((user) => {
+            const checked = selectedMembers.includes(user.id) || normalizeAssignee(task?.assignee, "") === user.id;
+            return (
+              <label key={user.id} className="flex items-center gap-1.5 rounded-full bg-[#E8E5DC]/70 px-2.5 py-1.5 text-[11px] font-medium text-[#1A1717]/75 cursor-pointer select-none">
+                <Checkbox
+                  checked={checked}
+                  onCheckedChange={() => setTask({ ...task, team_members: toggleTeamMember(task?.team_members || [], user.id) })}
+                />
+                <span>{user.label}</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const getActorUser = () => {
   try {
@@ -451,6 +502,8 @@ const getStandaloneTaskPayload = (task) => ({
   assignee: task.assignee || 'manager',
   event_id: task.event_id || '',
   order: task.order || 0,
+  teamwork: !!task.teamwork,
+  team_members: task.teamwork ? normalizeTeamMembers(task.team_members, task.assignee || 'manager') : [],
 });
 
 
@@ -1139,6 +1192,8 @@ const Dashboard = () => {
           color: editingTask.color,
           assignee: editingTask.assignee || 'manager',
           event_id: editingTask.event_id || "",
+          teamwork: !!editingTask.teamwork,
+          team_members: editingTask.teamwork ? normalizeTeamMembers(editingTask.team_members, editingTask.assignee || 'manager') : [],
         });
         if (beforeStandalone) pushUndo({ label: "редагування таска", run: async () => { await api.updateStandaloneTaskFull(beforeStandalone.id, getStandaloneTaskPayload(beforeStandalone)); refreshStandaloneTasks(); } });
         toast.success("збережено!"); refreshStandaloneTasks();
@@ -1149,14 +1204,14 @@ const Dashboard = () => {
 
   const handleNewTaskOpen = () => {
     const isSMM = activeTab === 'smm' || activeTab === 'marketer';
-    setNewTaskData({ title: '', date: todayStr, icon: isSMM ? 'instagram' : 'coffee', color: 'manager', assignee: activeTab, type: isSMM ? 'smm' : 'regular' });
+    setNewTaskData({ title: '', date: todayStr, icon: isSMM ? 'instagram' : 'coffee', color: 'manager', assignee: activeTab, type: isSMM ? 'smm' : 'regular', teamwork: false, team_members: [] });
     setShowNewTaskCalendar(false);
     setShowNewTask(true);
   };
   const handleCreateTask = async () => {
     if (!newTaskData?.title?.trim()) return;
     try {
-      const r = await api.createStandaloneTask({ title: newTaskData.title, date: newTaskData.date, icon: newTaskData.icon, type: newTaskData.type === 'smm' ? 'smm' : undefined, color: newTaskData.color, assignee: newTaskData.assignee });
+      const r = await api.createStandaloneTask({ title: newTaskData.title, date: newTaskData.date, icon: newTaskData.icon, type: newTaskData.type === 'smm' ? 'smm' : undefined, color: newTaskData.color, assignee: newTaskData.assignee, teamwork: !!newTaskData.teamwork, team_members: newTaskData.teamwork ? normalizeTeamMembers(newTaskData.team_members, newTaskData.assignee) : [] });
       if (r.data?.id) pushUndo({ label: "створення таска", run: async () => { await api.deleteStandaloneTask(r.data.id); refreshStandaloneTasks(); } });
       toast.success('створено!'); refreshStandaloneTasks(); setShowNewTask(false); setNewTaskData(null);
     } catch { toast.error('помилка'); }
@@ -1369,6 +1424,7 @@ const Dashboard = () => {
                   <button key={opt.value} className={`icon-selector-btn ${newTaskData.icon === opt.value ? 'selected' : ''}`} style={{color: selectedHex}} onClick={() => setNewTaskData({...newTaskData, icon: opt.value})} aria-label={opt.value}><IC /></button>
                 ); })}
               </div>
+              <TeamworkTaskFields task={newTaskData} setTask={setNewTaskData} />
               <button className="btn-dark w-full h-11 text-sm" onClick={handleCreateTask} data-testid="mobile-new-save">створити</button>
             </div>
           </DialogContent>
@@ -1383,7 +1439,7 @@ const Dashboard = () => {
 const NewTaskPage = () => {
   const navigate = useNavigate();
   const { refreshStandaloneTasks } = useApp();
-  const [newTask, setNewTask] = useState({ title: "", date: formatDateLocal(new Date()), icon: "coffee" });
+  const [newTask, setNewTask] = useState({ title: "", date: formatDateLocal(new Date()), icon: "coffee", assignee: "manager", teamwork: false, team_members: [] });
   const [showCalendar, setShowCalendar] = useState(false);
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -1392,7 +1448,7 @@ const NewTaskPage = () => {
     if (!newTask.title.trim()) return;
     setLoading(true);
     try {
-      await api.createStandaloneTask(newTask);
+      await api.createStandaloneTask({ ...newTask, team_members: newTask.teamwork ? normalizeTeamMembers(newTask.team_members, newTask.assignee || "manager") : [] });
       toast.success("додано!");
       refreshStandaloneTasks();
       navigate(-1);
@@ -1453,6 +1509,7 @@ const NewTaskPage = () => {
               <CalendarIcon className="w-5 h-5 text-secondary" />
             </button>
           </div>
+          <TeamworkTaskFields task={newTask} setTask={setNewTask} />
         </div>
 
         <button
@@ -1504,7 +1561,7 @@ const NewTaskPage = () => {
 const NewSMMTaskPage = () => {
   const navigate = useNavigate();
   const { refreshStandaloneTasks } = useApp();
-  const [newTask, setNewTask] = useState({ title: "", date: formatDateLocal(new Date()), icon: "instagram", type: "smm" });
+  const [newTask, setNewTask] = useState({ title: "", date: formatDateLocal(new Date()), icon: "instagram", type: "smm", assignee: "smm", teamwork: false, team_members: [] });
   const [showCalendar, setShowCalendar] = useState(false);
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -1513,7 +1570,7 @@ const NewSMMTaskPage = () => {
     if (!newTask.title.trim()) return;
     setLoading(true);
     try {
-      await api.createStandaloneTask(newTask);
+      await api.createStandaloneTask({ ...newTask, team_members: newTask.teamwork ? normalizeTeamMembers(newTask.team_members, newTask.assignee || "smm") : [] });
       toast.success("додано!");
       refreshStandaloneTasks();
       navigate(-1);
@@ -1574,6 +1631,7 @@ const NewSMMTaskPage = () => {
               <CalendarIcon className="w-5 h-5 text-secondary" />
             </button>
           </div>
+          <TeamworkTaskFields task={newTask} setTask={setNewTask} />
         </div>
 
         <button
@@ -4996,6 +5054,8 @@ const DesktopDashboard = () => {
         assignee,
         event_id: full.event_id || task.event_id_link || "",
         order,
+        teamwork: !!full.teamwork,
+        team_members: full.teamwork ? normalizeTeamMembers(full.team_members, assignee) : [],
       });
       return;
     }
@@ -5065,6 +5125,8 @@ const DesktopDashboard = () => {
           assignee: newAssignee,
           event_id: full.event_id || "",
           order: full.order || 0,
+          teamwork: !!full.teamwork,
+          team_members: full.teamwork ? normalizeTeamMembers(full.team_members, newAssignee) : [],
         });
         pushUndo({ label: "перенесення таска", run: async () => { await api.updateStandaloneTaskFull(full.id, getStandaloneTaskPayload(full)); refreshStandaloneTasks(); } });
         toast.success(`перенесено на ${labels[newAssignee] || newAssignee}`);
@@ -5196,7 +5258,8 @@ const DesktopDashboard = () => {
 
   const handleCreateTask = async () => {
     if (!newTask.title.trim()) return;
-    try { const r = await api.createStandaloneTask({ ...newTask, type: "regular", assignee: newTask.assignee || (dialogColumnName === "SMM" ? "smm" : dialogColumnName === "Marketer" ? "marketer" : "manager"), event_id: newTask.event_id || "" }); if (r.data?.id) pushUndo({ label: "створення таска", run: async () => { await api.deleteStandaloneTask(r.data.id); refreshStandaloneTasks(); } }); toast.success("додано!"); refreshStandaloneTasks(); setShowTaskDialog(false); setNewTask({ title: "", date: todayStr, icon: "coffee", color: "manager", event_id: "", assignee: "manager" }); }
+    const assignee = newTask.assignee || (dialogColumnName === "SMM" ? "smm" : dialogColumnName === "Marketer" ? "marketer" : "manager");
+    try { const r = await api.createStandaloneTask({ ...newTask, type: "regular", assignee, event_id: newTask.event_id || "", teamwork: !!newTask.teamwork, team_members: newTask.teamwork ? normalizeTeamMembers(newTask.team_members, assignee) : [] }); if (r.data?.id) pushUndo({ label: "створення таска", run: async () => { await api.deleteStandaloneTask(r.data.id); refreshStandaloneTasks(); } }); toast.success("додано!"); refreshStandaloneTasks(); setShowTaskDialog(false); setNewTask({ title: "", date: todayStr, icon: "coffee", color: "manager", event_id: "", assignee: "manager", teamwork: false, team_members: [] }); }
     catch { toast.error("помилка"); }
   };
 
@@ -5208,12 +5271,14 @@ const DesktopDashboard = () => {
         type: "smm",
         assignee: newSMMTask.assignee || (dialogColumnName === "SMM" ? "smm" : dialogColumnName === "Marketer" ? "marketer" : "manager"),
         event_id: newSMMTask.event_id || "",
+        teamwork: !!newSMMTask.teamwork,
+        team_members: newSMMTask.teamwork ? normalizeTeamMembers(newSMMTask.team_members, newSMMTask.assignee || (dialogColumnName === "SMM" ? "smm" : dialogColumnName === "Marketer" ? "marketer" : "manager")) : [],
       });
       if (r.data?.id) pushUndo({ label: "створення таска", run: async () => { await api.deleteStandaloneTask(r.data.id); refreshStandaloneTasks(); } });
       toast.success("додано!");
       refreshStandaloneTasks();
       setShowSMMTaskDialog(false);
-      setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "manager", event_id: "", assignee: "smm" });
+      setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "manager", event_id: "", assignee: "smm", teamwork: false, team_members: [] });
     }
     catch { toast.error("помилка"); }
   };
@@ -5245,6 +5310,8 @@ const DesktopDashboard = () => {
           assignee: editingStandaloneTask.assignee || 'manager',
           event_id: editingStandaloneTask.event_id || "",
           order: editingStandaloneTask.order || 0,
+          teamwork: !!editingStandaloneTask.teamwork,
+          team_members: editingStandaloneTask.teamwork ? normalizeTeamMembers(editingStandaloneTask.team_members, editingStandaloneTask.assignee || 'manager') : [],
         });
         if (beforeStandalone) pushUndo({ label: "редагування таска", run: async () => { await api.updateStandaloneTaskFull(beforeStandalone.id, getStandaloneTaskPayload(beforeStandalone)); refreshStandaloneTasks(); } });
         toast.success("збережено!");
@@ -5283,6 +5350,8 @@ const DesktopDashboard = () => {
           assignee: task.assignee || 'manager',
           event_id: task.event_id || "",
           order: task.order || 0,
+          teamwork: !!task.teamwork,
+          team_members: task.teamwork ? normalizeTeamMembers(task.team_members, task.assignee || 'manager') : [],
         });
         if (beforeStandalone) pushUndo({ label: "перенесення таска", run: async () => { await api.updateStandaloneTaskFull(beforeStandalone.id, getStandaloneTaskPayload(beforeStandalone)); refreshStandaloneTasks(); } });
         refreshStandaloneTasks();
@@ -5468,7 +5537,7 @@ const DesktopDashboard = () => {
             onEventClick={handleEventClick}
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
-            onAddClick={() => { setNewTask({ title: "", date: todayStr, icon: "coffee", color: "manager", event_id: "", assignee: "manager" }); setDialogColumnName("Manager"); setShowTaskDialog(true); }}
+            onAddClick={() => { setNewTask({ title: "", date: todayStr, icon: "coffee", color: "manager", event_id: "", assignee: "manager", teamwork: false, team_members: [] }); setDialogColumnName("Manager"); setShowTaskDialog(true); }}
             overdueExpanded={managerOverdue}
             setOverdueExpanded={setManagerOverdue}
             soonExpanded={managerSoon}
@@ -5493,7 +5562,7 @@ const DesktopDashboard = () => {
             onEventClick={handleEventClick}
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
-            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "manager", event_id: "", assignee: "smm" }); setDialogColumnName("SMM"); setShowSMMTaskDialog(true); }}
+            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "manager", event_id: "", assignee: "smm", teamwork: false, team_members: [] }); setDialogColumnName("SMM"); setShowSMMTaskDialog(true); }}
             overdueExpanded={smmOverdue}
             setOverdueExpanded={setSMMOverdue}
             soonExpanded={smmSoon}
@@ -5520,7 +5589,7 @@ const DesktopDashboard = () => {
             onEventClick={handleEventClick}
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
-            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "manager", event_id: "", assignee: "marketer" }); setDialogColumnName("Marketer"); setShowSMMTaskDialog(true); }}
+            onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "manager", event_id: "", assignee: "marketer", teamwork: false, team_members: [] }); setDialogColumnName("Marketer"); setShowSMMTaskDialog(true); }}
             overdueExpanded={marketerOverdue}
             setOverdueExpanded={setVoOverdue}
             soonExpanded={marketerSoon}
@@ -5743,6 +5812,7 @@ const DesktopDashboard = () => {
                 </div>
 
                 {/* (Event picker is now in the header chip-row) */}
+                <TeamworkTaskFields task={newTask} setTask={setNewTask} />
 
                 {/* CTA */}
                 <button
@@ -6158,6 +6228,7 @@ const DesktopDashboard = () => {
                 </div>
 
                 {/* (Event picker is now in the header chip-row) */}
+                <TeamworkTaskFields task={newSMMTask} setTask={setNewSMMTask} />
 
                 <button
                   onClick={handleCreateSMMTask}

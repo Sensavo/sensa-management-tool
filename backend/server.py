@@ -76,6 +76,11 @@ TEAM_USER_LABELS = {
     "smm": "SMM",
     "marketer": "Marketer",
 }
+TEAM_PERSON_LABELS = {
+    "manager": "Юра",
+    "smm": "Софійка",
+    "marketer": "Во",
+}
 LEGACY_ASSIGNEE_ALIASES = {
     "manager": "manager",
     "management": "manager",
@@ -570,6 +575,10 @@ class StandaloneTask(BaseModel):
     completed_at: Optional[str] = None
     event_id: Optional[str] = ""  # optional link to existing event (metadata only)
     order: Optional[float] = 0
+    teamwork: bool = False
+    team_members: List[str] = Field(default_factory=list)
+    google_calendar_event_id: Optional[str] = None
+    google_calendar_id: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -606,6 +615,8 @@ class StandaloneTaskCreate(BaseModel):
     assignee: str = "manager"
     event_id: Optional[str] = ""  # optional link to an existing event
     order: Optional[float] = 0
+    teamwork: bool = False
+    team_members: List[str] = Field(default_factory=list)
 
 class SMMTaskUpdate(BaseModel):
     name: Optional[str] = None
@@ -1389,11 +1400,13 @@ async def _build_today_tasks_message(user_id: str) -> str:
 
 
 async def _build_morning_summary(user_id: str) -> str:
+    user_id = normalize_assignee(user_id, "")
     today_tasks = await _collect_user_tasks(user_id, target_date=_today_kyiv())
     overdue_tasks = await _collect_user_tasks(user_id, overdue=True)
     event_line = await _today_events_summary()
+    greeting_name = TEAM_PERSON_LABELS.get(user_id, TEAM_USER_LABELS.get(user_id, user_id))
     lines = [
-        f"📋 доброго ранку, {_html_escape(TEAM_USER_LABELS.get(user_id, user_id))}.",
+        f"📋 доброго ранку, {_html_escape(greeting_name)}.",
         f"сьогодні в тебе: <b>{len(today_tasks)}</b> тасків ({len(overdue_tasks)} протерм).",
         "",
         "сьогодні:",
@@ -1753,6 +1766,77 @@ def _google_calendar_payload(event: dict) -> dict:
         calendar_event['start'] = {'date': event_date.strftime('%Y-%m-%d'), 'timeZone': 'Europe/Kyiv'}
         calendar_event['end'] = {'date': (event_date + timedelta(days=1)).strftime('%Y-%m-%d'), 'timeZone': 'Europe/Kyiv'}
     return calendar_event
+
+
+def _google_calendar_task_id(task: Optional[dict]) -> Optional[str]:
+    if not task:
+        return None
+    return task.get("google_calendar_event_id") or task.get("google_calendar_id")
+
+
+def _normalize_team_members(members: Optional[List[str]], primary_assignee: str = "manager") -> List[str]:
+    normalized = []
+    for value in [primary_assignee, *(members or [])]:
+        user_id = normalize_assignee(value, "")
+        if user_id in TEAM_USERS and user_id not in normalized:
+            normalized.append(user_id)
+    return normalized
+
+
+def _team_member_names(members: Optional[List[str]]) -> str:
+    names = [TEAM_PERSON_LABELS.get(member, TEAM_USER_LABELS.get(member, member)) for member in (members or [])]
+    return ", ".join(names) if names else "команда"
+
+
+def _google_calendar_task_payload(task: dict) -> dict:
+    try:
+        task_date = datetime.fromisoformat(str(task.get("date", "")).replace('Z', '+00:00'))
+    except Exception:
+        task_date = datetime.strptime(str(task.get("date", ""))[:10], '%Y-%m-%d')
+
+    date_str = task_date.strftime('%Y-%m-%d')
+    return {
+        "summary": f"teamwork: {task.get('title', '')}".strip(),
+        "description": f"Poriadok teamwork task\nучасники: {_team_member_names(task.get('team_members'))}",
+        "start": {"date": date_str, "timeZone": "Europe/Kyiv"},
+        "end": {"date": (task_date + timedelta(days=1)).strftime('%Y-%m-%d'), "timeZone": "Europe/Kyiv"},
+    }
+
+
+async def _sync_teamwork_task_to_google(task: dict, existing_google_id: Optional[str] = None) -> Optional[str]:
+    if not task.get("teamwork"):
+        return None
+    creds = await get_google_credentials()
+    if not creds:
+        raise HTTPException(status_code=401, detail="Google Calendar not connected")
+    try:
+        service = build('calendar', 'v3', credentials=creds)
+        payload = _google_calendar_task_payload(task)
+        if existing_google_id:
+            result = service.events().update(calendarId='primary', eventId=existing_google_id, body=payload).execute()
+        else:
+            result = service.events().insert(calendarId='primary', body=payload).execute()
+        return result.get("id")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Failed to sync teamwork task to Google Calendar: {e}")
+        raise HTTPException(status_code=502, detail="Google Calendar task sync failed")
+
+
+async def _delete_teamwork_task_from_google(task: Optional[dict]) -> None:
+    google_id = _google_calendar_task_id(task)
+    if not google_id:
+        return
+    creds = await get_google_credentials()
+    if not creds:
+        raise HTTPException(status_code=401, detail="Google Calendar not connected")
+    try:
+        service = build('calendar', 'v3', credentials=creds)
+        service.events().delete(calendarId='primary', eventId=google_id).execute()
+    except Exception as e:
+        logging.error(f"Failed to delete teamwork task from Google Calendar: {e}")
+        raise HTTPException(status_code=502, detail="Google Calendar task delete failed")
 
 
 def _altegio_event_title(altegio_event: dict) -> str:
@@ -2813,7 +2897,12 @@ async def delete_event(event_id: str, request: Request):
 @api_router.post("/tasks/standalone", response_model=StandaloneTask)
 async def create_standalone_task(task_data: StandaloneTaskCreate, request: Request):
     task_data.assignee = normalize_assignee(task_data.assignee)
+    task_data.team_members = _normalize_team_members(task_data.team_members, task_data.assignee) if task_data.teamwork else []
     task = StandaloneTask(**task_data.model_dump())
+    if task.teamwork:
+        google_id = await _sync_teamwork_task_to_google(task.model_dump())
+        task.google_calendar_event_id = google_id
+        task.google_calendar_id = google_id
     await db.standalone_tasks.insert_one(task.model_dump())
     actor = _actor_from_request(request)
     _notify_assignee(
@@ -3025,7 +3114,20 @@ async def update_standalone_task_full(task_id: str, task_data: StandaloneTaskCre
         "assignee": normalize_assignee(task_data.assignee),
         "event_id": task_data.event_id or "",
         "order": task_data.order or 0,
+        "teamwork": bool(task_data.teamwork),
+        "team_members": _normalize_team_members(task_data.team_members, task_data.assignee) if task_data.teamwork else [],
     }
+
+    updated_preview = {**existing, **update}
+    existing_google_id = _google_calendar_task_id(existing)
+    if update["teamwork"]:
+        google_id = await _sync_teamwork_task_to_google(updated_preview, existing_google_id)
+        update["google_calendar_event_id"] = google_id
+        update["google_calendar_id"] = google_id
+    elif existing_google_id:
+        await _delete_teamwork_task_from_google(existing)
+        update["google_calendar_event_id"] = None
+        update["google_calendar_id"] = None
     
     await db.standalone_tasks.update_one({"id": task_id}, {"$set": update})
     updated = await db.standalone_tasks.find_one({"id": task_id}, {"_id": 0})
@@ -3033,6 +3135,10 @@ async def update_standalone_task_full(task_id: str, task_data: StandaloneTaskCre
 
 @api_router.delete("/tasks/standalone/{task_id}")
 async def delete_standalone_task(task_id: str):
+    existing = await db.standalone_tasks.find_one({"id": task_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Task not found")
+    await _delete_teamwork_task_from_google(existing)
     result = await db.standalone_tasks.delete_one({"id": task_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Task not found")
