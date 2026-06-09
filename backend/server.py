@@ -4870,8 +4870,17 @@ class AltegioSyncResponse(BaseModel):
 async def get_altegio_events():
     """Fetch all events/activities from Altegio"""
     try:
-        events = await altegio_client.get_group_events()
+        result = await altegio_client.get_group_events_result()
+        if not result.get("ok"):
+            raise HTTPException(status_code=502, detail={
+                "message": "не вдалося отримати події з Altegio",
+                "status_code": result.get("status_code"),
+                "body": result.get("body"),
+            })
+        events = result.get("data", [])
         return {"events": events, "count": len(events)}
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Failed to fetch Altegio events: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -4904,7 +4913,14 @@ async def sync_from_altegio():
     """
     try:
         # Fetch activities/events from Altegio
-        altegio_events = await altegio_client.get_group_events()
+        result = await altegio_client.get_group_events_result()
+        if not result.get("ok"):
+            raise HTTPException(status_code=502, detail={
+                "message": "не вдалося отримати події з Altegio",
+                "status_code": result.get("status_code"),
+                "body": result.get("body"),
+            })
+        altegio_events = result.get("data", [])
         synced_count, synced_events = await _sync_altegio_events_to_local(altegio_events)
         
         return {
@@ -4912,6 +4928,8 @@ async def sync_from_altegio():
             "events": synced_events,
             "message": f"Синхронізовано {synced_count} подій з Altegio"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Altegio sync failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
