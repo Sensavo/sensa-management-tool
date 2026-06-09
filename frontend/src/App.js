@@ -345,6 +345,29 @@ const getApiErrorMessage = (error, fallback = "помилка") => {
   return fallback;
 };
 
+const getAltegioActivityUrl = async (eventId) => {
+  const response = await api.getEventAltegioUrl(eventId);
+  const url = response.data?.activity_url;
+  if (!url) throw new Error("Event is not linked to an Altegio activity");
+  return url;
+};
+
+const copyTextToClipboard = async (text) => {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
+};
+
 
 const getBookedCount = (event) => Number(event?.altegio_booked_count ?? event?.booked_count ?? 0) || 0;
 
@@ -2092,6 +2115,21 @@ const EventDetailPage = () => {
     finally { setExporting(false); }
   };
 
+  const handleOpenAltegio = async () => {
+    try {
+      const url = await getAltegioActivityUrl(eventId);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch { toast.error("не вдалося відкрити Altegio"); }
+  };
+
+  const handleShareAltegio = async () => {
+    try {
+      const url = await getAltegioActivityUrl(eventId);
+      await copyTextToClipboard(url);
+      toast.success("посилання скопійовано");
+    } catch { toast.error("немає посилання на подію в Altegio"); }
+  };
+
   // ESC to go back
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') navigate(-1); };
@@ -2203,12 +2241,18 @@ const EventDetailPage = () => {
             </div>
             <div className="space-y-2 pt-2 border-t border-[#E8E5DC]">
               <p className="text-xs text-secondary">синхронізація</p>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <button className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-xs hover:bg-gray-50" onClick={handleExportCalendar} disabled={exporting}>
                   <ExternalLink className="w-3.5 h-3.5" />{exporting ? "..." : "Calendar"}
                 </button>
                 <button className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-xs hover:bg-gray-50" onClick={handleSyncAltegio} disabled={syncing}>
                   <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />{syncing ? "..." : "Altegio"}
+                </button>
+                <button className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-xs hover:bg-gray-50" onClick={handleOpenAltegio}>
+                  <ExternalLink className="w-3.5 h-3.5" />відкрити
+                </button>
+                <button className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border text-xs hover:bg-gray-50" onClick={handleShareAltegio}>
+                  <Share2 className="w-3.5 h-3.5" />поширити
                 </button>
               </div>
               {event.altegio_last_sync && <p className="text-[10px] text-secondary text-center">оновлено: {new Date(event.altegio_last_sync).toLocaleString('uk-UA')}</p>}
@@ -5042,11 +5086,18 @@ const DesktopDashboard = () => {
   const handleOpenAltegioInPopup = async () => {
     if (!selectedEvent) return;
     try {
-      const r = await api.getEventAltegioUrl(selectedEvent.id);
-      const url = r.data?.activity_url || r.data?.url;
-      if (!url) throw new Error("No Altegio URL");
+      const url = await getAltegioActivityUrl(selectedEvent.id);
       window.open(url, "_blank", "noopener,noreferrer");
     } catch { toast.error("не вдалося відкрити Altegio"); }
+  };
+
+  const handleShareAltegioInPopup = async () => {
+    if (!selectedEvent) return;
+    try {
+      const url = await getAltegioActivityUrl(selectedEvent.id);
+      await copyTextToClipboard(url);
+      toast.success("посилання скопійовано");
+    } catch { toast.error("немає посилання на подію в Altegio"); }
   };
 
   const handleStandaloneTaskClick = (task) => {
@@ -5936,7 +5987,7 @@ const DesktopDashboard = () => {
 
                 <div className="section-card mt-4">
                   <p className="text-xs text-secondary mb-3">синхронізація</p>
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <button className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 transition-colors" onClick={handleExportCalendarInPopup} disabled={exportingEvent}>
                       <ExternalLink className="w-4 h-4" /><span>{exportingEvent ? "..." : "Calendar"}</span>
                     </button>
@@ -5945,6 +5996,9 @@ const DesktopDashboard = () => {
                     </button>
                     <button className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 transition-colors" onClick={handleOpenAltegioInPopup}>
                       <ExternalLink className="w-4 h-4" /><span>відкрити</span>
+                    </button>
+                    <button className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 transition-colors" onClick={handleShareAltegioInPopup}>
+                      <Share2 className="w-4 h-4" /><span>поширити</span>
                     </button>
                   </div>
                   {selectedEvent.altegio_last_sync && (
@@ -7683,11 +7737,17 @@ const EventsDesktopExpanded = () => {
   const handleOpenAltegio = async () => {
     if (!selectedEvent) return;
     try {
-      const r = await api.getEventAltegioUrl(selectedEvent.id);
-      const url = r.data?.activity_url || r.data?.url;
-      if (!url) throw new Error("No Altegio URL");
+      const url = await getAltegioActivityUrl(selectedEvent.id);
       window.open(url, "_blank", "noopener,noreferrer");
     } catch { toast.error("не вдалося відкрити Altegio"); }
+  };
+  const handleShareAltegio = async () => {
+    if (!selectedEvent) return;
+    try {
+      const url = await getAltegioActivityUrl(selectedEvent.id);
+      await copyTextToClipboard(url);
+      toast.success("посилання скопійовано");
+    } catch { toast.error("немає посилання на подію в Altegio"); }
   };
   const handleCancelSelected = async () => {
     if (!selectedEvent) return;
@@ -7901,7 +7961,7 @@ const EventsDesktopExpanded = () => {
 
                 <div className="section-card mt-4">
                   <p className="text-xs text-secondary mb-3">синхронізація</p>
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <button className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 transition-colors" onClick={handleExportCalendar} disabled={exportingEvent}>
                       <ExternalLink className="w-4 h-4" /><span>{exportingEvent ? "..." : "Calendar"}</span>
                     </button>
@@ -7910,6 +7970,9 @@ const EventsDesktopExpanded = () => {
                     </button>
                     <button className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 transition-colors" onClick={handleOpenAltegio}>
                       <ExternalLink className="w-4 h-4" /><span>відкрити</span>
+                    </button>
+                    <button className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 transition-colors" onClick={handleShareAltegio}>
+                      <Share2 className="w-4 h-4" /><span>поширити</span>
                     </button>
                   </div>
                   {selectedEvent.altegio_last_sync && (
