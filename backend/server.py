@@ -581,6 +581,7 @@ class StandaloneTask(BaseModel):
     end_time: Optional[str] = None
     google_calendar_event_id: Optional[str] = None
     google_calendar_id: Optional[str] = None
+    google_calendar_last_error: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -2909,9 +2910,14 @@ async def create_standalone_task(task_data: StandaloneTaskCreate, request: Reque
     task_data.end_time = task_data.end_time or ("15:00" if task_data.teamwork else None)
     task = StandaloneTask(**task_data.model_dump())
     if task.teamwork:
-        google_id = await _sync_teamwork_task_to_google(task.model_dump())
-        task.google_calendar_event_id = google_id
-        task.google_calendar_id = google_id
+        try:
+            google_id = await _sync_teamwork_task_to_google(task.model_dump())
+            task.google_calendar_event_id = google_id
+            task.google_calendar_id = google_id
+            task.google_calendar_last_error = None
+        except HTTPException as e:
+            task.google_calendar_last_error = str(e.detail)
+            logging.error(f"Teamwork task {task.id} Google Calendar sync failed on create: {e.detail}")
     await db.standalone_tasks.insert_one(task.model_dump())
     actor = _actor_from_request(request)
     _notify_assignee(
@@ -3132,13 +3138,22 @@ async def update_standalone_task_full(task_id: str, task_data: StandaloneTaskCre
     updated_preview = {**existing, **update}
     existing_google_id = _google_calendar_task_id(existing)
     if update["teamwork"]:
-        google_id = await _sync_teamwork_task_to_google(updated_preview, existing_google_id)
-        update["google_calendar_event_id"] = google_id
-        update["google_calendar_id"] = google_id
+        try:
+            google_id = await _sync_teamwork_task_to_google(updated_preview, existing_google_id)
+            update["google_calendar_event_id"] = google_id
+            update["google_calendar_id"] = google_id
+            update["google_calendar_last_error"] = None
+        except HTTPException as e:
+            update["google_calendar_last_error"] = str(e.detail)
+            logging.error(f"Teamwork task {task_id} Google Calendar sync failed on update: {e.detail}")
     elif existing_google_id:
-        await _delete_teamwork_task_from_google(existing)
+        try:
+            await _delete_teamwork_task_from_google(existing)
+        except HTTPException as e:
+            logging.error(f"Teamwork task {task_id} Google Calendar delete failed on update: {e.detail}")
         update["google_calendar_event_id"] = None
         update["google_calendar_id"] = None
+        update["google_calendar_last_error"] = None
     
     await db.standalone_tasks.update_one({"id": task_id}, {"$set": update})
     updated = await db.standalone_tasks.find_one({"id": task_id}, {"_id": 0})

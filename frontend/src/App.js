@@ -207,7 +207,19 @@ axios.interceptors.request.use((config) => {
 });
 
 axios.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const url = response?.config?.url || "";
+    const method = String(response?.config?.method || "").toLowerCase();
+    if (
+      url.includes("/tasks/standalone") &&
+      ["post", "patch"].includes(method) &&
+      response.data?.teamwork &&
+      response.data?.google_calendar_last_error
+    ) {
+      toast.warning("таск створено, але Google Calendar не синхронізувався");
+    }
+    return response;
+  },
   (error) => {
     const isUnlockRequest = error?.config?.url?.includes("/auth/access-code");
     if (error?.response?.status === 401 && !isUnlockRequest) {
