@@ -2560,16 +2560,16 @@ async def _delete_event_external_links(
         if not ALTEGIO_PARTNER_TOKEN:
             raise HTTPException(status_code=502, detail=f"Altegio не налаштований для {action} — {local_guard_detail}")
         try:
-            deleted = await altegio_client.delete_activity(altegio_id)
+            delete_result = await altegio_client.delete_activity_result(altegio_id)
         except Exception as e:
             logging.error(f"Failed to delete {event_id} from Altegio during {action}: {e}")
             raise HTTPException(status_code=502, detail=f"не вдалося видалити {object_label} з Altegio — {local_guard_detail}") from e
-        if not deleted:
+        if not delete_result.get("ok"):
             await db.events.update_one(
                 {"id": event_id},
                 {"$set": {
-                    "altegio_last_error": f"Failed to delete Altegio activity {altegio_id}",
-                    "altegio_last_status_code": 502,
+                    "altegio_last_error": str(delete_result.get("body"))[:1000],
+                    "altegio_last_status_code": delete_result.get("status_code"),
                     "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
                 }},
             )
@@ -4815,9 +4815,16 @@ class AltegioClient:
                 return None
     
     async def delete_activity(self, activity_id: str):
-        """Delete an activity/event in Altegio via V2 API"""
+        """Delete an activity/event in Altegio via V2 API."""
+        result = await self.delete_activity_result(activity_id)
+        return True if result.get("ok") else None
+
+    async def delete_activity_result(self, activity_id: str):
+        """Delete an Altegio activity and return a debuggable result object."""
         if not ALTEGIO_PARTNER_TOKEN or not self.push_user_token or not activity_id:
-            return None
+            message = "Altegio delete skipped: partner token, write-capable user token, or activity_id missing"
+            logging.warning(message)
+            return {"ok": False, "status_code": None, "body": message}
         
         url = f"{ALTEGIO_BASE_URL_V2}/companies/{self.company_id}/activities/{activity_id}"
         
@@ -4825,10 +4832,10 @@ class AltegioClient:
             response = await client.delete(url, headers=self.get_v2_push_headers())
             if response.status_code in [200, 204]:
                 logging.info(f"Altegio activity deleted: {activity_id}")
-                return True
-            else:
-                logging.error(f"Altegio delete activity error: {response.status_code} - {response.text}")
-                return None
+                return {"ok": True, "status_code": response.status_code, "body": response.text or None}
+
+            logging.error(f"Altegio delete activity error: {response.status_code} - {response.text}")
+            return {"ok": False, "status_code": response.status_code, "body": response.text}
 
 altegio_client = AltegioClient()
 
