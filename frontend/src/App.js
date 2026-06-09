@@ -108,6 +108,8 @@ const toggleTeamMember = (members = [], id) => {
   const normalized = normalizeTeamMembers(members, "").filter(Boolean);
   return normalized.includes(id) ? normalized.filter(member => member !== id) : [...normalized, id];
 };
+const DEFAULT_TEAMWORK_START = "14:00";
+const DEFAULT_TEAMWORK_END = "15:00";
 
 const TeamworkTaskFields = ({ task, setTask }) => {
   const teamwork = !!task?.teamwork;
@@ -124,6 +126,8 @@ const TeamworkTaskFields = ({ task, setTask }) => {
               ...task,
               teamwork: next,
               team_members: next ? normalizeTeamMembers(task?.team_members || [], task?.assignee || "manager") : [],
+              start_time: next ? (task?.start_time || DEFAULT_TEAMWORK_START) : task?.start_time,
+              end_time: next ? (task?.end_time || DEFAULT_TEAMWORK_END) : task?.end_time,
             });
           }}
         />
@@ -131,20 +135,40 @@ const TeamworkTaskFields = ({ task, setTask }) => {
         <span className="teamwork-hint">додати в Google Calendar</span>
       </label>
       {teamwork && (
-        <div className="teamwork-member-grid">
-          {TEAM_USER_OPTIONS.map((user) => {
-            const checked = selectedMembers.includes(user.id) || normalizeAssignee(task?.assignee, "") === user.id;
-            return (
-              <label key={user.id} className={`teamwork-member-pill ${checked ? "selected" : ""}`}>
-                <Checkbox
-                  checked={checked}
-                  className="teamwork-member-checkbox"
-                  onCheckedChange={() => setTask({ ...task, team_members: toggleTeamMember(task?.team_members || [], user.id) })}
-                />
-                <span>{user.label}</span>
-              </label>
-            );
-          })}
+        <div className="teamwork-active-fields">
+          <div className="teamwork-time-row">
+            <label>
+              <span>початок</span>
+              <input
+                type="time"
+                value={task?.start_time || DEFAULT_TEAMWORK_START}
+                onChange={(event) => setTask({ ...task, start_time: event.target.value })}
+              />
+            </label>
+            <label>
+              <span>кінець</span>
+              <input
+                type="time"
+                value={task?.end_time || DEFAULT_TEAMWORK_END}
+                onChange={(event) => setTask({ ...task, end_time: event.target.value })}
+              />
+            </label>
+          </div>
+          <div className="teamwork-member-grid">
+            {TEAM_USER_OPTIONS.map((user) => {
+              const checked = selectedMembers.includes(user.id) || normalizeAssignee(task?.assignee, "") === user.id;
+              return (
+                <label key={user.id} className={`teamwork-member-pill ${checked ? "selected" : ""}`}>
+                  <Checkbox
+                    checked={checked}
+                    className="teamwork-member-checkbox"
+                    onCheckedChange={() => setTask({ ...task, team_members: toggleTeamMember(task?.team_members || [], user.id) })}
+                  />
+                  <span>{user.label}</span>
+                </label>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -512,6 +536,8 @@ const getStandaloneTaskPayload = (task, overrides = {}) => {
     order: source.order || 0,
     teamwork: !!source.teamwork,
     team_members: source.teamwork ? normalizeTeamMembers(source.team_members, assignee) : [],
+    start_time: source.teamwork ? (source.start_time || DEFAULT_TEAMWORK_START) : null,
+    end_time: source.teamwork ? (source.end_time || DEFAULT_TEAMWORK_END) : null,
   };
 };
 

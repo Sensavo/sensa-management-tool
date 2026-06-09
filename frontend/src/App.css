@@ -738,6 +738,53 @@
   padding: 0 8px 8px;
 }
 
+.teamwork-active-fields {
+  padding: 0 8px 8px;
+}
+
+.teamwork-time-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.teamwork-time-row label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 9999px;
+  background: rgba(246, 245, 241, 0.54);
+  box-shadow: inset 0 0 0 1px rgba(26, 23, 23, 0.06);
+}
+
+.teamwork-time-row span {
+  color: rgba(26, 23, 23, 0.48);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.teamwork-time-row input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #1A1717;
+  font-size: 13px;
+  font-weight: 700;
+  outline: none;
+}
+
+.teamwork-active-fields .teamwork-member-grid {
+  padding: 0;
+}
+
 .teamwork-member-pill {
   height: 34px;
   display: inline-flex;
@@ -773,6 +820,9 @@
     font-size: 9px;
   }
   .teamwork-member-grid {
+    grid-template-columns: 1fr;
+  }
+  .teamwork-time-row {
     grid-template-columns: 1fr;
   }
   .teamwork-member-pill {

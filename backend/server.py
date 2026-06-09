@@ -577,6 +577,8 @@ class StandaloneTask(BaseModel):
     order: Optional[float] = 0
     teamwork: bool = False
     team_members: List[str] = Field(default_factory=list)
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
     google_calendar_event_id: Optional[str] = None
     google_calendar_id: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -617,6 +619,8 @@ class StandaloneTaskCreate(BaseModel):
     order: Optional[float] = 0
     teamwork: bool = False
     team_members: List[str] = Field(default_factory=list)
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
 
 class SMMTaskUpdate(BaseModel):
     name: Optional[str] = None
@@ -1795,11 +1799,27 @@ def _google_calendar_task_payload(task: dict) -> dict:
         task_date = datetime.strptime(str(task.get("date", ""))[:10], '%Y-%m-%d')
 
     date_str = task_date.strftime('%Y-%m-%d')
+    start_time = task.get("start_time") or "14:00"
+    end_time = task.get("end_time") or ""
+    try:
+        start_dt = datetime.strptime(f"{date_str} {start_time}", "%Y-%m-%d %H:%M")
+        if end_time:
+            end_dt = datetime.strptime(f"{date_str} {end_time}", "%Y-%m-%d %H:%M")
+            if end_dt <= start_dt:
+                end_dt += timedelta(days=1)
+        else:
+            end_dt = start_dt + timedelta(hours=1)
+        start_payload = {"dateTime": start_dt.strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Kyiv"}
+        end_payload = {"dateTime": end_dt.strftime("%Y-%m-%dT%H:%M:%S"), "timeZone": "Europe/Kyiv"}
+    except Exception:
+        start_payload = {"date": date_str, "timeZone": "Europe/Kyiv"}
+        end_payload = {"date": (task_date + timedelta(days=1)).strftime('%Y-%m-%d'), "timeZone": "Europe/Kyiv"}
+
     return {
         "summary": f"teamwork: {task.get('title', '')}".strip(),
         "description": f"Poriadok teamwork task\nучасники: {_team_member_names(task.get('team_members'))}",
-        "start": {"date": date_str, "timeZone": "Europe/Kyiv"},
-        "end": {"date": (task_date + timedelta(days=1)).strftime('%Y-%m-%d'), "timeZone": "Europe/Kyiv"},
+        "start": start_payload,
+        "end": end_payload,
     }
 
 
@@ -2885,6 +2905,8 @@ async def delete_event(event_id: str, request: Request):
 async def create_standalone_task(task_data: StandaloneTaskCreate, request: Request):
     task_data.assignee = normalize_assignee(task_data.assignee)
     task_data.team_members = _normalize_team_members(task_data.team_members, task_data.assignee) if task_data.teamwork else []
+    task_data.start_time = task_data.start_time or ("14:00" if task_data.teamwork else None)
+    task_data.end_time = task_data.end_time or ("15:00" if task_data.teamwork else None)
     task = StandaloneTask(**task_data.model_dump())
     if task.teamwork:
         google_id = await _sync_teamwork_task_to_google(task.model_dump())
@@ -3103,6 +3125,8 @@ async def update_standalone_task_full(task_id: str, task_data: StandaloneTaskCre
         "order": task_data.order or 0,
         "teamwork": bool(task_data.teamwork),
         "team_members": _normalize_team_members(task_data.team_members, task_data.assignee) if task_data.teamwork else [],
+        "start_time": task_data.start_time or ("14:00" if task_data.teamwork else None),
+        "end_time": task_data.end_time or ("15:00" if task_data.teamwork else None),
     }
 
     updated_preview = {**existing, **update}
