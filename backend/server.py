@@ -2440,7 +2440,7 @@ async def update_event(event_id: str, event_data: EventUpdate):
             explicit_service_id=merged.get("altegio_service_id") or existing.get("altegio_service_id"),
             spots=merged.get("spots") or existing.get("spots") or 10,
         )
-        updated_external = await altegio_client.update_activity(
+        update_result = await altegio_client.update_activity_result(
             activity_id=altegio_id,
             title=merged.get("title", existing.get("title", "")),
             date=merged.get("date", existing.get("date", ""))[:10],
@@ -2450,17 +2450,18 @@ async def update_event(event_id: str, event_data: EventUpdate):
             comment=merged.get("description") or existing.get("description") or "",
             service_id=service_id,
         )
-        if not updated_external:
+        if not update_result.get("ok"):
             await db.events.update_one(
                 {"id": event_id},
                 {"$set": {
-                    "altegio_last_error": f"Failed to update Altegio activity {altegio_id}",
-                    "altegio_last_status_code": 502,
+                    "altegio_last_error": str(update_result.get("body"))[:1000],
+                    "altegio_last_status_code": update_result.get("status_code"),
                     "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
                 }},
             )
             raise HTTPException(status_code=502, detail="не вдалося оновити подію в Altegio — локальну подію не змінено")
         update_dict["altegio_last_error"] = None
+        update_dict["altegio_last_status_code"] = update_result.get("status_code")
         update_dict["altegio_last_sync"] = datetime.now(timezone.utc).isoformat()
         if service_id:
             update_dict["altegio_service_id"] = int(service_id)
@@ -4786,9 +4787,28 @@ class AltegioClient:
 
         service_id: per-event Altegio service id. If not provided, falls back to ALTEGIO_DEFAULT_SERVICE_ID.
         """
+        result = await self.update_activity_result(
+            activity_id=activity_id,
+            title=title,
+            date=date,
+            start_time=start_time,
+            end_time=end_time,
+            capacity=capacity,
+            comment=comment,
+            service_id=service_id,
+        )
+        return True if result.get("ok") else None
+
+    async def update_activity_result(self, activity_id: str, title: str, date: str,
+                                     start_time: str = "14:00", end_time: str = "16:00",
+                                     capacity: int = 10, comment: str = "",
+                                     service_id: Optional[int] = None):
+        """Update an Altegio activity and return a debuggable result object."""
         effective_service_id = service_id or ALTEGIO_DEFAULT_SERVICE_ID
         if not ALTEGIO_PARTNER_TOKEN or not self.push_user_token or not activity_id or not effective_service_id:
-            return None
+            message = "Altegio update skipped: partner token, write-capable user token, activity_id, or service_id missing"
+            logging.warning(message)
+            return {"ok": False, "status_code": None, "body": message}
 
         url = f"{ALTEGIO_BASE_URL_V2}/companies/{self.company_id}/activities/{activity_id}"
         length = self._calc_length_seconds(start_time, end_time)
@@ -4809,10 +4829,11 @@ class AltegioClient:
             response = await client.put(url, headers=self.get_v2_push_headers(), json=payload)
             if response.status_code == 200:
                 logging.info(f"Altegio activity updated: {activity_id}")
-                return True
-            else:
-                logging.error(f"Altegio update activity error: {response.status_code} - {response.text}")
-                return None
+                body = response.json() if response.text else None
+                return {"ok": True, "status_code": response.status_code, "body": body}
+
+            logging.error(f"Altegio update activity error: {response.status_code} - {response.text}")
+            return {"ok": False, "status_code": response.status_code, "body": response.text}
     
     async def delete_activity(self, activity_id: str):
         """Delete an activity/event in Altegio via V2 API."""
