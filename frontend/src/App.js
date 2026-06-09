@@ -73,6 +73,7 @@ const API = `${BACKEND_URL}/api`;
 const ACTOR_USER_STORAGE_KEY = "poriadok_actor_user";
 const ACCESS_CODE_STORAGE_KEY = "poriadok_access_granted";
 const ACCESS_TOKEN_STORAGE_KEY = "poriadok_access_token";
+const ACCESS_REVOKED_EVENT = "poriadok-access-revoked";
 const TEAM_USER_OPTIONS = [
   { id: "manager", label: "Manager" },
   { id: "smm", label: "SMM" },
@@ -190,6 +191,7 @@ axios.interceptors.response.use(
         localStorage.removeItem(ACCESS_CODE_STORAGE_KEY);
         localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
       } catch {}
+      window.dispatchEvent(new CustomEvent(ACCESS_REVOKED_EVENT));
       if (window.location.pathname !== "/") window.location.href = "/";
     }
     return Promise.reject(error);
@@ -8093,6 +8095,17 @@ function App() {
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
+
+  useEffect(() => {
+    if (!accessGranted) return;
+    const handleAccessRevoked = () => {
+      setAccessGranted(false);
+      setLoading(false);
+      toast.error("сесія доступу завершилась — введи код ще раз");
+    };
+    window.addEventListener(ACCESS_REVOKED_EVENT, handleAccessRevoked);
+    return () => window.removeEventListener(ACCESS_REVOKED_EVENT, handleAccessRevoked);
+  }, [accessGranted]);
 
   useEffect(() => {
     if (!accessGranted) return;
