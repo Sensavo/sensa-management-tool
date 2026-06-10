@@ -2613,6 +2613,14 @@ async def _delete_event_external_links(
             logging.info(f"Deleted event {event_id} from Google Calendar during {action}")
         except Exception as e:
             logging.error(f"Failed to delete {event_id} from Google Calendar during {action}: {e}")
+            status = getattr(getattr(e, "resp", None), "status", None)
+            if status in (404, 410):
+                logging.info(f"Google Calendar event {gcal_id} already absent during {action}")
+                update_dict.update({
+                    "google_calendar_event_id": None,
+                    "google_calendar_id": None,
+                })
+                return update_dict
             raise HTTPException(status_code=502, detail=f"не вдалося видалити {object_label} з Google Calendar — {local_guard_detail}") from e
         update_dict.update({
             "google_calendar_event_id": None,
@@ -4893,7 +4901,7 @@ class AltegioClient:
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.delete(url, headers=self.get_v2_push_headers())
-            if response.status_code in [200, 204]:
+            if response.status_code in [200, 204, 404]:
                 logging.info(f"Altegio activity deleted: {activity_id}")
                 return {"ok": True, "status_code": response.status_code, "body": response.text or None}
 

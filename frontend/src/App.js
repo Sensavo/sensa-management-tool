@@ -458,6 +458,12 @@ const deleteEventPermanentlyFlow = async (event, { refreshEvents, onDeleted, onC
       if (shouldCancel) return cancelEventAndArchive(latest, { refreshEvents, onDone: onCancelled });
       return false;
     }
+    if (error?.response?.status === 502) {
+      const message = getApiErrorMessage(error, "не вдалося видалити подію з Google Calendar або Altegio");
+      const shouldCancel = window.confirm(`${message}\n\nПовністю видалити зараз не вийшло. Скасувати подію і залишити її в архіві?`);
+      if (shouldCancel) return cancelEventAndArchive(latest, { refreshEvents, onDone: onCancelled });
+      return false;
+    }
     showCancellationGuardOrError(error, "не вдалося видалити");
     return false;
   }
