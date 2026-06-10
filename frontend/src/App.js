@@ -454,8 +454,23 @@ const deleteEventPermanentlyFlow = async (event, { refreshEvents, onDeleted, onC
   } catch (error) {
     const detail = getCancellationGuardDetail(error);
     if (detail) {
-      const shouldCancel = window.confirm(`${detail.message}\n\nВидалення зупинено. Скасувати подію і залишити її в архіві?`);
-      if (shouldCancel) return cancelEventAndArchive(latest, { refreshEvents, onDone: onCancelled });
+      const shouldDeleteConfirmed = window.confirm(`${detail.message}\n\nПідтвердити, що менеджер перевірив Altegio/учасників і видалити подію назавжди?`);
+      if (shouldDeleteConfirmed) {
+        try {
+          await api.deleteEvent(latest.id, true);
+          toast.success("подію видалено назавжди");
+          refreshEvents?.();
+          onDeleted?.();
+          return true;
+        } catch (confirmedError) {
+          const message = getApiErrorMessage(confirmedError, "не вдалося видалити після підтвердження");
+          const shouldCancel = window.confirm(`${message}\n\nСкасувати подію і залишити її в архіві?`);
+          if (shouldCancel) return cancelEventAndArchive(latest, { refreshEvents, onDone: onCancelled, confirmed: true });
+          return false;
+        }
+      }
+      const shouldCancel = window.confirm("Скасувати подію і залишити її в архіві?");
+      if (shouldCancel) return cancelEventAndArchive(latest, { refreshEvents, onDone: onCancelled, confirmed: true });
       return false;
     }
     if (error?.response?.status === 502) {

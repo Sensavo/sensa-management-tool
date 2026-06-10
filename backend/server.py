@@ -2572,6 +2572,7 @@ async def _delete_event_external_links(
     action: str,
     local_guard_detail: str,
     object_label: str = "подію",
+    strict: bool = True,
 ) -> dict:
     """Delete linked Altegio and Google Calendar records before local mutation."""
     event_id = event.get("id") or "unknown"
@@ -2580,11 +2581,17 @@ async def _delete_event_external_links(
     altegio_id = event.get("altegio_activity_id") or event.get("altegio_id")
     if altegio_id:
         if not ALTEGIO_PARTNER_TOKEN:
-            raise HTTPException(status_code=502, detail=f"Altegio не налаштований для {action} — {local_guard_detail}")
+            message = f"Altegio не налаштований для {action} — {local_guard_detail}"
+            if not strict:
+                logging.error(message)
+                return update_dict
+            raise HTTPException(status_code=502, detail=message)
         try:
             delete_result = await altegio_client.delete_activity_result(altegio_id)
         except Exception as e:
             logging.error(f"Failed to delete {event_id} from Altegio during {action}: {e}")
+            if not strict:
+                return update_dict
             raise HTTPException(status_code=502, detail=f"не вдалося видалити {object_label} з Altegio — {local_guard_detail}") from e
         if not delete_result.get("ok"):
             await db.events.update_one(
@@ -2595,6 +2602,13 @@ async def _delete_event_external_links(
                     "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
                 }},
             )
+            if not strict:
+                logging.error(f"Altegio cleanup failed during confirmed {action}: {delete_result.get('status_code')} - {delete_result.get('body')}")
+                update_dict.update({
+                    "altegio_last_error": str(delete_result.get("body"))[:1000],
+                    "altegio_last_status_code": delete_result.get("status_code"),
+                })
+                return update_dict
             raise HTTPException(status_code=502, detail=f"не вдалося видалити {object_label} з Altegio — {local_guard_detail}")
         update_dict.update({
             "altegio_activity_id": None,
@@ -2607,7 +2621,11 @@ async def _delete_event_external_links(
     if gcal_id:
         service = await get_google_calendar_service()
         if not service:
-            raise HTTPException(status_code=502, detail=f"Google Calendar не доступний для {action} — {local_guard_detail}")
+            message = f"Google Calendar не доступний для {action} — {local_guard_detail}"
+            if not strict:
+                logging.error(message)
+                return update_dict
+            raise HTTPException(status_code=502, detail=message)
         try:
             service.events().delete(calendarId='primary', eventId=gcal_id).execute()
             logging.info(f"Deleted event {event_id} from Google Calendar during {action}")
@@ -2620,6 +2638,8 @@ async def _delete_event_external_links(
                     "google_calendar_event_id": None,
                     "google_calendar_id": None,
                 })
+                return update_dict
+            if not strict:
                 return update_dict
             raise HTTPException(status_code=502, detail=f"не вдалося видалити {object_label} з Google Calendar — {local_guard_detail}") from e
         update_dict.update({
@@ -2868,7 +2888,8 @@ async def get_event_series(event_id: str):
 async def delete_event(event_id: str, request: Request):
     existing = await db.events.find_one({"id": event_id}, {"_id": 0})
     existing = await _refresh_event_payment_snapshot(existing)
-    if existing and ((not _event_payment_snapshot_verified(existing)) or _event_paid_count(existing) > 0) and request.query_params.get("manager_confirmed_cancellation") != "true":
+    manager_confirmed = request.query_params.get("manager_confirmed_cancellation") == "true"
+    if existing and ((not _event_payment_snapshot_verified(existing)) or _event_paid_count(existing) > 0) and not manager_confirmed:
         try:
             await _create_cancellation_tasks(existing)
         except Exception as e:
@@ -2889,6 +2910,7 @@ async def delete_event(event_id: str, request: Request):
         existing,
         action="видалення",
         local_guard_detail="локальну подію залишено",
+        strict=not manager_confirmed,
     )
 
     result = await db.events.delete_one({"id": event_id})
