@@ -300,6 +300,7 @@ const api = {
   createEvent: (data) => axios.post(`${API}/events`, data),
   updateEvent: (id, data) => axios.put(`${API}/events/${id}`, data),
   deleteEvent: (id, confirmed = false) => axios.delete(`${API}/events/${id}`, { params: confirmed ? { manager_confirmed_cancellation: "true" } : {} }),
+  deleteEventSeries: (id, confirmed = false) => axios.delete(`${API}/events/${id}/series`, { params: confirmed ? { manager_confirmed_cancellation: "true" } : {} }),
   cancelEventSeries: (id, confirmed = false) => axios.post(`${API}/events/${id}/cancel-series`, null, { params: confirmed ? { manager_confirmed_cancellation: "true" } : {} }),
   updateEventTask: (eventId, taskId, data) => axios.patch(`${API}/events/${eventId}/tasks/${taskId}`, data),
   deleteEventTask: async (eventId, taskId) => {
@@ -402,6 +403,7 @@ const copyTextToClipboard = async (text) => {
 
 
 const getBookedCount = (event) => Number(event?.altegio_booked_count ?? event?.booked_count ?? 0) || 0;
+const isRegularSeriesEvent = (event) => Boolean(event?.source_event_id || event?.event_type === "regular");
 
 const cancelEventAndArchive = async (event, { refreshEvents, onDone, confirmed = false } = {}) => {
   if (!event?.id) return false;
@@ -424,6 +426,24 @@ const deleteEventPermanentlyFlow = async (event, { refreshEvents, onDeleted, onC
   if (!event?.id) return false;
   let latest = event;
   let syncWarning = "";
+  let deleteScope = "single";
+
+  if (isRegularSeriesEvent(event)) {
+    const deleteSeries = window.confirm(`«${event.title || "подія"}» — частина регулярної серії.\n\nOK — видалити цю і всі наступні події серії.\nCancel — видалити тільки цю подію.`);
+    deleteScope = deleteSeries ? "series" : "single";
+  }
+
+  const runDelete = (confirmed = false) => (
+    deleteScope === "series" ? api.deleteEventSeries(latest.id, confirmed) : api.deleteEvent(latest.id, confirmed)
+  );
+  const deleteToast = (response) => {
+    if (deleteScope === "series") {
+      toast.success(`серію видалено назавжди — ${response?.data?.deleted_count || 0} подій`);
+    } else {
+      toast.success("подію видалено назавжди");
+    }
+  };
+
   try {
     await api.syncEventFromAltegio(event.id);
     const refreshed = await axios.get(`${API}/events/${event.id}`);
@@ -440,25 +460,26 @@ const deleteEventPermanentlyFlow = async (event, { refreshEvents, onDeleted, onC
     return cancelEventAndArchive(latest, { refreshEvents, onDone: onCancelled });
   }
 
-  const shouldDelete = window.confirm(`${syncWarning ? `${syncWarning}\n\nPoriadok ще раз перевірить бронювання перед видаленням.\n\n` : ""}Видалити подію назавжди? OK — видалити з історії. Cancel — лише скасувати і залишити в архіві.`);
+  const scopeText = deleteScope === "series" ? "цю і всі наступні події серії" : "цю подію";
+  const shouldDelete = window.confirm(`${syncWarning ? `${syncWarning}\n\nPoriadok ще раз перевірить бронювання перед видаленням.\n\n` : ""}Видалити ${scopeText} назавжди? OK — видалити з історії. Cancel — лише скасувати і залишити в архіві.`);
   if (!shouldDelete) {
     return cancelEventAndArchive(latest, { refreshEvents, onDone: onCancelled });
   }
 
   try {
-    await api.deleteEvent(latest.id);
-    toast.success("подію видалено назавжди");
+    const response = await runDelete(false);
+    deleteToast(response);
     refreshEvents?.();
     onDeleted?.();
     return true;
   } catch (error) {
     const detail = getCancellationGuardDetail(error);
     if (detail) {
-      const shouldDeleteConfirmed = window.confirm(`${detail.message}\n\nПідтвердити, що менеджер перевірив Altegio/учасників і видалити подію назавжди?`);
+      const shouldDeleteConfirmed = window.confirm(`${detail.message}\n\nПідтвердити, що менеджер перевірив Altegio/учасників і видалити ${scopeText} назавжди?`);
       if (shouldDeleteConfirmed) {
         try {
-          await api.deleteEvent(latest.id, true);
-          toast.success("подію видалено назавжди");
+          const response = await runDelete(true);
+          deleteToast(response);
           refreshEvents?.();
           onDeleted?.();
           return true;

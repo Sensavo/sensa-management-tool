@@ -2847,6 +2847,79 @@ async def cancel_event_series(event_id: str, request: Request):
     return {"cancelled_count": len(cancelled_ids), "cancelled_ids": cancelled_ids, "master_id": master_id}
 
 
+@api_router.delete("/events/{event_id}/series")
+async def delete_event_series(event_id: str, request: Request):
+    """Permanently delete this event and future instances in the same regular series."""
+    existing = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    master_id = existing.get("source_event_id") or event_id
+    cutoff_date = existing.get("date", "")
+
+    cursor = db.events.find({
+        "$or": [{"id": master_id}, {"source_event_id": master_id}],
+        "date": {"$gte": cutoff_date},
+    }, {"_id": 0})
+    targets = await cursor.to_list(1000)
+    if not targets:
+        raise HTTPException(status_code=404, detail="Event series not found")
+
+    targets = [await _refresh_event_payment_snapshot(t) for t in targets]
+    manager_confirmed = request.query_params.get("manager_confirmed_cancellation") == "true"
+
+    if any((not _event_payment_snapshot_verified(t)) or _event_paid_count(t) > 0 for t in targets) and not manager_confirmed:
+        anchor = next((t for t in targets if (not _event_payment_snapshot_verified(t)) or _event_paid_count(t) > 0), targets[0])
+        try:
+            await _create_cancellation_tasks(anchor, series_count=len(targets))
+        except Exception as e:
+            logging.error(f"Failed to create cancellation tasks for delete series guard {master_id}: {e}")
+        await db.events.update_many(
+            {"id": {"$in": [t["id"] for t in targets]}},
+            {"$set": {
+                "cancellation_pending": True,
+                "cancellation_requested_at": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+        raise HTTPException(status_code=409, detail=_cancellation_guard_detail(anchor, "delete-series"))
+
+    external_cleanup_errors: List[str] = []
+    for t in targets:
+        tid = t["id"]
+        try:
+            await _delete_event_external_links(
+                t,
+                action="видалення серії",
+                local_guard_detail="локальні події серії залишено",
+                object_label="подію серії",
+                strict=False,
+            )
+        except Exception as e:
+            logging.error(f"External cleanup failed but series hard delete continues for {tid}: {e}")
+            external_cleanup_errors.append(tid)
+
+    target_ids = [t["id"] for t in targets]
+    result = await db.events.delete_many({"id": {"$in": target_ids}})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Event series not found")
+
+    anchor = targets[0]
+    try:
+        await _create_cancellation_tasks(anchor, series_count=len(targets))
+    except Exception as e:
+        logging.error(f"Failed to create cancellation tasks for deleted series {master_id}: {e}")
+
+    actor = _actor_from_request(request)
+    _notify_team(actor, f"📅 видалено серію подій: {_event_line(anchor)} (+{max(0, len(targets) - 1)})\n{_poriadok_link()}")
+
+    return {
+        "deleted_count": result.deleted_count,
+        "deleted_ids": target_ids,
+        "master_id": master_id,
+        "external_cleanup_error_ids": external_cleanup_errors,
+    }
+
+
 @api_router.get("/events/{event_id}/series")
 async def get_event_series(event_id: str):
     """Return all events in the same regular series as the supplied event,
