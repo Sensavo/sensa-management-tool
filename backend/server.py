@@ -2685,11 +2685,15 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
         update_dict["reminders"] = {}
         update_dict["smm_tasks"] = {}
 
-        update_dict.update(await _delete_event_external_links(
-            existing,
-            action="скасування",
-            local_guard_detail="подію не скасовано локально",
-        ))
+        try:
+            update_dict.update(await _delete_event_external_links(
+                existing,
+                action="скасування",
+                local_guard_detail="подію не скасовано локально",
+                strict=False,
+            ))
+        except Exception as e:
+            logging.error(f"External cleanup failed but cancellation continues for {event_id}: {e}")
 
         try:
             await _create_cancellation_tasks(existing)
@@ -2800,12 +2804,17 @@ async def cancel_event_series(event_id: str, request: Request):
 
     for t in targets:
         tid = t["id"]
-        external_clear_by_id[tid] = await _delete_event_external_links(
-            t,
-            action="скасування серії",
-            local_guard_detail="серію не скасовано локально",
-            object_label="подію серії",
-        )
+        try:
+            external_clear_by_id[tid] = await _delete_event_external_links(
+                t,
+                action="скасування серії",
+                local_guard_detail="серію не скасовано локально",
+                object_label="подію серії",
+                strict=False,
+            )
+        except Exception as e:
+            logging.error(f"External cleanup failed but series cancellation continues for {tid}: {e}")
+            external_clear_by_id[tid] = {}
 
     cancelled_ids: List[str] = []
     for t in targets:
