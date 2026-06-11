@@ -2906,12 +2906,15 @@ async def delete_event(event_id: str, request: Request):
     if not existing:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    await _delete_event_external_links(
-        existing,
-        action="видалення",
-        local_guard_detail="локальну подію залишено",
-        strict=not manager_confirmed,
-    )
+    try:
+        await _delete_event_external_links(
+            existing,
+            action="видалення",
+            local_guard_detail="локальну подію залишено",
+            strict=False,
+        )
+    except Exception as e:
+        logging.error(f"External cleanup failed but hard delete continues for {event_id}: {e}")
 
     result = await db.events.delete_one({"id": event_id})
     if result.deleted_count == 0:
