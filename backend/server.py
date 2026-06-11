@@ -68,6 +68,7 @@ PORIADOK_ACCESS_TOKEN_TTL_DAYS = int(os.environ.get("PORIADOK_ACCESS_TOKEN_TTL_D
 
 telegram_app = None
 telegram_summary_task = None
+telegram_overdue_cleanup_task = None
 telegram_bot_lock_owner = None
 telegram_bot_lock_heartbeat_task = None
 TEAM_USERS = ("manager", "smm", "marketer")
@@ -261,7 +262,7 @@ async def stop_telegram_bot():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
-    global altegio_sync_task, telegram_summary_task
+    global altegio_sync_task, telegram_summary_task, telegram_overdue_cleanup_task
     # Load any task-definition overrides from DB into in-memory cache
     try:
         await _refresh_task_overrides_cache()
@@ -386,6 +387,7 @@ async def lifespan(app: FastAPI):
 
     await start_telegram_bot()
     telegram_summary_task = asyncio.create_task(telegram_summary_loop())
+    telegram_overdue_cleanup_task = asyncio.create_task(telegram_overdue_cleanup_loop())
     
     yield
     
@@ -402,6 +404,12 @@ async def lifespan(app: FastAPI):
         telegram_summary_task.cancel()
         try:
             await telegram_summary_task
+        except asyncio.CancelledError:
+            pass
+    if telegram_overdue_cleanup_task:
+        telegram_overdue_cleanup_task.cancel()
+        try:
+            await telegram_overdue_cleanup_task
         except asyncio.CancelledError:
             pass
     await stop_telegram_bot()
@@ -1026,8 +1034,13 @@ def _html_escape(value: object) -> str:
     return html.escape(str(value or ""), quote=False)
 
 
-def _poriadok_link() -> str:
-    return f'<a href="{_html_escape(PORIADOK_APP_URL)}">відкрити Poriadok</a>'
+def _poriadok_link(path: str = "") -> str:
+    suffix = path if path.startswith("/") else f"/{path}" if path else ""
+    return f'<a href="{_html_escape(PORIADOK_APP_URL + suffix)}">відкрити Poriadok</a>'
+
+
+def _poriadok_cleanup_link() -> str:
+    return _poriadok_link("/?overdue_cleanup=1")
 
 
 def _format_task_date(date_str: str) -> str:
@@ -1438,6 +1451,43 @@ async def _send_morning_summaries() -> dict:
     return {"sent": sent, "skipped": skipped}
 
 
+async def _send_overdue_cleanup_pings() -> dict:
+    sent = 0
+    skipped = 0
+    today = datetime.now(_telegram_tz()).date()
+    threshold = today - timedelta(days=2)
+    for user_id in TEAM_USERS:
+        overdue_tasks = await _collect_user_tasks(user_id, overdue=True)
+        stale_tasks = []
+        for task in overdue_tasks:
+            try:
+                task_date = datetime.strptime((task.get("date") or "")[:10], "%Y-%m-%d").date()
+            except Exception:
+                continue
+            if task_date < threshold:
+                stale_tasks.append(task)
+
+        if not stale_tasks:
+            skipped += 1
+            continue
+
+        name = TEAM_PERSON_LABELS.get(user_id, TEAM_USER_LABELS.get(user_id, user_id))
+        first = stale_tasks[0]
+        extra = f" (+{len(stale_tasks) - 1})" if len(stale_tasks) > 1 else ""
+        text = "\n".join([
+            f"📋 {_html_escape(name)}, бачу протерміновані таски, які зависли більше ніж на 2 дні.",
+            f"найстаріший — <b>{_html_escape(first.get('title'))}</b> — {_format_task_date(first.get('date', ''))}{extra}.",
+            "давай допоможу навести порядок в тасках.",
+            "",
+            _poriadok_cleanup_link(),
+        ])
+        if await send_telegram(user_id, text):
+            sent += 1
+        else:
+            skipped += 1
+    return {"sent": sent, "skipped": skipped}
+
+
 async def telegram_summary_loop():
     if not TELEGRAM_BOT_TOKEN:
         return
@@ -1460,6 +1510,31 @@ async def telegram_summary_loop():
             break
         except Exception as e:
             logging.error(f"Telegram summary error: {e}")
+            await asyncio.sleep(60)
+
+
+async def telegram_overdue_cleanup_loop():
+    if not TELEGRAM_BOT_TOKEN:
+        return
+    while True:
+        try:
+            now = datetime.now(_telegram_tz())
+            target = now.replace(hour=14, minute=0, second=0, microsecond=0)
+            if target <= now:
+                target = target + timedelta(days=1)
+            await asyncio.sleep(max(1, (target - now).total_seconds()))
+            ping_date = datetime.now(_telegram_tz()).date().isoformat()
+
+            async def run_ping():
+                result = await _send_overdue_cleanup_pings()
+                logging.info(f"Telegram overdue cleanup ping completed: {result}")
+
+            await _run_with_job_lock(f"telegram_overdue_cleanup:{ping_date}", 26 * 60 * 60, run_ping, release=False)
+        except asyncio.CancelledError:
+            logging.info("Telegram overdue cleanup task cancelled")
+            break
+        except Exception as e:
+            logging.error(f"Telegram overdue cleanup error: {e}")
             await asyncio.sleep(60)
 
 
@@ -1616,6 +1691,11 @@ async def unlink_telegram_user(user_id: str):
 @api_router.post("/admin/telegram/test-summary")
 async def test_telegram_summary():
     return await _send_morning_summaries()
+
+
+@api_router.post("/admin/telegram/test-overdue-cleanup")
+async def test_telegram_overdue_cleanup():
+    return await _send_overdue_cleanup_pings()
 
 
 @api_router.post("/admin/telegram/test-today")
