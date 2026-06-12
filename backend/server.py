@@ -2232,7 +2232,7 @@ async def _sync_event_to_external(event: Event) -> dict:
         if ALTEGIO_PARTNER_TOKEN:
             service_id = await _resolve_altegio_service_id(
                 event.title,
-                explicit_service_id=event.altegio_service_id or ALTEGIO_DEFAULT_SERVICE_ID or None,
+                explicit_service_id=event.altegio_service_id or None,
                 spots=event.spots,
             )
             if service_id and int(service_id) != (event.altegio_service_id or 0):
@@ -2773,10 +2773,11 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
                 existing,
                 action="скасування",
                 local_guard_detail="подію не скасовано локально",
-                strict=False,
+                strict=True,
             ))
         except Exception as e:
-            logging.error(f"External cleanup failed but cancellation continues for {event_id}: {e}")
+            logging.error(f"External cleanup failed; cancellation blocked for {event_id}: {e}")
+            raise
 
         try:
             await _create_cancellation_tasks(existing)
@@ -2797,7 +2798,7 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
         if existing.get("cancelled") and ALTEGIO_PARTNER_TOKEN and not (existing.get("altegio_activity_id") or existing.get("altegio_id")):
             service_id = await _resolve_altegio_service_id(
                 existing.get("title", ""),
-                explicit_service_id=existing.get("altegio_service_id") or ALTEGIO_DEFAULT_SERVICE_ID or None,
+                explicit_service_id=existing.get("altegio_service_id") or None,
                 spots=existing.get("spots") or 10,
             )
             result = await altegio_client.create_activity_result(
@@ -2893,11 +2894,11 @@ async def cancel_event_series(event_id: str, request: Request):
                 action="скасування серії",
                 local_guard_detail="серію не скасовано локально",
                 object_label="подію серії",
-                strict=False,
+                strict=True,
             )
         except Exception as e:
-            logging.error(f"External cleanup failed but series cancellation continues for {tid}: {e}")
-            external_clear_by_id[tid] = {}
+            logging.error(f"External cleanup failed; series cancellation blocked for {tid}: {e}")
+            raise
 
     cancelled_ids: List[str] = []
     for t in targets:
@@ -2975,11 +2976,11 @@ async def delete_event_series(event_id: str, request: Request):
                 action="видалення серії",
                 local_guard_detail="локальні події серії залишено",
                 object_label="подію серії",
-                strict=False,
+                strict=True,
             )
         except Exception as e:
-            logging.error(f"External cleanup failed but series hard delete continues for {tid}: {e}")
-            external_cleanup_errors.append(tid)
+            logging.error(f"External cleanup failed; series hard delete blocked for {tid}: {e}")
+            raise
 
     target_ids = [t["id"] for t in targets]
     result = await db.events.delete_many({"id": {"$in": target_ids}})
@@ -3076,10 +3077,11 @@ async def delete_event(event_id: str, request: Request):
             existing,
             action="видалення",
             local_guard_detail="локальну подію залишено",
-            strict=False,
+            strict=True,
         )
     except Exception as e:
-        logging.error(f"External cleanup failed but hard delete continues for {event_id}: {e}")
+        logging.error(f"External cleanup failed; hard delete blocked for {event_id}: {e}")
+        raise
 
     result = await db.events.delete_one({"id": event_id})
     if result.deleted_count == 0:
@@ -4970,7 +4972,7 @@ class AltegioClient:
                                service_id: Optional[int] = None):
         """Create a group activity/event in Altegio via V2 API.
 
-        service_id: per-event Altegio service id. If not provided, falls back to ALTEGIO_DEFAULT_SERVICE_ID.
+        service_id: per-event Altegio service id. Required for booking-safe writes.
         """
         result = await self.create_activity_result(
             title=title,
@@ -4987,9 +4989,9 @@ class AltegioClient:
                                      end_time: str = "16:00", capacity: int = 10, comment: str = "",
                                      service_id: Optional[int] = None):
         """Create an Altegio activity and return a debuggable result object."""
-        effective_service_id = service_id or ALTEGIO_DEFAULT_SERVICE_ID
+        effective_service_id = service_id
         if not ALTEGIO_PARTNER_TOKEN or not self.push_user_token or not effective_service_id:
-            message = "Altegio push skipped: partner token, write-capable user token, or service_id missing"
+            message = "Altegio push failed: partner token, write-capable user token, or explicit service_id missing"
             logging.warning(message)
             return {"ok": False, "activity_id": None, "status_code": None, "body": message}
 
@@ -5025,7 +5027,7 @@ class AltegioClient:
                                service_id: Optional[int] = None):
         """Update an existing activity/event in Altegio via V2 API.
 
-        service_id: per-event Altegio service id. If not provided, falls back to ALTEGIO_DEFAULT_SERVICE_ID.
+        service_id: per-event Altegio service id. Required for booking-safe writes.
         """
         result = await self.update_activity_result(
             activity_id=activity_id,
@@ -5044,9 +5046,9 @@ class AltegioClient:
                                      capacity: int = 10, comment: str = "",
                                      service_id: Optional[int] = None):
         """Update an Altegio activity and return a debuggable result object."""
-        effective_service_id = service_id or ALTEGIO_DEFAULT_SERVICE_ID
+        effective_service_id = service_id
         if not ALTEGIO_PARTNER_TOKEN or not self.push_user_token or not activity_id or not effective_service_id:
-            message = "Altegio update skipped: partner token, write-capable user token, activity_id, or service_id missing"
+            message = "Altegio update failed: partner token, write-capable user token, activity_id, or explicit service_id missing"
             logging.warning(message)
             return {"ok": False, "status_code": None, "body": message}
 
@@ -5217,7 +5219,7 @@ async def push_single_event_to_altegio(event_id: str):
 
     service_id = await _resolve_altegio_service_id(
         event.get("title", ""),
-        explicit_service_id=event.get("altegio_service_id") or ALTEGIO_DEFAULT_SERVICE_ID or None,
+        explicit_service_id=event.get("altegio_service_id") or None,
         spots=event.get("spots") or 10,
     )
 
