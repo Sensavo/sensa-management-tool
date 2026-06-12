@@ -4873,6 +4873,28 @@ const DesktopDashboard = () => {
   const [showOverdueCleanup, setShowOverdueCleanup] = useState(false);
   const [cleanupDragTask, setCleanupDragTask] = useState(null);
 
+  const getCleanupQuickActions = (task) => {
+    const date = getTaskDate(task);
+    const tomorrow = shiftDateLocal(todayStr, 1);
+    const plusTwo = shiftDateLocal(todayStr, 2);
+    if (date === todayStr) {
+      return [
+        { label: "завтра", date: tomorrow },
+        { label: "+2д", date: plusTwo },
+      ];
+    }
+    if (date === tomorrow) {
+      return [
+        { label: "сьогодні", date: todayStr },
+        { label: "+2д", date: plusTwo },
+      ];
+    }
+    return [
+      { label: "сьогодні", date: todayStr },
+      { label: "завтра", date: tomorrow },
+    ];
+  };
+
   const OverdueCleanupBoard = () => (
     <div className="overdue-cleanup-page">
       <div className="overdue-cleanup-header">
@@ -4922,8 +4944,9 @@ const DesktopDashboard = () => {
                         {task.event_title && <p className="overdue-cleanup-card-event">{task.event_title}</p>}
                       </div>
                       <div className="overdue-cleanup-actions">
-                        <button type="button" onClick={() => handleCleanupReschedule(task, todayStr)}><ArrowRight className="w-3.5 h-3.5" />сьогодні</button>
-                        <button type="button" onClick={() => handleCleanupReschedule(task, shiftDateLocal(todayStr, 1))}><ArrowRight className="w-3.5 h-3.5" />завтра</button>
+                        {getCleanupQuickActions(task).map(action => (
+                          <button key={action.label} type="button" onClick={() => handleCleanupReschedule(task, action.date)}><ArrowRight className="w-3.5 h-3.5" />{action.label}</button>
+                        ))}
                         <button type="button" className="danger" onClick={() => handleCleanupDelete(task)} title="видалити таск" aria-label="видалити таск"><Trash2 className="w-3.5 h-3.5" /></button>
                       </div>
                     </div>
