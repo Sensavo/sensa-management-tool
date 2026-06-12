@@ -4762,22 +4762,24 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
     >
       <div className="flex items-center justify-between px-4 py-3">
         <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>{name}</span>
-        <div className="team-column-actions">
-          <button className="add-btn" onClick={onAddClick}><Plus className="w-4 h-4" /></button>
-          {tasks.overdue.length > 0 && onCleanupClick && (
-            <button className="cleanup-icon-btn" onClick={onCleanupClick} title="почистити протерміновані таски" aria-label="почистити протерміновані таски">
-              <Sparkles className="w-3 h-3" />
-            </button>
-          )}
-        </div>
+        <button className="add-btn" onClick={onAddClick}><Plus className="w-4 h-4" /></button>
       </div>
       <div className="column-content">
         {tasks.overdue.length > 0 && (
           <div className="mb-3">
-            <button className="section-header-mini overdue-header" onClick={() => setOverdueExpanded(!overdueExpanded)}>
-              <span>протерміновано ({tasks.overdue.length})</span>
-              <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${overdueExpanded ? "rotate-180" : ""}`} />
-            </button>
+            <div className="section-header-mini overdue-header">
+              <button className="section-header-toggle" onClick={() => setOverdueExpanded(!overdueExpanded)}>
+                <span>протерміновано ({tasks.overdue.length})</span>
+              </button>
+              {onCleanupClick && (
+                <button type="button" className="cleanup-icon-btn" onClick={onCleanupClick} title="почистити протерміновані таски" aria-label="почистити протерміновані таски">
+                  <Sparkles className="w-3 h-3" />
+                </button>
+              )}
+              <button type="button" className="section-header-chevron" onClick={() => setOverdueExpanded(!overdueExpanded)} aria-label="розгорнути протерміновані">
+                <ChevronDown className={`w-4 h-4 transition-transform ${overdueExpanded ? "rotate-180" : ""}`} />
+              </button>
+            </div>
             {overdueExpanded && tasks.overdue.map((t, i) => <TaskRenderer key={i} task={t} />)}
           </div>
         )}

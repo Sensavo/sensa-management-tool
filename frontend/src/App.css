@@ -1052,3 +1052,18 @@
   border-color: rgba(255, 131, 112, 0.12);
   color: rgba(255, 131, 112, 0.78);
 }
+
+.section-header-chevron {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+.section-header-chevron:hover { background: rgba(255, 131, 112, 0.08); }
+.overdue-header .cleanup-icon-btn {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
