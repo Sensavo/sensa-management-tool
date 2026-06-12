@@ -4721,7 +4721,7 @@ const DroppableDateSection = ({ assignee, date, children, isOver }) => {
 };
 
 // Team Column Component - reusable for SMM, Manager, Marketer
-const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick, onStandaloneClick, onTaskEdit, onAddClick, overdueExpanded, setOverdueExpanded, soonExpanded, setSoonExpanded, smmTasksDefinition, columnAssignee, announcementOverlaps = {}, onOverlapClick, todayStr, onTaskDragStart, onTaskDragMove, onTaskDragEnd, onTaskDrop, dragOver }) => {
+const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick, onStandaloneClick, onTaskEdit, onAddClick, onCleanupClick, overdueExpanded, setOverdueExpanded, soonExpanded, setSoonExpanded, smmTasksDefinition, columnAssignee, announcementOverlaps = {}, onOverlapClick, todayStr, onTaskDragStart, onTaskDragMove, onTaskDragEnd, onTaskDrop, dragOver }) => {
   const TaskRenderer = ({ task }) => {
     const colAssignee = columnAssignee || (colorClass === 'emerald' ? 'smm' : colorClass === 'orange' ? 'marketer' : 'manager');
     const taskDate = task.task_date || task.reminder_date;
@@ -4767,10 +4767,17 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
       <div className="column-content">
         {tasks.overdue.length > 0 && (
           <div className="mb-3">
-            <button className="section-header-mini overdue-header" onClick={() => setOverdueExpanded(!overdueExpanded)}>
-              <span>протерміновано ({tasks.overdue.length})</span>
-              <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${overdueExpanded ? "rotate-180" : ""}`} />
-            </button>
+            <div className="section-header-mini overdue-header">
+              <button className="section-header-toggle" onClick={() => setOverdueExpanded(!overdueExpanded)}>
+                <span>протерміновано ({tasks.overdue.length})</span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${overdueExpanded ? "rotate-180" : ""}`} />
+              </button>
+              {onCleanupClick && (
+                <button type="button" className="overdue-cleanup-mini-btn" onClick={onCleanupClick}>
+                  почистити
+                </button>
+              )}
+            </div>
             {overdueExpanded && tasks.overdue.map((t, i) => <TaskRenderer key={i} task={t} />)}
           </div>
         )}
@@ -5744,6 +5751,7 @@ const DesktopDashboard = () => {
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
             onAddClick={() => { setNewTask({ title: "", date: todayStr, icon: "coffee", color: "manager", event_id: "", assignee: "manager", teamwork: false, team_members: [] }); setDialogColumnName("Manager"); setShowTaskDialog(true); }}
+            onCleanupClick={() => setShowOverdueCleanup(true)}
             overdueExpanded={managerOverdue}
             setOverdueExpanded={setManagerOverdue}
             soonExpanded={managerSoon}
@@ -5769,6 +5777,7 @@ const DesktopDashboard = () => {
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
             onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "manager", event_id: "", assignee: "smm", teamwork: false, team_members: [] }); setDialogColumnName("SMM"); setShowSMMTaskDialog(true); }}
+            onCleanupClick={() => setShowOverdueCleanup(true)}
             overdueExpanded={smmOverdue}
             setOverdueExpanded={setSMMOverdue}
             soonExpanded={smmSoon}
@@ -5796,6 +5805,7 @@ const DesktopDashboard = () => {
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
             onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "manager", event_id: "", assignee: "marketer", teamwork: false, team_members: [] }); setDialogColumnName("Marketer"); setShowSMMTaskDialog(true); }}
+            onCleanupClick={() => setShowOverdueCleanup(true)}
             overdueExpanded={marketerOverdue}
             setOverdueExpanded={setVoOverdue}
             soonExpanded={marketerSoon}

@@ -985,3 +985,27 @@
   .overdue-cleanup-board { grid-template-columns: minmax(260px, 1fr); min-height: 0; }
   .overdue-cleanup-column { min-height: 260px; }
 }
+
+.overdue-cleanup-mini-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: rgba(255, 131, 112, 0.12);
+  color: #FF8370;
+  font-size: 11px !important;
+  font-weight: 750;
+  line-height: 1;
+  cursor: pointer;
+}
+.overdue-cleanup-mini-btn:hover { background: rgba(255, 131, 112, 0.18); }
+.section-header-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+}
