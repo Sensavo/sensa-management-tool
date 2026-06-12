@@ -73,14 +73,14 @@ telegram_bot_lock_owner = None
 telegram_bot_lock_heartbeat_task = None
 TEAM_USERS = ("manager", "smm", "marketer")
 TEAM_USER_LABELS = {
-    "manager": "Manager",
-    "smm": "SMM",
-    "marketer": "Marketer",
+    "manager": "менеджер",
+    "smm": "smm",
+    "marketer": "маркетинг",
 }
 TEAM_PERSON_LABELS = {
-    "manager": "Юра",
-    "smm": "Софійка",
-    "marketer": "Во",
+    "manager": "юра",
+    "smm": "софійка",
+    "marketer": "во",
 }
 LEGACY_ASSIGNEE_ALIASES = {
     "manager": "manager",
@@ -224,15 +224,16 @@ async def start_telegram_bot():
         telegram_app.add_handler(CommandHandler("overdue", telegram_overdue_command))
         telegram_app.add_handler(CommandHandler("mute", telegram_mute_command))
         telegram_app.add_handler(CommandHandler("unmute", telegram_unmute_command))
+        telegram_app.add_handler(CommandHandler("unlink", telegram_unlink_command))
 
         await telegram_app.initialize()
         await telegram_app.start()
         if telegram_app.updater:
             await telegram_app.updater.start_polling(drop_pending_updates=True)
         logging.info("Telegram bot polling started")
-    except Exception:
+    except Exception as e:
+        logging.error(f"Telegram bot startup failed; continuing without polling: {e}")
         await stop_telegram_bot()
-        raise
 
 
 async def stop_telegram_bot():
@@ -1031,13 +1032,35 @@ def _today_kyiv() -> str:
     return datetime.now(_telegram_tz()).date().isoformat()
 
 
+def _next_telegram_run_at(hour: int, minute: int = 0, now: Optional[datetime] = None) -> datetime:
+    now = now or datetime.now(_telegram_tz())
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if target <= now:
+        target = target + timedelta(days=1)
+    return target
+
+
+def _telegram_runtime_status() -> dict:
+    now = datetime.now(_telegram_tz())
+    return {
+        "enabled": bool(TELEGRAM_BOT_TOKEN),
+        "dependency_loaded": bool(Application and CommandHandler),
+        "polling": bool(telegram_app),
+        "timezone": getattr(_telegram_tz(), "key", TELEGRAM_TIMEZONE),
+        "now": now.isoformat(),
+        "next_morning_summary_at": _next_telegram_run_at(9, 0, now).isoformat(),
+        "next_overdue_cleanup_at": _next_telegram_run_at(14, 0, now).isoformat(),
+        "bot_username": TELEGRAM_BOT_USERNAME,
+    }
+
+
 def _html_escape(value: object) -> str:
     return html.escape(str(value or ""), quote=False)
 
 
 def _poriadok_link(path: str = "") -> str:
     suffix = path if path.startswith("/") else f"/{path}" if path else ""
-    return f'<a href="{_html_escape(PORIADOK_APP_URL + suffix)}">відкрити Poriadok</a>'
+    return f'<a href="{_html_escape(PORIADOK_APP_URL + suffix)}">відкрити poriadok</a>'
 
 
 def _poriadok_cleanup_link() -> str:
@@ -1194,7 +1217,7 @@ def _format_task_list(tasks: List[dict], empty_text: str) -> str:
         event_part = f" · {_html_escape(task.get('event_title'))}" if task.get("event_title") else ""
         lines.append(f"{idx}. {_html_escape(task.get('title'))} — {_format_task_date(task.get('date', ''))}{event_part}")
     if len(tasks) > 12:
-        lines.append(f"ще {len(tasks) - 12}...")
+        lines.append(f"ще {len(tasks) - 12}")
     return "\n".join(lines)
 
 
@@ -1409,7 +1432,7 @@ async def _build_today_tasks_message(user_id: str) -> str:
     today_tasks = await _collect_user_tasks(user_id, target_date=_today_kyiv())
     event_line = await _today_events_summary()
     lines = [
-        f"📋 сьогодні для {_html_escape(TEAM_USER_LABELS.get(user_id, user_id))}:",
+        f"сьогодні для {_html_escape(TEAM_PERSON_LABELS.get(user_id, TEAM_USER_LABELS.get(user_id, user_id)))}:",
         _format_task_list(today_tasks, "тасків на сьогодні немає"),
     ]
     if event_line:
@@ -1425,7 +1448,7 @@ async def _build_morning_summary(user_id: str) -> str:
     event_line = await _today_events_summary()
     greeting_name = TEAM_PERSON_LABELS.get(user_id, TEAM_USER_LABELS.get(user_id, user_id))
     lines = [
-        f"📋 доброго ранку, {_html_escape(greeting_name)}.",
+        f"доброго ранку, {_html_escape(greeting_name)}.",
         f"сьогодні в тебе: <b>{len(today_tasks)}</b> тасків ({len(overdue_tasks)} протерм).",
         "",
         "сьогодні:",
@@ -1476,7 +1499,7 @@ async def _send_overdue_cleanup_pings() -> dict:
         first = stale_tasks[0]
         extra = f" (+{len(stale_tasks) - 1})" if len(stale_tasks) > 1 else ""
         text = "\n".join([
-            f"📋 {_html_escape(name)}, бачу протерміновані таски, які зависли більше ніж на 2 дні.",
+            f"{_html_escape(name)}, бачу протерміновані таски, які зависли більше ніж на 2 дні.",
             f"найстаріший — <b>{_html_escape(first.get('title'))}</b> — {_format_task_date(first.get('date', ''))}{extra}.",
             "давай допоможу навести порядок в тасках.",
             "",
@@ -1495,9 +1518,7 @@ async def telegram_summary_loop():
     while True:
         try:
             now = datetime.now(_telegram_tz())
-            target = now.replace(hour=9, minute=0, second=0, microsecond=0)
-            if target <= now:
-                target = target + timedelta(days=1)
+            target = _next_telegram_run_at(9, 0, now)
             await asyncio.sleep(max(1, (target - now).total_seconds()))
             summary_date = datetime.now(_telegram_tz()).date().isoformat()
 
@@ -1520,9 +1541,7 @@ async def telegram_overdue_cleanup_loop():
     while True:
         try:
             now = datetime.now(_telegram_tz())
-            target = now.replace(hour=14, minute=0, second=0, microsecond=0)
-            if target <= now:
-                target = target + timedelta(days=1)
+            target = _next_telegram_run_at(14, 0, now)
             await asyncio.sleep(max(1, (target - now).total_seconds()))
             ping_date = datetime.now(_telegram_tz()).date().isoformat()
 
@@ -1545,7 +1564,7 @@ def _telegram_main_keyboard():
     return ReplyKeyboardMarkup(
         [
             ["/today", "/overdue"],
-            ["/mute", "/unmute"],
+            ["/mute", "/unmute", "/unlink"],
         ],
         resize_keyboard=True,
         is_persistent=True,
@@ -1555,7 +1574,7 @@ def _telegram_main_keyboard():
 
 async def telegram_start_command(update, context):
     await update.message.reply_text(
-        "привіт. кнопки нижче, а для привʼязки надішли /link 123456",
+        "привіт. кнопки нижче. для привʼязки: /link код",
         reply_markup=_telegram_main_keyboard(),
     )
 
@@ -1592,7 +1611,8 @@ async def telegram_link_command(update, context):
             "link_expires_at": None,
         }},
     )
-    await update.message.reply_text(f"✓ привʼязано до акаунту {doc['user_id']}", reply_markup=_telegram_main_keyboard())
+    linked_user = normalize_assignee(doc["user_id"])
+    await update.message.reply_text(f"привʼязано до {TEAM_PERSON_LABELS.get(linked_user, linked_user)}", reply_markup=_telegram_main_keyboard())
 
 
 async def telegram_today_command(update, context):
@@ -1609,7 +1629,7 @@ async def telegram_overdue_command(update, context):
         await update.message.reply_text("спершу привʼяжи акаунт через /link 123456", reply_markup=_telegram_main_keyboard())
         return
     tasks = await _collect_user_tasks(user["user_id"], overdue=True)
-    await update.message.reply_html(f"📋 протерміновано:\n{_format_task_list(tasks, 'протермінованих тасків немає')}\n\n{_poriadok_link()}")
+    await update.message.reply_html(f"протерміновано:\n{_format_task_list(tasks, 'протермінованих тасків немає')}\n\n{_poriadok_link()}")
 
 
 async def telegram_mute_command(update, context):
@@ -1628,6 +1648,24 @@ async def telegram_unmute_command(update, context):
         return
     await db.user_settings.update_one({"user_id": user["user_id"]}, {"$set": {"muted": False}})
     await update.message.reply_text("ок, сповіщення знову увімкнено", reply_markup=_telegram_main_keyboard())
+
+
+async def telegram_unlink_command(update, context):
+    user = await _find_user_by_chat(update.effective_chat.id)
+    if not user:
+        await update.message.reply_text("цей чат не привʼязаний", reply_markup=_telegram_main_keyboard())
+        return
+    await db.user_settings.update_many(
+        {"telegram_chat_id": update.effective_chat.id},
+        {"$set": {
+            "telegram_chat_id": None,
+            "telegram_username": "",
+            "link_code": None,
+            "link_expires_at": None,
+            "muted": False,
+        }},
+    )
+    await update.message.reply_text("ок, відвʼязано", reply_markup=_telegram_main_keyboard())
 
 
 @api_router.get("/users/{user_id}/telegram/status")
@@ -1687,6 +1725,11 @@ async def unlink_telegram_user(user_id: str):
         }},
     )
     return await _telegram_status_payload(user_id)
+
+
+@api_router.get("/admin/telegram/status")
+async def admin_telegram_status():
+    return _telegram_runtime_status()
 
 
 @api_router.post("/admin/telegram/test-summary")
@@ -2308,7 +2351,7 @@ async def create_event(event_data: EventCreate, request: Request):
         # Single one-off event — full external sync
         await _ensure_no_duplicate_active_event(event_data.title, event_data.date, event_data.start_time or "")
         event = await _persist_event(event_data, settings, sync_external=True)
-        _notify_team(actor, f"📅 створено подію: {_event_line(event.model_dump())}\n{_poriadok_link()}")
+        _notify_team(actor, f"створено подію: {_event_line(event.model_dump())}\n{_poriadok_link()}")
         return {**event.model_dump(), "series_count": 1}
 
     # Regular series — expand to SERIES_WEEKS of instances on selected weekdays
@@ -2361,7 +2404,7 @@ async def create_event(event_data: EventCreate, request: Request):
                 logging.error(f"Failed to rollback created series event {created.id}: {cleanup_error}")
         raise
 
-    _notify_team(actor, f"📅 створено серію подій: {_event_line(master.model_dump())} (+{len(dates) - 1})\n{_poriadok_link()}")
+    _notify_team(actor, f"створено серію подій: {_event_line(master.model_dump())} (+{len(dates) - 1})\n{_poriadok_link()}")
 
     return {**master.model_dump(), "series_count": len(dates)}
 
@@ -2645,7 +2688,7 @@ async def _create_cancellation_tasks(event: dict, series_count: int = 0) -> int:
             created += 1
 
     if created:
-        enqueue_telegram("manager", f"📋 створено таски для скасування: {_event_line(event)}\n{_poriadok_link()}")
+        enqueue_telegram("manager", f"створено таски для скасування: {_event_line(event)}\n{_poriadok_link()}")
     return created
 
 
@@ -2833,9 +2876,9 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
     updated = await db.events.find_one({"id": event_id}, {"_id": 0})
     actor = _actor_from_request(request)
     if event_data.get("cancelled") == True and not existing.get("cancelled"):
-        _notify_team(actor, f"📅 скасовано подію: {_event_line(existing)}\n{_poriadok_link()}")
+        _notify_team(actor, f"скасовано подію: {_event_line(existing)}\n{_poriadok_link()}")
     elif event_data.get("cancelled") == False and existing.get("cancelled"):
-        _notify_team(actor, f"📅 відновлено подію: {_event_line(updated)}\n{_poriadok_link()}")
+        _notify_team(actor, f"відновлено подію: {_event_line(updated)}\n{_poriadok_link()}")
     
     return updated
 
@@ -2926,7 +2969,7 @@ async def cancel_event_series(event_id: str, request: Request):
         except Exception as e:
             logging.error(f"Failed to create cancellation tasks for series {master_id}: {e}")
         actor = _actor_from_request(request)
-        _notify_team(actor, f"📅 скасовано серію подій: {_event_line(anchor)} (+{len(cancelled_ids) - 1})\n{_poriadok_link()}")
+        _notify_team(actor, f"скасовано серію подій: {_event_line(anchor)} (+{len(cancelled_ids) - 1})\n{_poriadok_link()}")
 
     return {"cancelled_count": len(cancelled_ids), "cancelled_ids": cancelled_ids, "master_id": master_id}
 
@@ -2994,7 +3037,7 @@ async def delete_event_series(event_id: str, request: Request):
         logging.error(f"Failed to create cancellation tasks for deleted series {master_id}: {e}")
 
     actor = _actor_from_request(request)
-    _notify_team(actor, f"📅 видалено серію подій: {_event_line(anchor)} (+{max(0, len(targets) - 1)})\n{_poriadok_link()}")
+    _notify_team(actor, f"видалено серію подій: {_event_line(anchor)} (+{max(0, len(targets) - 1)})\n{_poriadok_link()}")
 
     return {
         "deleted_count": result.deleted_count,
@@ -3096,7 +3139,7 @@ async def delete_event(event_id: str, request: Request):
         except Exception as e:
             logging.error(f"Failed to create cancellation tasks for deleted {event_id}: {e}")
         actor = _actor_from_request(request)
-        _notify_team(actor, f"📅 видалено подію: {_event_line(existing)}\n{_poriadok_link()}")
+        _notify_team(actor, f"видалено подію: {_event_line(existing)}\n{_poriadok_link()}")
 
     return {"message": "Event deleted"}
 
@@ -3126,7 +3169,7 @@ async def create_standalone_task(task_data: StandaloneTaskCreate, request: Reque
     _notify_assignee(
         actor,
         task.assignee,
-        f"➕ новий таск для тебе: <b>{_html_escape(task.title)}</b> — {_format_task_date(task.date)}\n{_poriadok_link()}",
+        f"новий таск для тебе: <b>{_html_escape(task.title)}</b> — {_format_task_date(task.date)}\n{_poriadok_link()}",
     )
     return task
 
