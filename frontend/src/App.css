@@ -1009,3 +1009,41 @@
   flex: 1;
   text-align: left;
 }
+
+.team-column-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.cleanup-icon-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 131, 112, 0.1);
+  color: #FF8370;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.cleanup-icon-btn:hover { background: rgba(255, 131, 112, 0.18); }
+.overdue-cleanup-page { width: 100%; }
+.overdue-cleanup-actions { grid-template-columns: 1fr 1fr 32px; }
+.overdue-cleanup-actions button {
+  background: transparent;
+  border: 1px solid rgba(26, 23, 23, 0.08);
+  color: #6B6B6B;
+}
+.overdue-cleanup-actions button:hover {
+  background: rgba(232, 229, 220, 0.5);
+  color: #1A1717;
+}
+.overdue-cleanup-actions button.danger {
+  padding: 0;
+  color: rgba(255, 131, 112, 0.82);
+}
+.overdue-cleanup-actions button.danger:hover {
+  background: rgba(255, 131, 112, 0.1);
+  color: #FF8370;
+}

@@ -4762,22 +4762,22 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
     >
       <div className="flex items-center justify-between px-4 py-3">
         <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>{name}</span>
-        <button className="add-btn" onClick={onAddClick}><Plus className="w-4 h-4" /></button>
+        <div className="team-column-actions">
+          <button className="add-btn" onClick={onAddClick}><Plus className="w-4 h-4" /></button>
+          {tasks.overdue.length > 0 && onCleanupClick && (
+            <button className="cleanup-icon-btn" onClick={onCleanupClick} title="почистити протерміновані таски" aria-label="почистити протерміновані таски">
+              <Sparkles className="w-3 h-3" />
+            </button>
+          )}
+        </div>
       </div>
       <div className="column-content">
         {tasks.overdue.length > 0 && (
           <div className="mb-3">
-            <div className="section-header-mini overdue-header">
-              <button className="section-header-toggle" onClick={() => setOverdueExpanded(!overdueExpanded)}>
-                <span>протерміновано ({tasks.overdue.length})</span>
-                <ChevronDown className={`w-4 h-4 transition-transform ${overdueExpanded ? "rotate-180" : ""}`} />
-              </button>
-              {onCleanupClick && (
-                <button type="button" className="overdue-cleanup-mini-btn" onClick={onCleanupClick}>
-                  почистити
-                </button>
-              )}
-            </div>
+            <button className="section-header-mini overdue-header" onClick={() => setOverdueExpanded(!overdueExpanded)}>
+              <span>протерміновано ({tasks.overdue.length})</span>
+              <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${overdueExpanded ? "rotate-180" : ""}`} />
+            </button>
             {overdueExpanded && tasks.overdue.map((t, i) => <TaskRenderer key={i} task={t} />)}
           </div>
         )}
@@ -4870,6 +4870,68 @@ const DesktopDashboard = () => {
   const [overlapResolverTask, setOverlapResolverTask] = useState(null);
   const [showOverdueCleanup, setShowOverdueCleanup] = useState(false);
   const [cleanupDragTask, setCleanupDragTask] = useState(null);
+
+  const OverdueCleanupBoard = () => (
+    <div className="overdue-cleanup-page">
+      <div className="overdue-cleanup-header">
+        <div>
+          <h2>навести порядок в тасках</h2>
+          <p>перетягни картки між днями або кинь швидко на сьогодні / завтра</p>
+        </div>
+        <div className={`overdue-cleanup-total ${cleanupTotal > 12 ? 'danger' : cleanupTotal > 7 ? 'warn' : ''}`}>
+          {cleanupTotal > 12 ? 'багацько тасків' : `${cleanupTotal} тасків`}
+        </div>
+      </div>
+      <div className="overdue-cleanup-board">
+        {cleanupColumns.map((column) => {
+          const overloaded = column.items.length > 5;
+          return (
+            <div
+              key={column.id}
+              className={`overdue-cleanup-column ${column.accent} ${overloaded ? 'overloaded' : ''}`}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => handleCleanupDrop(column, e)}
+            >
+              <div className="overdue-cleanup-column-head">
+                <div>
+                  <p>{column.label}</p>
+                  <span>{formatDateUkrainian(column.date)}</span>
+                </div>
+                <strong>{overloaded ? 'багацько тасків' : column.items.length}</strong>
+              </div>
+              <div className="overdue-cleanup-list">
+                {column.items.length === 0 ? (
+                  <div className="overdue-cleanup-empty">чисто</div>
+                ) : column.items.map(task => {
+                  const IconComponent = getIconComponent(task.icon);
+                  return (
+                    <div
+                      key={getTaskDragKey(task)}
+                      className="overdue-cleanup-card"
+                      draggable
+                      onDragStart={(e) => { setCleanupDragTask(task); e.dataTransfer.setData('text/plain', getTaskDragKey(task)); }}
+                      onDragEnd={() => setCleanupDragTask(null)}
+                    >
+                      <div className="overdue-cleanup-card-main">
+                        <div className={`task-icon ${task.color || 'manager'}`}><IconComponent /></div>
+                        <button type="button" onClick={() => openCleanupTask(task)}>{task.task_name}</button>
+                      </div>
+                      {task.event_title && <p className="overdue-cleanup-card-event">{task.event_title}</p>}
+                      <div className="overdue-cleanup-actions">
+                        <button type="button" onClick={() => handleCleanupReschedule(task, todayStr)}><ArrowRight className="w-3.5 h-3.5" />сьогодні</button>
+                        <button type="button" onClick={() => handleCleanupReschedule(task, shiftDateLocal(todayStr, 1))}><ArrowRight className="w-3.5 h-3.5" />завтра</button>
+                        <button type="button" className="danger" onClick={() => handleCleanupDelete(task)} title="видалити таск" aria-label="видалити таск"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 
   useEffect(() => {
     const params = new URLSearchParams(location.search || "");
@@ -5141,6 +5203,28 @@ const DesktopDashboard = () => {
       refreshEvents();
     } catch {
       toast.error("не вдалось перенести");
+    }
+  };
+
+  const handleCleanupDelete = async (task) => {
+    if (!task) return;
+    try {
+      if (task.is_standalone) {
+        const full = standaloneTasks.find(t => t.id === task.event_id);
+        if (!full) return;
+        await api.deleteStandaloneTask(full.id);
+        pushUndo({ label: "видалення таска", run: async () => { await api.createStandaloneTask(getStandaloneTaskPayload(full)); refreshStandaloneTasks(); } });
+        refreshStandaloneTasks();
+      } else {
+        const taskId = task.task_id || task.reminder_id;
+        if (!task.event_id || !taskId || taskId === "standalone") return;
+        await api.deleteEventTask(task.event_id, taskId);
+        pushUndo({ label: "видалення таска", run: async () => { await api.updateEventTask(task.event_id, taskId, { color: task.color, icon: task.icon, title: task.task_name, assignee: task.assignee, date: getTaskDate(task), order: getTaskOrder(task), deleted: false }); refreshEvents(); } });
+        refreshEvents();
+      }
+      toast.success("видалено");
+    } catch {
+      toast.error("не вдалось видалити");
     }
   };
 
@@ -5674,7 +5758,6 @@ const DesktopDashboard = () => {
           <button className="desktop-header-btn" onClick={() => setShowStats(true)} title="Аналітика" data-testid="analytics-btn"><BarChart3 className="w-5 h-5" /></button>
           <button className="desktop-header-btn" onClick={() => navigate("/content")} title="Контент" data-testid="content-btn"><FileText className="w-5 h-5" /></button>
           <button className="desktop-header-btn" onClick={() => setShowDayOffDialog(true)} title="Вихідний" data-testid="dayoff-btn"><Coffee className="w-5 h-5" /></button>
-          <button className="desktop-header-btn" onClick={() => setShowOverdueCleanup(true)} title="Навести порядок" data-testid="overdue-cleanup-btn"><Sparkles className="w-5 h-5" /></button>
           <button className="btn-dark" onClick={() => navigate("/event/new")}><Plus className="w-4 h-4" /><span>подія</span></button>
           <button className="desktop-header-btn" onClick={() => setShowSettings(true)} title="Налаштування"><Settings className="w-5 h-5" /></button>
         </div>
@@ -5883,62 +5966,7 @@ const DesktopDashboard = () => {
 
       <Dialog open={showOverdueCleanup} onOpenChange={setShowOverdueCleanup}>
         <DialogContent className="overdue-cleanup-dialog" onOpenAutoFocus={(e) => e.preventDefault()}>
-          <DialogHeader className="overdue-cleanup-header">
-            <div>
-              <DialogTitle>навести порядок в тасках</DialogTitle>
-              <DialogDescription>перетягни картки між днями або кинь швидко на сьогодні / завтра</DialogDescription>
-            </div>
-            <div className={`overdue-cleanup-total ${cleanupTotal > 12 ? 'danger' : cleanupTotal > 7 ? 'warn' : ''}`}>
-              {cleanupTotal > 12 ? 'багацько тасків' : `${cleanupTotal} тасків`}
-            </div>
-          </DialogHeader>
-          <div className="overdue-cleanup-board">
-            {cleanupColumns.map((column) => {
-              const overloaded = column.items.length > 5;
-              return (
-                <div
-                  key={column.id}
-                  className={`overdue-cleanup-column ${column.accent} ${overloaded ? 'overloaded' : ''}`}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => handleCleanupDrop(column, e)}
-                >
-                  <div className="overdue-cleanup-column-head">
-                    <div>
-                      <p>{column.label}</p>
-                      <span>{formatDateUkrainian(column.date)}</span>
-                    </div>
-                    <strong>{overloaded ? 'багацько тасків' : column.items.length}</strong>
-                  </div>
-                  <div className="overdue-cleanup-list">
-                    {column.items.length === 0 ? (
-                      <div className="overdue-cleanup-empty">чисто</div>
-                    ) : column.items.map(task => {
-                      const IconComponent = getIconComponent(task.icon);
-                      return (
-                        <div
-                          key={getTaskDragKey(task)}
-                          className="overdue-cleanup-card"
-                          draggable
-                          onDragStart={(e) => { setCleanupDragTask(task); e.dataTransfer.setData('text/plain', getTaskDragKey(task)); }}
-                          onDragEnd={() => setCleanupDragTask(null)}
-                        >
-                          <div className="overdue-cleanup-card-main">
-                            <div className={`task-icon ${task.color || 'manager'}`}><IconComponent /></div>
-                            <button type="button" onClick={() => openCleanupTask(task)}>{task.task_name}</button>
-                          </div>
-                          {task.event_title && <p className="overdue-cleanup-card-event">{task.event_title}</p>}
-                          <div className="overdue-cleanup-actions">
-                            <button type="button" onClick={() => handleCleanupReschedule(task, todayStr)}><ArrowRight className="w-3.5 h-3.5" />сьогодні</button>
-                            <button type="button" onClick={() => handleCleanupReschedule(task, shiftDateLocal(todayStr, 1))}><ArrowRight className="w-3.5 h-3.5" />завтра</button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <OverdueCleanupBoard />
         </DialogContent>
       </Dialog>
 
