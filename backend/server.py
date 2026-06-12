@@ -472,6 +472,7 @@ DEFAULT_ALTEGIO_SERVICE_MAPPINGS = {
     "kadli_short": 12999207,
     "kadli_medium": 13170797,
     "acro_yoga": 13294345,
+    "body_art": 12743239,
 }
 
 class ReminderType(BaseModel):
@@ -2087,6 +2088,8 @@ def _altegio_event_type_key(title: str, spots: Optional[int] = None) -> Optional
         return "kadli_medium" if (spots or 0) > 10 else "kadli_short"
     if "акро" in title_norm or "acro" in title_norm:
         return "acro_yoga"
+    if "бодіарт" in title_norm or "bodyart" in title_norm:
+        return "body_art"
     return None
 
 
@@ -5379,12 +5382,15 @@ async def sync_single_event_from_altegio(event_id: str):
             await db.events.update_one(
                 {"id": event_id},
                 {"$set": {
-                    "altegio_last_error": f"Altegio activity {altegio_id} not found",
+                    "altegio_id": None,
+                    "altegio_activity_id": None,
+                    "altegio_last_error": f"Altegio activity {altegio_id} not found; recreating",
                     "altegio_last_status_code": 404,
                     "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
                 }}
             )
-            raise HTTPException(status_code=404, detail="подію не знайдено в Altegio за збереженим id")
+            pushed = await push_single_event_to_altegio(event_id)
+            return {**pushed, "message": "Створено заново в Altegio"}
         else:
             # Try to find by title
             for altegio_event in altegio_events:
@@ -5436,12 +5442,13 @@ async def sync_single_event_from_altegio(event_id: str):
             await db.events.update_one(
                 {"id": event_id},
                 {"$set": {
-                    "altegio_last_error": "No matching Altegio activity by title/date",
+                    "altegio_last_error": "No matching Altegio activity by title/date; creating",
                     "altegio_last_status_code": 404,
                     "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
                 }}
             )
-            raise HTTPException(status_code=404, detail="не знайдено відповідної події в Altegio за назвою і датою")
+            pushed = await push_single_event_to_altegio(event_id)
+            return {**pushed, "message": "Створено в Altegio"}
     except HTTPException:
         raise
     except Exception as e:

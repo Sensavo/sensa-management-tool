@@ -376,6 +376,7 @@ const getApiErrorMessage = (error, fallback = "помилка") => {
   if (typeof detail === "string" && detail.trim()) return detail;
   if (detail?.message) return detail.message;
   if (detail?.body) return String(detail.body);
+  if (error?.message) return error.message;
   return fallback;
 };
 
@@ -384,6 +385,14 @@ const getAltegioActivityUrl = async (eventId) => {
   const url = response.data?.activity_url;
   if (!url) throw new Error("Event is not linked to an Altegio activity");
   return url;
+};
+
+const ensureAltegioSyncResult = (response) => {
+  const data = response?.data || {};
+  if (!data.altegio_id) {
+    throw new Error(data.message || "Altegio не повернув id події");
+  }
+  return data;
 };
 
 const copyTextToClipboard = async (text) => {
@@ -2182,7 +2191,7 @@ const EventDetailPage = () => {
 
   const handleSyncAltegio = async () => {
     setSyncing(true);
-    try { await api.syncEventFromAltegio(eventId); toast.success("синхронізовано"); loadEvent(); refreshEvents(); }
+    try { ensureAltegioSyncResult(await api.syncEventFromAltegio(eventId)); toast.success("синхронізовано"); loadEvent(); refreshEvents(); }
     catch (error) { toast.error(getApiErrorMessage(error, "помилка синхронізації")); }
     finally { setSyncing(false); }
   };
@@ -5349,7 +5358,7 @@ const DesktopDashboard = () => {
     if (!selectedEvent) return;
     setSyncingEvent(true);
     try {
-      await api.syncEventFromAltegio(selectedEvent.id);
+      ensureAltegioSyncResult(await api.syncEventFromAltegio(selectedEvent.id));
       toast.success("синхронізовано");
       const r = await axios.get(`${API}/events/${selectedEvent.id}`);
       setSelectedEvent(r.data);
@@ -8027,7 +8036,7 @@ const EventsDesktopExpanded = () => {
   const handleSyncAltegio = async () => {
     if (!selectedEvent) return;
     setSyncingEvent(true);
-    try { await api.syncEventFromAltegio(selectedEvent.id); toast.success("синхронізовано"); refreshEvents(); }
+    try { ensureAltegioSyncResult(await api.syncEventFromAltegio(selectedEvent.id)); toast.success("синхронізовано"); refreshEvents(); }
     catch (error) { toast.error(getApiErrorMessage(error, "помилка синхронізації")); }
     finally { setSyncingEvent(false); }
   };
