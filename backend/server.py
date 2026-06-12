@@ -26,14 +26,17 @@ from zoneinfo import ZoneInfo
 import html
 
 try:
-    from telegram import ReplyKeyboardMarkup, Update
-    from telegram.ext import Application, CommandHandler, ContextTypes
+    from telegram import BotCommand, ReplyKeyboardMarkup, Update
+    from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 except Exception:  # pragma: no cover - keeps the API alive when TG deps are absent
+    BotCommand = None
     ReplyKeyboardMarkup = None
     Update = None
     Application = None
     CommandHandler = None
     ContextTypes = None
+    MessageHandler = None
+    filters = None
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -195,7 +198,7 @@ async def altegio_auto_sync():
 
 
 def _telegram_enabled() -> bool:
-    return bool(TELEGRAM_BOT_TOKEN and Application and CommandHandler)
+    return bool(TELEGRAM_BOT_TOKEN and Application and CommandHandler and MessageHandler and filters)
 
 
 async def start_telegram_bot():
@@ -219,14 +222,17 @@ async def start_telegram_bot():
     try:
         telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
         telegram_app.add_handler(CommandHandler("start", telegram_start_command))
+        telegram_app.add_handler(CommandHandler("help", telegram_help_command))
         telegram_app.add_handler(CommandHandler("link", telegram_link_command))
         telegram_app.add_handler(CommandHandler("today", telegram_today_command))
         telegram_app.add_handler(CommandHandler("overdue", telegram_overdue_command))
         telegram_app.add_handler(CommandHandler("mute", telegram_mute_command))
         telegram_app.add_handler(CommandHandler("unmute", telegram_unmute_command))
         telegram_app.add_handler(CommandHandler("unlink", telegram_unlink_command))
+        telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, telegram_text_command))
 
         await telegram_app.initialize()
+        await _telegram_set_bot_commands()
         await telegram_app.start()
         if telegram_app.updater:
             await telegram_app.updater.start_polling(drop_pending_updates=True)
@@ -1044,7 +1050,7 @@ def _telegram_runtime_status() -> dict:
     now = datetime.now(_telegram_tz())
     return {
         "enabled": bool(TELEGRAM_BOT_TOKEN),
-        "dependency_loaded": bool(Application and CommandHandler),
+        "dependency_loaded": bool(Application and CommandHandler and MessageHandler and filters),
         "polling": bool(telegram_app),
         "timezone": getattr(_telegram_tz(), "key", TELEGRAM_TIMEZONE),
         "now": now.isoformat(),
@@ -1591,34 +1597,71 @@ async def telegram_overdue_cleanup_loop():
             await asyncio.sleep(60)
 
 
+TELEGRAM_TEXT_ACTIONS = {
+    "сьогодні": "today",
+    "today": "today",
+    "протерміновано": "overdue",
+    "протерм": "overdue",
+    "overdue": "overdue",
+    "вимкнути": "mute",
+    "тиша": "mute",
+    "mute": "mute",
+    "увімкнути": "unmute",
+    "unmute": "unmute",
+    "відвʼязати": "unlink",
+    "відв'язати": "unlink",
+    "unlink": "unlink",
+    "help": "help",
+    "допомога": "help",
+}
+
+
 def _telegram_main_keyboard():
     if not ReplyKeyboardMarkup:
         return None
     return ReplyKeyboardMarkup(
         [
-            ["/today", "/overdue"],
-            ["/mute", "/unmute", "/unlink"],
+            ["сьогодні", "протерміновано"],
+            ["вимкнути", "увімкнути", "відвʼязати"],
         ],
         resize_keyboard=True,
         is_persistent=True,
-        input_field_placeholder="/link код",
+        input_field_placeholder="код або кнопка",
     )
+
+
+async def _telegram_set_bot_commands():
+    if not telegram_app or not BotCommand:
+        return
+    try:
+        await telegram_app.bot.set_my_commands([
+            BotCommand("today", "сьогоднішні таски"),
+            BotCommand("overdue", "протерміновані таски"),
+            BotCommand("mute", "вимкнути сповіщення"),
+            BotCommand("unmute", "увімкнути сповіщення"),
+            BotCommand("unlink", "відвʼязати чат"),
+            BotCommand("help", "підказка"),
+        ])
+    except Exception as e:
+        logging.error(f"Telegram bot command menu setup failed: {e}")
 
 
 async def telegram_start_command(update, context):
     await update.message.reply_text(
-        "привіт. кнопки нижче. для привʼязки: /link код",
+        "привіт. натискай кнопки або надішли 6-значний код.",
         reply_markup=_telegram_main_keyboard(),
     )
 
 
-async def telegram_link_command(update, context):
-    args = context.args or []
-    if not args:
-        await update.message.reply_text("надішли код так: /link 123456", reply_markup=_telegram_main_keyboard())
-        return
+async def telegram_help_command(update, context):
+    await update.message.reply_text(
+        "можу показати: сьогодні, протерміновано. для привʼязки надішли 6-значний код з poriadok.",
+        reply_markup=_telegram_main_keyboard(),
+    )
 
-    code = args[0].strip()
+
+async def _telegram_link_chat(update, code: str):
+    code = (code or "").strip()
     now = datetime.now(timezone.utc)
     doc = await db.user_settings.find_one({
         "link_code": code,
@@ -1646,6 +1689,35 @@ async def telegram_link_command(update, context):
     )
     linked_user = normalize_assignee(doc["user_id"])
     await update.message.reply_text(f"привʼязано до {TEAM_PERSON_LABELS.get(linked_user, linked_user)}", reply_markup=_telegram_main_keyboard())
+
+
+async def telegram_link_command(update, context):
+    args = context.args or []
+    if not args:
+        await update.message.reply_text("надішли 6-значний код або /link 123456", reply_markup=_telegram_main_keyboard())
+        return
+    await _telegram_link_chat(update, args[0])
+
+
+async def telegram_text_command(update, context):
+    text = (update.message.text or "").strip()
+    action = TELEGRAM_TEXT_ACTIONS.get(text.lower())
+    if text.isdigit() and len(text) == 6:
+        await _telegram_link_chat(update, text)
+    elif action == "today":
+        await telegram_today_command(update, context)
+    elif action == "overdue":
+        await telegram_overdue_command(update, context)
+    elif action == "mute":
+        await telegram_mute_command(update, context)
+    elif action == "unmute":
+        await telegram_unmute_command(update, context)
+    elif action == "unlink":
+        await telegram_unlink_command(update, context)
+    elif action == "help":
+        await telegram_help_command(update, context)
+    else:
+        await telegram_help_command(update, context)
 
 
 async def telegram_today_command(update, context):

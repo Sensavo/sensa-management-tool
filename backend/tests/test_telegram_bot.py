@@ -87,3 +87,25 @@ def test_telegram_message_preview_marks_unlinked_as_not_would_send(monkeypatch):
     assert preview["previews"][0]["user_id"] == "smm"
     assert preview["previews"][0]["would_send"] is False
     assert preview["previews"][0]["message"] == "доброго ранку"
+
+
+def test_telegram_keyboard_uses_human_labels_when_dependency_is_loaded():
+    keyboard = server._telegram_main_keyboard()
+    if keyboard is None:
+        assert server.ReplyKeyboardMarkup is None
+        return
+
+    labels = [button for row in keyboard.keyboard for button in row]
+
+    assert "сьогодні" in labels
+    assert "протерміновано" in labels
+    assert "відвʼязати" in labels
+    assert "/today" not in labels
+
+
+def test_telegram_text_actions_cover_main_buttons():
+    assert server.TELEGRAM_TEXT_ACTIONS["сьогодні"] == "today"
+    assert server.TELEGRAM_TEXT_ACTIONS["протерміновано"] == "overdue"
+    assert server.TELEGRAM_TEXT_ACTIONS["вимкнути"] == "mute"
+    assert server.TELEGRAM_TEXT_ACTIONS["увімкнути"] == "unmute"
+    assert server.TELEGRAM_TEXT_ACTIONS["відвʼязати"] == "unlink"
