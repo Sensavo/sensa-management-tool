@@ -4907,16 +4907,18 @@ const DesktopDashboard = () => {
                   return (
                     <div
                       key={getTaskDragKey(task)}
-                      className="overdue-cleanup-card"
+                      className="overdue-cleanup-card-shell"
                       draggable
                       onDragStart={(e) => { setCleanupDragTask(task); e.dataTransfer.setData('text/plain', getTaskDragKey(task)); }}
                       onDragEnd={() => setCleanupDragTask(null)}
                     >
-                      <div className="overdue-cleanup-card-main">
-                        <div className={`task-icon ${task.color || 'manager'}`}><IconComponent /></div>
-                        <button type="button" onClick={() => openCleanupTask(task)}>{task.task_name}</button>
+                      <div className="overdue-cleanup-card">
+                        <div className="overdue-cleanup-card-main">
+                          <div className={`task-icon ${task.color || 'manager'}`}><IconComponent /></div>
+                          <button type="button" onClick={() => openCleanupTask(task)}>{task.task_name}</button>
+                        </div>
+                        {task.event_title && <p className="overdue-cleanup-card-event">{task.event_title}</p>}
                       </div>
-                      {task.event_title && <p className="overdue-cleanup-card-event">{task.event_title}</p>}
                       <div className="overdue-cleanup-actions">
                         <button type="button" onClick={() => handleCleanupReschedule(task, todayStr)}><ArrowRight className="w-3.5 h-3.5" />сьогодні</button>
                         <button type="button" onClick={() => handleCleanupReschedule(task, shiftDateLocal(todayStr, 1))}><ArrowRight className="w-3.5 h-3.5" />завтра</button>

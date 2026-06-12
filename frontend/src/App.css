@@ -923,15 +923,17 @@
   color: #6B6B6B;
   font-size: 13px;
 }
+.overdue-cleanup-card-shell {
+  cursor: grab;
+}
+.overdue-cleanup-card-shell:active { cursor: grabbing; }
 .overdue-cleanup-card {
   border-radius: 14px;
-  background: #F6F5F1;
-  border: 1px solid rgba(26, 23, 23, 0.07);
+  background: #FFFFFF;
+  border: 1px solid rgba(26, 23, 23, 0.05);
   padding: 10px;
-  cursor: grab;
-  box-shadow: 0 1px 0 rgba(26, 23, 23, 0.04);
+  box-shadow: 0 1px 0 rgba(26, 23, 23, 0.035);
 }
-.overdue-cleanup-card:active { cursor: grabbing; }
 .overdue-cleanup-card-main {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
@@ -961,7 +963,8 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 6px;
+  padding: 0 2px;
 }
 .overdue-cleanup-actions button {
   height: 30px !important;
@@ -1031,19 +1034,21 @@
 .overdue-cleanup-page { width: 100%; }
 .overdue-cleanup-actions { grid-template-columns: 1fr 1fr 32px; }
 .overdue-cleanup-actions button {
-  background: transparent;
-  border: 1px solid rgba(26, 23, 23, 0.08);
-  color: #6B6B6B;
+  background: rgba(246, 245, 241, 0.34);
+  border: 1px solid rgba(26, 23, 23, 0.045);
+  color: rgba(26, 23, 23, 0.42);
 }
 .overdue-cleanup-actions button:hover {
-  background: rgba(232, 229, 220, 0.5);
-  color: #1A1717;
+  background: rgba(246, 245, 241, 0.62);
+  border-color: rgba(26, 23, 23, 0.08);
+  color: rgba(26, 23, 23, 0.66);
 }
 .overdue-cleanup-actions button.danger {
   padding: 0;
-  color: rgba(255, 131, 112, 0.82);
+  color: rgba(255, 131, 112, 0.48);
 }
 .overdue-cleanup-actions button.danger:hover {
-  background: rgba(255, 131, 112, 0.1);
-  color: #FF8370;
+  background: rgba(255, 131, 112, 0.08);
+  border-color: rgba(255, 131, 112, 0.12);
+  color: rgba(255, 131, 112, 0.78);
 }
