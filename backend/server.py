@@ -1475,36 +1475,69 @@ async def _send_morning_summaries() -> dict:
     return {"sent": sent, "skipped": skipped}
 
 
+async def _build_overdue_cleanup_message(user_id: str) -> Optional[str]:
+    user_id = normalize_assignee(user_id, "")
+    today = datetime.now(_telegram_tz()).date()
+    threshold = today - timedelta(days=2)
+    overdue_tasks = await _collect_user_tasks(user_id, overdue=True)
+    stale_tasks = []
+    for task in overdue_tasks:
+        try:
+            task_date = datetime.strptime((task.get("date") or "")[:10], "%Y-%m-%d").date()
+        except Exception:
+            continue
+        if task_date < threshold:
+            stale_tasks.append(task)
+
+    if not stale_tasks:
+        return None
+
+    name = TEAM_PERSON_LABELS.get(user_id, TEAM_USER_LABELS.get(user_id, user_id))
+    first = stale_tasks[0]
+    extra = f" (+{len(stale_tasks) - 1})" if len(stale_tasks) > 1 else ""
+    return "\n".join([
+        f"{_html_escape(name)}, бачу протерміновані таски, які зависли більше ніж на 2 дні.",
+        f"найстаріший — <b>{_html_escape(first.get('title'))}</b> — {_format_task_date(first.get('date', ''))}{extra}.",
+        "давай допоможу навести порядок в тасках.",
+        "",
+        _poriadok_cleanup_link(),
+    ])
+
+
+async def _telegram_message_preview(kind: str, user_id: Optional[str] = None) -> dict:
+    users = [normalize_assignee(user_id, "")] if user_id else list(TEAM_USERS)
+    previews = []
+    for uid in users:
+        if uid not in TEAM_USERS:
+            continue
+        status = await _telegram_status_payload(uid)
+        if kind == "morning":
+            message = await _build_morning_summary(uid)
+        elif kind == "today":
+            message = await _build_today_tasks_message(uid)
+        elif kind == "overdue_cleanup":
+            message = await _build_overdue_cleanup_message(uid)
+        else:
+            raise HTTPException(status_code=400, detail="Unknown Telegram preview kind")
+        previews.append({
+            "user_id": uid,
+            "person": TEAM_PERSON_LABELS.get(uid, uid),
+            "linked": status["linked"],
+            "muted": status["muted"],
+            "would_send": bool(message and status["linked"] and not status["muted"]),
+            "message": message,
+        })
+    return {"kind": kind, "count": len(previews), "previews": previews}
+
+
 async def _send_overdue_cleanup_pings() -> dict:
     sent = 0
     skipped = 0
-    today = datetime.now(_telegram_tz()).date()
-    threshold = today - timedelta(days=2)
     for user_id in TEAM_USERS:
-        overdue_tasks = await _collect_user_tasks(user_id, overdue=True)
-        stale_tasks = []
-        for task in overdue_tasks:
-            try:
-                task_date = datetime.strptime((task.get("date") or "")[:10], "%Y-%m-%d").date()
-            except Exception:
-                continue
-            if task_date < threshold:
-                stale_tasks.append(task)
-
-        if not stale_tasks:
+        text = await _build_overdue_cleanup_message(user_id)
+        if not text:
             skipped += 1
             continue
-
-        name = TEAM_PERSON_LABELS.get(user_id, TEAM_USER_LABELS.get(user_id, user_id))
-        first = stale_tasks[0]
-        extra = f" (+{len(stale_tasks) - 1})" if len(stale_tasks) > 1 else ""
-        text = "\n".join([
-            f"{_html_escape(name)}, бачу протерміновані таски, які зависли більше ніж на 2 дні.",
-            f"найстаріший — <b>{_html_escape(first.get('title'))}</b> — {_format_task_date(first.get('date', ''))}{extra}.",
-            "давай допоможу навести порядок в тасках.",
-            "",
-            _poriadok_cleanup_link(),
-        ])
         if await send_telegram(user_id, text):
             sent += 1
         else:
@@ -1730,6 +1763,11 @@ async def unlink_telegram_user(user_id: str):
 @api_router.get("/admin/telegram/status")
 async def admin_telegram_status():
     return _telegram_runtime_status()
+
+
+@api_router.get("/admin/telegram/preview/{kind}")
+async def preview_telegram_message(kind: str, user_id: Optional[str] = None):
+    return await _telegram_message_preview(kind, user_id)
 
 
 @api_router.post("/admin/telegram/test-summary")
