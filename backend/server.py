@@ -1520,6 +1520,18 @@ async def _send_morning_summaries() -> dict:
     return {"sent": sent, "skipped": skipped}
 
 
+
+async def _build_overdue_tasks_message(user_id: str) -> str:
+    user_id = normalize_assignee(user_id, "")
+    tasks = await _collect_user_tasks(user_id, overdue=True)
+    name = TEAM_PERSON_LABELS.get(user_id, TEAM_USER_LABELS.get(user_id, user_id))
+    return "\n".join([
+        f"протерміновано для {_html_escape(name)}:",
+        _format_task_list(tasks, "протермінованих тасків немає"),
+        "",
+        _poriadok_link(),
+    ])
+
 async def _build_overdue_cleanup_message(user_id: str) -> Optional[str]:
     user_id = normalize_assignee(user_id, "")
     today = datetime.now(_telegram_tz()).date()
@@ -1561,6 +1573,8 @@ async def _telegram_message_preview(kind: str, user_id: Optional[str] = None) ->
             message = await _build_morning_summary(uid)
         elif kind == "today":
             message = await _build_today_tasks_message(uid)
+        elif kind == "overdue":
+            message = await _build_overdue_tasks_message(uid)
         elif kind == "overdue_cleanup":
             message = await _build_overdue_cleanup_message(uid)
         else:
@@ -4253,38 +4267,46 @@ async def get_all_task_types():
 async def get_task_archive():
     events = await db.events.find({}, {"_id": 0}).to_list(1000)
     settings = await get_settings()
-    
+
+    def archive_timestamp(value, fallback: Optional[str] = None) -> str:
+        value = value or fallback or ""
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return str(value)
+
     archive = []
     reminder_map = {rt.id: rt for rt in settings.reminder_types}
-    
+
     for event in events:
-        completed_tasks = event.get("completed_tasks", {})
+        completed_tasks = event.get("completed_tasks") or {}
         for reminder_id, completed_at in completed_tasks.items():
             reminder_info = reminder_map.get(reminder_id)
             if reminder_info:
                 archive.append({
-                    "event_id": event["id"],
-                    "event_title": event["title"],
-                    "event_date": event["date"],
+                    "event_id": event.get("id"),
+                    "event_title": event.get("title") or "подія",
+                    "event_date": event.get("date"),
                     "reminder_id": reminder_id,
                     "reminder_name": reminder_info.name,
-                    "completed_at": completed_at
+                    "completed_at": archive_timestamp(completed_at, event.get("date")),
                 })
-    
+
     # Add standalone tasks
     standalone = await db.standalone_tasks.find({"completed": True}, {"_id": 0}).to_list(1000)
     for task in standalone:
         archive.append({
-            "event_id": task["id"],
-            "event_title": task["title"],
-            "event_date": task["date"],
+            "event_id": task.get("id"),
+            "event_title": task.get("title") or "завдання",
+            "event_date": task.get("date"),
             "reminder_id": "standalone",
             "reminder_name": "завдання",
-            "completed_at": task.get("completed_at", task["created_at"]),
-            "is_standalone": True
+            "completed_at": archive_timestamp(task.get("completed_at"), task.get("created_at") or task.get("date")),
+            "is_standalone": True,
+            "icon": task.get("icon"),
+            "assignee": normalize_assignee(task.get("assignee"), "manager"),
         })
-    
-    archive.sort(key=lambda x: x["completed_at"], reverse=True)
+
+    archive.sort(key=lambda x: archive_timestamp(x.get("completed_at"), x.get("event_date")), reverse=True)
     return archive
 
 # ==================== SETTINGS API ====================
