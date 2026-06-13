@@ -350,6 +350,7 @@ const api = {
   exportEventToCalendar: (eventId) => axios.post(`${API}/calendar/events/${eventId}/export`),
   getTelegramStatus: (userId) => axios.get(`${API}/users/${userId}/telegram/status`),
   createTelegramLinkCode: (userId) => axios.post(`${API}/users/${userId}/telegram/link-code`),
+  getTelegramPreview: (kind, userId) => axios.get(`${API}/admin/telegram/preview/${kind}`, { params: { user_id: userId } }),
   muteTelegram: (userId) => axios.post(`${API}/users/${userId}/telegram/mute`),
   unmuteTelegram: (userId) => axios.post(`${API}/users/${userId}/telegram/unmute`),
   unlinkTelegram: (userId) => axios.post(`${API}/users/${userId}/telegram/unlink`),
@@ -3203,6 +3204,9 @@ const TelegramSettingsSection = ({ compact = false }) => {
   const [linkData, setLinkData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(0);
+  const [previewKind, setPreviewKind] = useState("today");
+  const [previewData, setPreviewData] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const loadStatus = useCallback(async (userId = currentUser) => {
     if (!userId) {
@@ -3241,6 +3245,7 @@ const TelegramSettingsSection = ({ compact = false }) => {
   const handleUserChange = (userId) => {
     setCurrentUser(userId);
     setLinkData(null);
+    setPreviewData(null);
     try {
       if (userId) localStorage.setItem(ACTOR_USER_STORAGE_KEY, userId);
       else localStorage.removeItem(ACTOR_USER_STORAGE_KEY);
@@ -3278,15 +3283,33 @@ const TelegramSettingsSection = ({ compact = false }) => {
       const res = await api.unlinkTelegram(currentUser);
       setStatus(res.data);
       setLinkData(null);
+      setPreviewData(null);
       toast.success("Telegram відвʼязано");
     } catch {
       toast.error("не вдалося відвʼязати Telegram");
     }
   };
 
+  const handleLoadPreview = async (kind = previewKind) => {
+    if (!currentUser) {
+      toast.info("спершу обери себе");
+      return;
+    }
+    setPreviewKind(kind);
+    setPreviewLoading(true);
+    try {
+      const res = await api.getTelegramPreview(kind, currentUser);
+      setPreviewData(res.data);
+    } catch {
+      toast.error("не вдалося зібрати preview");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   const botUsername = linkData?.bot_username || status?.bot_username;
   const botUrl = botUsername ? `https://t.me/${botUsername.replace("@", "")}` : "";
-  const codeText = linkData?.code ? `/link ${linkData.code}` : "";
+  const codeText = linkData?.code || "";
   const statusText = !currentUser
     ? "обери себе"
     : loading
@@ -3294,6 +3317,8 @@ const TelegramSettingsSection = ({ compact = false }) => {
       : status?.linked
         ? `привʼязано${status.telegram_username ? ` як @${status.telegram_username}` : ""}${status.muted ? " · mute" : ""}`
         : "не привʼязано";
+  const preview = previewData?.previews?.[0];
+  const previewMessage = preview?.message ? preview.message.replace(/<[^>]+>/g, "") : "";
 
   return (
     <div className={compact ? "space-y-2" : "section-card mt-4"}>
@@ -3338,11 +3363,56 @@ const TelegramSettingsSection = ({ compact = false }) => {
             />
           )}
           <div className="min-w-0">
-            <p className="text-xs text-secondary mb-1">надішли боту команду</p>
-            <p className="font-mono text-sm font-semibold truncate">{codeText}</p>
+            <p className="text-xs text-secondary mb-1">надішли боту код</p>
+            <p className="font-mono text-sm font-semibold tracking-[0.18em] truncate">{codeText}</p>
             <p className="text-xs text-secondary mt-1">{secondsLeft > 0 ? `діє ще ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}` : "код протерміновано"}</p>
             {botUrl && <a className="text-xs underline mt-1 inline-block" href={botUrl} target="_blank" rel="noreferrer">відкрити бота</a>}
           </div>
+        </div>
+      )}
+
+      {!compact && (
+        <div className="rounded-xl bg-black/5 p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-medium">перегляд без відправки</p>
+            <button
+              className="btn-subtle h-7 !px-2 text-[11px]"
+              onClick={() => handleLoadPreview(previewKind)}
+              disabled={!currentUser || previewLoading}
+              title="оновити перегляд"
+              aria-label="оновити перегляд"
+            >
+              <RefreshCw className={`w-3 h-3 ${previewLoading ? "animate-spin" : ""}`} />
+            </button>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {[
+              ["today", "сьогодні"],
+              ["morning", "09:00"],
+              ["overdue-cleanup", "14:00"],
+            ].map(([kind, label]) => (
+              <button
+                key={kind}
+                className={`${previewKind === kind ? "btn-dark" : "btn-subtle"} h-8 !px-2 text-[11px] whitespace-nowrap`}
+                onClick={() => handleLoadPreview(kind)}
+                disabled={!currentUser || previewLoading}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {preview && (
+            <div className="space-y-2">
+              <p className="text-xs text-secondary">
+                {preview.would_send ? "надішле" : "не надішле"}
+                {preview.muted ? " · mute" : ""}
+                {!preview.linked ? " · не привʼязано" : ""}
+              </p>
+              <div className="max-h-44 overflow-auto rounded-lg bg-[#F7F5EF] border border-black/10 p-2 text-[11px] leading-relaxed whitespace-pre-wrap">
+                {previewMessage || "повідомлення немає"}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
