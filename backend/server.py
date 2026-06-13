@@ -1694,7 +1694,7 @@ async def _telegram_link_chat(update, code: str):
 async def telegram_link_command(update, context):
     args = context.args or []
     if not args:
-        await update.message.reply_text("надішли 6-значний код або /link 123456", reply_markup=_telegram_main_keyboard())
+        await update.message.reply_text("надішли 6-значний код з poriadok", reply_markup=_telegram_main_keyboard())
         return
     await _telegram_link_chat(update, args[0])
 
@@ -1723,7 +1723,7 @@ async def telegram_text_command(update, context):
 async def telegram_today_command(update, context):
     user = await _find_user_by_chat(update.effective_chat.id)
     if not user:
-        await update.message.reply_text("спершу привʼяжи акаунт через /link 123456", reply_markup=_telegram_main_keyboard())
+        await update.message.reply_text("спершу привʼяжи акаунт: надішли 6-значний код з poriadok", reply_markup=_telegram_main_keyboard())
         return
     await update.message.reply_html(await _build_today_tasks_message(user["user_id"]))
 
@@ -1731,7 +1731,7 @@ async def telegram_today_command(update, context):
 async def telegram_overdue_command(update, context):
     user = await _find_user_by_chat(update.effective_chat.id)
     if not user:
-        await update.message.reply_text("спершу привʼяжи акаунт через /link 123456", reply_markup=_telegram_main_keyboard())
+        await update.message.reply_text("спершу привʼяжи акаунт: надішли 6-значний код з poriadok", reply_markup=_telegram_main_keyboard())
         return
     tasks = await _collect_user_tasks(user["user_id"], overdue=True)
     await update.message.reply_html(f"протерміновано:\n{_format_task_list(tasks, 'протермінованих тасків немає')}\n\n{_poriadok_link()}")
@@ -1740,7 +1740,7 @@ async def telegram_overdue_command(update, context):
 async def telegram_mute_command(update, context):
     user = await _find_user_by_chat(update.effective_chat.id)
     if not user:
-        await update.message.reply_text("спершу привʼяжи акаунт через /link 123456", reply_markup=_telegram_main_keyboard())
+        await update.message.reply_text("спершу привʼяжи акаунт: надішли 6-значний код з poriadok", reply_markup=_telegram_main_keyboard())
         return
     await db.user_settings.update_one({"user_id": user["user_id"]}, {"$set": {"muted": True}})
     await update.message.reply_text("ок, сповіщення тимчасово вимкнено", reply_markup=_telegram_main_keyboard())
@@ -1749,7 +1749,7 @@ async def telegram_mute_command(update, context):
 async def telegram_unmute_command(update, context):
     user = await _find_user_by_chat(update.effective_chat.id)
     if not user:
-        await update.message.reply_text("спершу привʼяжи акаунт через /link 123456", reply_markup=_telegram_main_keyboard())
+        await update.message.reply_text("спершу привʼяжи акаунт: надішли 6-значний код з poriadok", reply_markup=_telegram_main_keyboard())
         return
     await db.user_settings.update_one({"user_id": user["user_id"]}, {"$set": {"muted": False}})
     await update.message.reply_text("ок, сповіщення знову увімкнено", reply_markup=_telegram_main_keyboard())
