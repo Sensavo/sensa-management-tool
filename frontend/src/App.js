@@ -1588,8 +1588,8 @@ const NewTaskPage = () => {
       toast.success("додано!");
       refreshStandaloneTasks();
       navigate(-1);
-    } catch {
-      toast.error("помилка");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -5618,7 +5618,7 @@ const DesktopDashboard = () => {
     if (!newTask.title.trim()) return;
     const assignee = newTask.assignee || (dialogColumnName === "SMM" ? "smm" : dialogColumnName === "Marketer" ? "marketer" : "manager");
     try { const r = await api.createStandaloneTask(getStandaloneTaskPayload(newTask, { type: "regular", assignee })); if (r.data?.id) pushUndo({ label: "створення таска", run: async () => { await api.deleteStandaloneTask(r.data.id); refreshStandaloneTasks(); } }); toast.success("додано!"); refreshStandaloneTasks(); setShowTaskDialog(false); setNewTask({ title: "", date: todayStr, icon: "coffee", color: "manager", event_id: "", assignee: "manager", teamwork: false, team_members: [] }); }
-    catch { toast.error("помилка"); }
+    catch (error) { toast.error(getApiErrorMessage(error)); }
   };
 
   const handleCreateSMMTask = async () => {
@@ -5634,7 +5634,7 @@ const DesktopDashboard = () => {
       setShowSMMTaskDialog(false);
       setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "manager", event_id: "", assignee: "smm", teamwork: false, team_members: [] });
     }
-    catch { toast.error("помилка"); }
+    catch (error) { toast.error(getApiErrorMessage(error)); }
   };
 
   const handleSaveStandaloneTask = async () => {
@@ -5662,7 +5662,7 @@ const DesktopDashboard = () => {
       }
       setShowEditStandaloneDialog(false);
       setEditingStandaloneTask(null);
-    } catch { toast.error("помилка"); }
+    } catch (error) { toast.error(getApiErrorMessage(error)); }
   };
 
   const handleRescheduleStandaloneTask = async (nextDate) => {

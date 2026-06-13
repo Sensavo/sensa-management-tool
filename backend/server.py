@@ -2088,7 +2088,7 @@ async def _sync_teamwork_task_to_google(task: dict, existing_google_id: Optional
         return None
     creds = await get_google_credentials()
     if not creds:
-        raise HTTPException(status_code=401, detail="Google Calendar not connected")
+        raise HTTPException(status_code=401, detail="Google Calendar не підключений")
     try:
         service = build('calendar', 'v3', credentials=creds)
         payload = _google_calendar_task_payload(task)
@@ -2101,7 +2101,7 @@ async def _sync_teamwork_task_to_google(task: dict, existing_google_id: Optional
         raise
     except Exception as e:
         logging.error(f"Failed to sync teamwork task to Google Calendar: {e}")
-        raise HTTPException(status_code=502, detail="Google Calendar task sync failed")
+        raise HTTPException(status_code=502, detail="не вдалося синхронізувати teamwork таск з Google Calendar")
 
 
 async def _delete_teamwork_task_from_google(task: Optional[dict]) -> None:
@@ -2110,13 +2110,13 @@ async def _delete_teamwork_task_from_google(task: Optional[dict]) -> None:
         return
     creds = await get_google_credentials()
     if not creds:
-        raise HTTPException(status_code=401, detail="Google Calendar not connected")
+        raise HTTPException(status_code=401, detail="Google Calendar не підключений")
     try:
         service = build('calendar', 'v3', credentials=creds)
         service.events().delete(calendarId='primary', eventId=google_id).execute()
     except Exception as e:
         logging.error(f"Failed to delete teamwork task from Google Calendar: {e}")
-        raise HTTPException(status_code=502, detail="Google Calendar task delete failed")
+        raise HTTPException(status_code=502, detail="не вдалося видалити teamwork таск з Google Calendar")
 
 
 def _altegio_event_title(altegio_event: dict) -> str:
@@ -3291,14 +3291,10 @@ async def create_standalone_task(task_data: StandaloneTaskCreate, request: Reque
         task_data.color = "blue"
     task = StandaloneTask(**task_data.model_dump())
     if task.teamwork:
-        try:
-            google_id = await _sync_teamwork_task_to_google(task.model_dump())
-            task.google_calendar_event_id = google_id
-            task.google_calendar_id = google_id
-            task.google_calendar_last_error = None
-        except HTTPException as e:
-            task.google_calendar_last_error = str(e.detail)
-            logging.error(f"Teamwork task {task.id} Google Calendar sync failed on create: {e.detail}")
+        google_id = await _sync_teamwork_task_to_google(task.model_dump())
+        task.google_calendar_event_id = google_id
+        task.google_calendar_id = google_id
+        task.google_calendar_last_error = None
     await db.standalone_tasks.insert_one(task.model_dump())
     actor = _actor_from_request(request)
     _notify_assignee(
@@ -3519,19 +3515,12 @@ async def update_standalone_task_full(task_id: str, task_data: StandaloneTaskCre
     updated_preview = {**existing, **update}
     existing_google_id = _google_calendar_task_id(existing)
     if update["teamwork"]:
-        try:
-            google_id = await _sync_teamwork_task_to_google(updated_preview, existing_google_id)
-            update["google_calendar_event_id"] = google_id
-            update["google_calendar_id"] = google_id
-            update["google_calendar_last_error"] = None
-        except HTTPException as e:
-            update["google_calendar_last_error"] = str(e.detail)
-            logging.error(f"Teamwork task {task_id} Google Calendar sync failed on update: {e.detail}")
+        google_id = await _sync_teamwork_task_to_google(updated_preview, existing_google_id)
+        update["google_calendar_event_id"] = google_id
+        update["google_calendar_id"] = google_id
+        update["google_calendar_last_error"] = None
     elif existing_google_id:
-        try:
-            await _delete_teamwork_task_from_google(existing)
-        except HTTPException as e:
-            logging.error(f"Teamwork task {task_id} Google Calendar delete failed on update: {e.detail}")
+        await _delete_teamwork_task_from_google(existing)
         update["google_calendar_event_id"] = None
         update["google_calendar_id"] = None
         update["google_calendar_last_error"] = None
@@ -4741,7 +4730,7 @@ async def export_event_to_google_calendar(event_id: str):
     """Export a single event to Google Calendar"""
     creds = await get_google_credentials()
     if not creds:
-        raise HTTPException(status_code=401, detail="Google Calendar not connected")
+        raise HTTPException(status_code=401, detail="Google Calendar не підключений")
     
     event = await db.events.find_one({"id": event_id}, {"_id": 0})
     if not event:
@@ -4825,7 +4814,7 @@ async def export_all_events_to_google_calendar():
     """Export all future events to Google Calendar"""
     creds = await get_google_credentials()
     if not creds:
-        raise HTTPException(status_code=401, detail="Google Calendar not connected")
+        raise HTTPException(status_code=401, detail="Google Calendar не підключений")
     
     today = datetime.now(timezone.utc).date()
     events = await db.events.find({}, {"_id": 0}).to_list(1000)
