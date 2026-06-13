@@ -36,11 +36,17 @@ def test_telegram_runtime_status_exposes_no_token_value(monkeypatch):
     monkeypatch.setattr(server, "TELEGRAM_BOT_TOKEN", "secret-token")
     monkeypatch.setattr(server, "TELEGRAM_BOT_USERNAME", "poriadok_bot")
     monkeypatch.setattr(server, "telegram_app", object())
+    monkeypatch.setattr(server, "telegram_bot_status", "polling")
+    monkeypatch.setattr(server, "telegram_bot_last_error", None)
+    monkeypatch.setattr(server, "telegram_bot_started_at", "2026-06-13T09:00:00+00:00")
 
     status = server._telegram_runtime_status()
 
     assert status["enabled"] is True
     assert status["polling"] is True
+    assert status["status"] == "polling"
+    assert status["last_error"] is None
+    assert status["started_at"] == "2026-06-13T09:00:00+00:00"
     assert status["bot_username"] == "poriadok_bot"
     assert "secret-token" not in repr(status)
     assert "next_morning_summary_at" in status
@@ -87,6 +93,24 @@ def test_telegram_message_preview_marks_unlinked_as_not_would_send(monkeypatch):
     assert preview["previews"][0]["user_id"] == "smm"
     assert preview["previews"][0]["would_send"] is False
     assert preview["previews"][0]["message"] == "доброго ранку"
+
+
+def test_telegram_message_preview_accepts_dashed_overdue_cleanup(monkeypatch):
+    async def status_payload(user_id):
+        return {"linked": True, "muted": False}
+
+    async def overdue_cleanup(user_id):
+        return f"cleanup for {user_id}"
+
+    monkeypatch.setattr(server, "_telegram_status_payload", status_payload)
+    monkeypatch.setattr(server, "_build_overdue_cleanup_message", overdue_cleanup)
+
+    preview = server.asyncio.run(server._telegram_message_preview("overdue-cleanup", "manager"))
+
+    assert preview["kind"] == "overdue_cleanup"
+    assert preview["count"] == 1
+    assert preview["previews"][0]["would_send"] is True
+    assert preview["previews"][0]["message"] == "cleanup for manager"
 
 
 def test_telegram_keyboard_uses_human_labels_when_dependency_is_loaded():

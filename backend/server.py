@@ -74,6 +74,9 @@ telegram_summary_task = None
 telegram_overdue_cleanup_task = None
 telegram_bot_lock_owner = None
 telegram_bot_lock_heartbeat_task = None
+telegram_bot_status = "not_started"
+telegram_bot_last_error = None
+telegram_bot_started_at = None
 TEAM_USERS = ("manager", "smm", "marketer")
 TEAM_USER_LABELS = {
     "manager": "менеджер",
@@ -204,15 +207,24 @@ def _telegram_enabled() -> bool:
 async def start_telegram_bot():
     """Start Telegram polling if the token is configured."""
     global telegram_app, telegram_bot_lock_owner, telegram_bot_lock_heartbeat_task
+    global telegram_bot_status, telegram_bot_last_error, telegram_bot_started_at
+    telegram_bot_status = "starting"
+    telegram_bot_last_error = None
+    telegram_bot_started_at = None
     if not TELEGRAM_BOT_TOKEN:
+        telegram_bot_status = "disabled_no_token"
         logging.info("Telegram bot disabled — TELEGRAM_BOT_TOKEN is not configured")
         return
     if not _telegram_enabled():
+        telegram_bot_status = "disabled_dependency_missing"
+        telegram_bot_last_error = "python-telegram-bot is not installed"
         logging.error("Telegram bot disabled — python-telegram-bot is not installed")
         return
 
     telegram_bot_lock_owner = await _acquire_job_lock("telegram_bot_polling", 2 * 60)
     if not telegram_bot_lock_owner:
+        telegram_bot_status = "skipped_lock_active"
+        telegram_bot_last_error = "another instance holds telegram_bot_polling lock"
         logging.info("Telegram bot polling skipped — another instance holds the lock")
         return
     telegram_bot_lock_heartbeat_task = asyncio.create_task(
@@ -236,14 +248,19 @@ async def start_telegram_bot():
         await telegram_app.start()
         if telegram_app.updater:
             await telegram_app.updater.start_polling(drop_pending_updates=True)
+        telegram_bot_status = "polling"
+        telegram_bot_started_at = datetime.now(timezone.utc).isoformat()
         logging.info("Telegram bot polling started")
     except Exception as e:
+        telegram_bot_status = "startup_failed"
+        telegram_bot_last_error = str(e)[:1000]
         logging.error(f"Telegram bot startup failed; continuing without polling: {e}")
-        await stop_telegram_bot()
+        await stop_telegram_bot(preserve_status=True)
 
 
-async def stop_telegram_bot():
+async def stop_telegram_bot(preserve_status: bool = False):
     global telegram_app, telegram_bot_lock_owner, telegram_bot_lock_heartbeat_task
+    global telegram_bot_status, telegram_bot_started_at
     try:
         if telegram_app and telegram_app.updater:
             await telegram_app.updater.stop()
@@ -265,6 +282,9 @@ async def stop_telegram_bot():
         if telegram_bot_lock_owner:
             await _release_job_lock("telegram_bot_polling", telegram_bot_lock_owner)
         telegram_bot_lock_owner = None
+        if not preserve_status:
+            telegram_bot_status = "stopped"
+            telegram_bot_started_at = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -1051,7 +1071,11 @@ def _telegram_runtime_status() -> dict:
     return {
         "enabled": bool(TELEGRAM_BOT_TOKEN),
         "dependency_loaded": bool(Application and CommandHandler and MessageHandler and filters),
-        "polling": bool(telegram_app),
+        "polling": telegram_bot_status == "polling" and bool(telegram_app),
+        "status": telegram_bot_status,
+        "last_error": telegram_bot_last_error,
+        "started_at": telegram_bot_started_at,
+        "lock_owner_active": bool(telegram_bot_lock_owner),
         "timezone": getattr(_telegram_tz(), "key", TELEGRAM_TIMEZONE),
         "now": now.isoformat(),
         "next_morning_summary_at": _next_telegram_run_at(9, 0, now).isoformat(),
@@ -1511,6 +1535,7 @@ async def _build_overdue_cleanup_message(user_id: str) -> Optional[str]:
 
 
 async def _telegram_message_preview(kind: str, user_id: Optional[str] = None) -> dict:
+    kind = (kind or "").strip().lower().replace("-", "_")
     users = [normalize_assignee(user_id, "")] if user_id else list(TEAM_USERS)
     previews = []
     for uid in users:
