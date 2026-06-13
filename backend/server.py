@@ -74,6 +74,7 @@ telegram_summary_task = None
 telegram_overdue_cleanup_task = None
 telegram_bot_lock_owner = None
 telegram_bot_lock_heartbeat_task = None
+telegram_bot_start_task = None
 telegram_bot_status = "not_started"
 telegram_bot_last_error = None
 telegram_bot_started_at = None
@@ -221,12 +222,15 @@ async def start_telegram_bot():
         logging.error("Telegram bot disabled — python-telegram-bot is not installed")
         return
 
-    telegram_bot_lock_owner = await _acquire_job_lock("telegram_bot_polling", 2 * 60)
-    if not telegram_bot_lock_owner:
-        telegram_bot_status = "skipped_lock_active"
+    while not telegram_bot_lock_owner:
+        telegram_bot_lock_owner = await _acquire_job_lock("telegram_bot_polling", 2 * 60)
+        if telegram_bot_lock_owner:
+            break
+        telegram_bot_status = "waiting_for_lock"
         telegram_bot_last_error = "another instance holds telegram_bot_polling lock"
-        logging.info("Telegram bot polling skipped — another instance holds the lock")
-        return
+        logging.info("Telegram bot polling waiting for lock")
+        await asyncio.sleep(15)
+
     telegram_bot_lock_heartbeat_task = asyncio.create_task(
         _heartbeat_job_lock("telegram_bot_polling", telegram_bot_lock_owner, 2 * 60, 60)
     )
@@ -256,6 +260,9 @@ async def start_telegram_bot():
         telegram_bot_last_error = str(e)[:1000]
         logging.error(f"Telegram bot startup failed; continuing without polling: {e}")
         await stop_telegram_bot(preserve_status=True)
+    except asyncio.CancelledError:
+        await stop_telegram_bot()
+        raise
 
 
 async def stop_telegram_bot(preserve_status: bool = False):
@@ -289,7 +296,7 @@ async def stop_telegram_bot(preserve_status: bool = False):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
-    global altegio_sync_task, telegram_summary_task, telegram_overdue_cleanup_task
+    global altegio_sync_task, telegram_summary_task, telegram_overdue_cleanup_task, telegram_bot_start_task
     # Load any task-definition overrides from DB into in-memory cache
     try:
         await _refresh_task_overrides_cache()
@@ -412,7 +419,7 @@ async def lifespan(app: FastAPI):
     
     asyncio.create_task(auto_generate_daily())
 
-    await start_telegram_bot()
+    telegram_bot_start_task = asyncio.create_task(start_telegram_bot())
     telegram_summary_task = asyncio.create_task(telegram_summary_loop())
     telegram_overdue_cleanup_task = asyncio.create_task(telegram_overdue_cleanup_loop())
     
@@ -426,6 +433,14 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
     logging.info("Altegio auto-sync stopped")
+
+    if telegram_bot_start_task:
+        telegram_bot_start_task.cancel()
+        try:
+            await telegram_bot_start_task
+        except asyncio.CancelledError:
+            pass
+        telegram_bot_start_task = None
 
     if telegram_summary_task:
         telegram_summary_task.cancel()
