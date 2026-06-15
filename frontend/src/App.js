@@ -4960,6 +4960,7 @@ const DesktopDashboard = () => {
   const [announcementOverlaps, setAnnouncementOverlaps] = useState({});
   const [overlapResolverTask, setOverlapResolverTask] = useState(null);
   const [showOverdueCleanup, setShowOverdueCleanup] = useState(false);
+  const [cleanupAssignee, setCleanupAssignee] = useState(() => normalizeAssignee(getActorUser(), "manager"));
   const [cleanupDragTask, setCleanupDragTask] = useState(null);
 
   const getCleanupQuickActions = (task) => {
@@ -5052,6 +5053,7 @@ const DesktopDashboard = () => {
   useEffect(() => {
     const params = new URLSearchParams(location.search || "");
     if (params.get("overdue_cleanup") === "1") {
+      setCleanupAssignee(normalizeAssignee(getActorUser(), "manager"));
       setShowOverdueCleanup(true);
     }
   }, [location.search]);
@@ -5268,9 +5270,10 @@ const DesktopDashboard = () => {
       task_date: getTaskDate(task),
       reminder_date: getTaskDate(task),
     });
-    const allTasks = Object.entries(tasksByTeam).flatMap(([assignee, groups]) =>
-      [groups.overdue, groups.today, groups.soon].flat().map(task => normalizeTask(task, assignee))
-    );
+    const activeGroups = tasksByTeam[cleanupAssignee] || { overdue: [], today: [], soon: [] };
+    const allTasks = [activeGroups.overdue, activeGroups.today, activeGroups.soon]
+      .flat()
+      .map(task => normalizeTask(task, cleanupAssignee));
     const unique = new Map();
     allTasks.forEach(task => {
       const key = getTaskDragKey(task);
@@ -5303,7 +5306,7 @@ const DesktopDashboard = () => {
       { id: "today", label: "сьогодні", date: todayStr, items: sortTasks(dates.today), accent: "neutral" },
       { id: "tomorrow", label: "завтра", date: tomorrow, items: sortTasks(dates.tomorrow), accent: "neutral" },
     ];
-  }, [tasksByTeam, todayStr]);
+  }, [cleanupAssignee, tasksByTeam, todayStr]);
 
   const cleanupTotal = cleanupColumns.reduce((sum, col) => sum + col.items.length, 0);
 
@@ -5950,7 +5953,7 @@ const DesktopDashboard = () => {
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
             onAddClick={() => { setNewTask({ title: "", date: todayStr, icon: "coffee", color: "manager", event_id: "", assignee: "manager", teamwork: false, team_members: [] }); setDialogColumnName("Manager"); setShowTaskDialog(true); }}
-            onCleanupClick={() => setShowOverdueCleanup(true)}
+            onCleanupClick={() => { setCleanupAssignee("manager"); setShowOverdueCleanup(true); }}
             overdueExpanded={managerOverdue}
             setOverdueExpanded={setManagerOverdue}
             soonExpanded={managerSoon}
@@ -5976,7 +5979,7 @@ const DesktopDashboard = () => {
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
             onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "manager", event_id: "", assignee: "smm", teamwork: false, team_members: [] }); setDialogColumnName("SMM"); setShowSMMTaskDialog(true); }}
-            onCleanupClick={() => setShowOverdueCleanup(true)}
+            onCleanupClick={() => { setCleanupAssignee("smm"); setShowOverdueCleanup(true); }}
             overdueExpanded={smmOverdue}
             setOverdueExpanded={setSMMOverdue}
             soonExpanded={smmSoon}
@@ -6004,7 +6007,7 @@ const DesktopDashboard = () => {
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
             onAddClick={() => { setNewSMMTask({ title: "", date: todayStr, icon: "instagram", color: "manager", event_id: "", assignee: "marketer", teamwork: false, team_members: [] }); setDialogColumnName("Marketer"); setShowSMMTaskDialog(true); }}
-            onCleanupClick={() => setShowOverdueCleanup(true)}
+            onCleanupClick={() => { setCleanupAssignee("marketer"); setShowOverdueCleanup(true); }}
             overdueExpanded={marketerOverdue}
             setOverdueExpanded={setVoOverdue}
             soonExpanded={marketerSoon}

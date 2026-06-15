@@ -1935,6 +1935,16 @@ async def get_quote():
 # --- Altegio service auto-matching (server-side; cache to avoid hammering API) ---
 _altegio_services_cache: Dict[str, object] = {"data": [], "fetched_at": 0.0}
 
+ALTEGIO_SERVICE_PATCH_KEYS = [
+    "title", "booking_title", "category_id", "comment", "weight", "active", "prepaid", "is_multi", "capacity",
+    "price_min", "price_max", "discount", "salon_service_id", "duration", "image_group", "staff",
+    "tax_variant", "vat_id", "is_need_limit_date", "seance_search_start", "seance_search_finish", "seance_search_step", "step",
+    "service_type", "api_service_id", "repeat_visit_days_step", "date_from", "date_to", "schedule_template_type",
+    "online_invoicing_status", "is_abonement_autopayment_enabled", "autopayment_before_visit_time", "abonement_restriction_value",
+    "is_chain", "is_price_managed_only_in_chain", "is_comment_managed_only_in_chain", "price_prepaid_amount", "price_prepaid_percent",
+    "is_composite", "technical_break_duration", "default_technical_break_duration",
+]
+
 async def _get_altegio_services_cached(ttl_seconds: float = 600.0) -> list:
     """Return Altegio service catalogue with simple TTL cache (10 min default)."""
     import time
@@ -2036,11 +2046,14 @@ def _google_calendar_event_id(event: Optional[dict]) -> Optional[str]:
 
 async def _ensure_altegio_service_price_matches(service_id: int, expected_price: float, event_id: Optional[str] = None) -> dict:
     expected = int(round(float(expected_price or 0)))
-    result = await altegio_client.get_service_detail_result(int(service_id))
-    if not result.get("ok") or not result.get("data"):
-        raise HTTPException(status_code=502, detail="не вдалося перевірити ціну сервісу в Altegio")
+    services = await _get_altegio_services_cached(ttl_seconds=0)
+    service = next((item for item in services if str(item.get("id")) == str(int(service_id))), None)
+    if not service:
+        result = await altegio_client.get_service_detail_result(int(service_id))
+        if not result.get("ok") or not result.get("data"):
+            raise HTTPException(status_code=502, detail="не вдалося перевірити ціну сервісу в Altegio")
+        service = result["data"] or {}
 
-    service = result["data"] or {}
     current_min = service.get("price_min")
     current_max = service.get("price_max")
     try:
@@ -2074,11 +2087,32 @@ async def _ensure_altegio_service_price_matches(service_id: int, expected_price:
             ),
         )
 
+    update_result = await altegio_client.update_service_price_result(int(service_id), expected)
+    if update_result.get("ok"):
+        _altegio_services_cache["fetched_at"] = 0.0
+        updated = update_result.get("data") or dict(service)
+        updated["price_min"] = expected
+        updated["price_max"] = expected
+        return updated
+
+    error_body = update_result.get("body")
+    if not isinstance(error_body, str):
+        error_body = str(error_body)
+
+    if update_result.get("status_code") == 403 and "Not enough rights" in error_body:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"У Altegio сервіс «{service.get('title') or 'без назви'}» має ціну {current_min_int or current_max_int or '?'} грн, "
+                f"а в Poriadok ти ставиш {expected} грн. Poriadok вже спробував змінити ціну сервісу через Altegio API, "
+                "але Altegio повернув `Not enough rights` для поточного API-токена."
+            ),
+        )
+
     raise HTTPException(
-        status_code=409,
+        status_code=502,
         detail=(
-            f"У Altegio сервіс «{service.get('title') or 'без назви'}» має ціну {current_min_int or current_max_int or '?'} грн, "
-            f"а в Poriadok ти ставиш {expected} грн. Poriadok зараз не має прав змінити ціну сервісу в Altegio автоматично."
+            f"не вдалося оновити ціну сервісу Altegio автоматично: status {update_result.get('status_code')} — {error_body[:300]}"
         ),
     )
 
@@ -2340,41 +2374,6 @@ async def _altegio_match_service_by_title(title: str) -> Optional[int]:
 
 
 
-async def _altegio_match_service_by_title_and_price(title: str, expected_price: Optional[float]) -> Optional[int]:
-    services = await _get_altegio_services_cached()
-    title_norm = _normalize_for_match(title)
-    if not services or not title_norm or expected_price is None:
-        return None
-
-    try:
-        expected = int(round(float(expected_price)))
-    except (TypeError, ValueError):
-        return None
-
-    candidates = []
-    for svc in services:
-        if svc.get("active") in (0, False):
-            continue
-        prices = []
-        for key in ("price_min", "price_max"):
-            value = svc.get(key)
-            try:
-                prices.append(int(value))
-            except (TypeError, ValueError):
-                continue
-        if expected not in prices:
-            continue
-
-        title_variants = [
-            svc.get("title", ""),
-            svc.get("booking_title", ""),
-            svc.get("original_title", ""),
-        ]
-        if any(_titles_match(variant, title) for variant in title_variants if variant):
-            candidates.append(svc)
-
-    return _unique_altegio_service_id(candidates, f"title+price '{title}'/{expected}")
-
 def _altegio_event_type_key(title: str, spots: Optional[int] = None) -> Optional[str]:
     title_norm = _normalize_for_match(title)
 
@@ -2398,20 +2397,23 @@ async def _mapped_altegio_service_id(title: str, spots: Optional[int] = None) ->
 
 
 async def _resolve_altegio_service_id(title: str, explicit_service_id: Optional[int] = None, spots: Optional[int] = None, price: Optional[float] = None) -> Optional[int]:
-    """Resolve the Altegio service for an event.
+    """Resolve the canonical Altegio service for an event.
 
-    Order matters:
+    Resolution is by IDENTITY ONLY (never by price): one event family maps to
+    one canonical service, and the price on that service is then synced from
+    Poriadok via _ensure_altegio_service_price_matches. Matching by price was a
+    workaround that risked binding an event to whatever service happened to
+    share its current price — removed in favour of real price control.
+
+    Order:
     1. explicit per-event service id
-    2. exact active service match by title family + price
-    3. settings-backed mapping for known event families
-    4. conservative title-only fallback
+    2. settings-backed mapping for known event families
+    3. conservative title-only fallback
+
+    `price` is accepted for signature compatibility but no longer used here.
     """
     if explicit_service_id:
         return int(explicit_service_id)
-
-    price_match = await _altegio_match_service_by_title_and_price(title, price)
-    if price_match:
-        return price_match
 
     mapped = await _mapped_altegio_service_id(title, spots)
     if mapped:
@@ -5248,6 +5250,32 @@ class AltegioClient:
                 return {"ok": True, "status_code": response.status_code, "data": data.get("data", {}), "body": data}
 
             logging.error(f"Altegio service detail error: {response.status_code} - {response.text[:200]}")
+            return {"ok": False, "status_code": response.status_code, "data": None, "body": response.text[:1000]}
+
+    async def update_service_price_result(self, service_id: int, price: float):
+        """Update an Altegio service price using the full PATCH payload shape required by Altegio."""
+        try:
+            target_price = int(round(float(price or 0)))
+        except (TypeError, ValueError):
+            return {"ok": False, "status_code": 400, "data": None, "body": "invalid price"}
+
+        services = await self.get_services()
+        service = next((item for item in services if str(item.get("id")) == str(int(service_id))), None)
+        if not service:
+            return {"ok": False, "status_code": 404, "data": None, "body": f"service {service_id} not found in catalog"}
+
+        payload = {key: service.get(key) for key in ALTEGIO_SERVICE_PATCH_KEYS if key in service}
+        payload["price_min"] = target_price
+        payload["price_max"] = target_price
+
+        url = f"{self.base_url}/company/{self.company_id}/services/{int(service_id)}"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.patch(url, headers=self.get_v2_push_headers(), json=payload)
+            if response.status_code in (200, 201):
+                data = response.json()
+                return {"ok": True, "status_code": response.status_code, "data": data.get("data", {}), "body": data}
+
+            logging.error(f"Altegio service price update error: {response.status_code} - {response.text[:300]}")
             return {"ok": False, "status_code": response.status_code, "data": None, "body": response.text[:1000]}
     
     async def create_record(self, service_id: str, staff_id: str, client_name: str, 
