@@ -2032,6 +2032,56 @@ def _google_calendar_event_id(event: Optional[dict]) -> Optional[str]:
     return event.get("google_calendar_event_id") or event.get("google_calendar_id")
 
 
+
+
+async def _ensure_altegio_service_price_matches(service_id: int, expected_price: float, event_id: Optional[str] = None) -> dict:
+    expected = int(round(float(expected_price or 0)))
+    result = await altegio_client.get_service_detail_result(int(service_id))
+    if not result.get("ok") or not result.get("data"):
+        raise HTTPException(status_code=502, detail="не вдалося перевірити ціну сервісу в Altegio")
+
+    service = result["data"] or {}
+    current_min = service.get("price_min")
+    current_max = service.get("price_max")
+    try:
+        current_min_int = int(current_min) if current_min is not None else None
+    except (TypeError, ValueError):
+        current_min_int = None
+    try:
+        current_max_int = int(current_max) if current_max is not None else None
+    except (TypeError, ValueError):
+        current_max_int = None
+
+    if current_min_int == expected and (current_max_int in (None, expected)):
+        return service
+
+    conflict_query = {
+        "altegio_service_id": int(service_id),
+        "cancelled": {"$ne": True},
+        "archived": {"$ne": True},
+    }
+    if event_id:
+        conflict_query["id"] = {"$ne": event_id}
+    conflicts = await db.events.find(conflict_query, {"_id": 0, "id": 1, "title": 1, "date": 1, "price": 1}).to_list(20)
+    price_conflict = next((event for event in conflicts if int(round(float(event.get("price") or 0))) != expected), None)
+    if price_conflict:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"У Altegio сервіс «{service.get('title') or 'без назви'}» зараз має ціну {current_min_int or current_max_int or '?'} грн, "
+                f"а подія «{price_conflict.get('title') or 'без назви'}» {str(price_conflict.get('date') or '')[:10]} вже працює з ціною {int(round(float(price_conflict.get('price') or 0)))} грн. "
+                "Для різних цін потрібні окремі сервіси в Altegio."
+            ),
+        )
+
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            f"У Altegio сервіс «{service.get('title') or 'без назви'}» має ціну {current_min_int or current_max_int or '?'} грн, "
+            f"а в Poriadok ти ставиш {expected} грн. Poriadok зараз не має прав змінити ціну сервісу в Altegio автоматично."
+        ),
+    )
+
 def _google_calendar_payload(event: dict) -> dict:
     try:
         event_date = datetime.fromisoformat(str(event.get("date", "")).replace('Z', '+00:00'))
@@ -2454,6 +2504,7 @@ async def _sync_event_to_external(event: Event) -> dict:
                 # Persist match so subsequent updates reuse it without re-matching
                 await db.events.update_one({"id": event.id}, {"$set": {"altegio_service_id": int(service_id)}})
             if service_id:
+                await _ensure_altegio_service_price_matches(int(service_id), event.price, event.id)
                 result = await altegio_client.create_activity_result(
                     title=event.title,
                     date=event.date[:10],
@@ -2760,6 +2811,9 @@ async def update_event(event_id: str, event_data: EventUpdate):
             explicit_service_id=merged.get("altegio_service_id") or existing.get("altegio_service_id"),
             spots=merged.get("spots") or existing.get("spots") or 10,
         )
+        if not service_id:
+            raise HTTPException(status_code=400, detail="не знайдено відповідний сервіс Altegio для цієї події")
+        await _ensure_altegio_service_price_matches(int(service_id), merged.get("price") or existing.get("price") or 0, event_id)
         update_result = await altegio_client.update_activity_result(
             activity_id=altegio_id,
             title=merged.get("title", existing.get("title", "")),
@@ -3017,6 +3071,9 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
                 explicit_service_id=existing.get("altegio_service_id") or None,
                 spots=existing.get("spots") or 10,
             )
+            if not service_id:
+                raise HTTPException(status_code=400, detail="не знайдено відповідний сервіс Altegio для цієї події")
+            await _ensure_altegio_service_price_matches(int(service_id), existing.get("price") or 0, event_id)
             result = await altegio_client.create_activity_result(
                 title=existing.get("title", ""),
                 date=existing.get("date", "")[:10],
@@ -5133,6 +5190,19 @@ class AltegioClient:
                 logging.error(f"Altegio services error: {response.status_code} — {response.text[:200]}")
                 return []
     
+    async def get_service_detail_result(self, service_id: int):
+        """Fetch one Altegio service with status/body for debugging and guards."""
+        url = f"{self.base_url}/services/{self.company_id}/{int(service_id)}"
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url, headers=self.get_v2_headers())
+            if response.status_code == 200:
+                data = response.json()
+                return {"ok": True, "status_code": response.status_code, "data": data.get("data", {}), "body": data}
+
+            logging.error(f"Altegio service detail error: {response.status_code} - {response.text[:200]}")
+            return {"ok": False, "status_code": response.status_code, "data": None, "body": response.text[:1000]}
+    
     async def create_record(self, service_id: str, staff_id: str, client_name: str, 
                            client_phone: str, datetime_str: str, comment: str = ""):
         """Create a new booking/record in Altegio"""
@@ -5439,6 +5509,7 @@ async def push_single_event_to_altegio(event_id: str):
     if not service_id:
         raise HTTPException(status_code=400, detail="No matching Altegio service for event title")
 
+    await _ensure_altegio_service_price_matches(int(service_id), event.get("price") or 0, event_id)
     result = await altegio_client.create_activity_result(
         title=event.get("title", ""),
         date=event.get("date", "")[:10],
