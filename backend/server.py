@@ -6,6 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ReturnDocument, UpdateOne
 from pymongo.errors import DuplicateKeyError
 import os
+import re
 import logging
 import asyncio
 import base64
