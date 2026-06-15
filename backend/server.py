@@ -588,6 +588,10 @@ class Event(BaseModel):
     altegio_last_sync: Optional[str] = None
     altegio_last_error: Optional[str] = None
     altegio_last_status_code: Optional[int] = None
+    # Set when the event pushed to Altegio but its service is disabled/offline,
+    # so the activity exists yet stays invisible/unbookable. Frontend surfaces
+    # this as an actionable warning. None = healthy.
+    altegio_warning: Optional[dict] = None
     task_overrides: Dict[str, dict] = {}
     # Google Calendar integration
     google_calendar_event_id: Optional[str] = None
@@ -2397,6 +2401,52 @@ async def _mapped_altegio_service_id(title: str, spots: Optional[int] = None) ->
     return int(service_id) if service_id else None
 
 
+async def _altegio_service_state(service_id: int) -> Optional[dict]:
+    """Return {title, active, is_online} for an Altegio service, or None if not
+    found. Used to warn when an event's service is disabled/offline (activity
+    gets created but stays invisible/unbookable in Altegio)."""
+    services = await _get_altegio_services_cached(ttl_seconds=0)
+    svc = next((s for s in services if str(s.get("id")) == str(int(service_id))), None)
+    if not svc:
+        return None
+    return {
+        "id": int(service_id),
+        "title": svc.get("title") or "",
+        "active": bool(svc.get("active")),
+        "is_online": bool(svc.get("is_online")),
+    }
+
+
+def _build_altegio_warning(state: Optional[dict], service_id: Optional[int], title: str) -> Optional[dict]:
+    """Construct an actionable warning dict for the frontend, or None if healthy.
+
+    Two cases:
+      • no_service  — no Altegio service matched the event; it will NOT appear.
+      • service_disabled — service exists but active=0 and/or offline; the
+        activity is created but hidden until the manager flips the toggles.
+    """
+    if not service_id or state is None:
+        return {
+            "type": "no_service",
+            "service_title": title,
+            "company_id": ALTEGIO_COMPANY_ID,
+            "altegio_url": f"https://app.alteg.io/company/{ALTEGIO_COMPANY_ID}/services",
+        }
+    needs_active = not state.get("active")
+    needs_online = not state.get("is_online")
+    if not needs_active and not needs_online:
+        return None
+    return {
+        "type": "service_disabled",
+        "service_id": state.get("id"),
+        "service_title": state.get("title") or title,
+        "needs_active": needs_active,
+        "needs_online": needs_online,
+        "company_id": ALTEGIO_COMPANY_ID,
+        "altegio_url": f"https://app.alteg.io/company/{ALTEGIO_COMPANY_ID}/services",
+    }
+
+
 async def _resolve_altegio_service_id(title: str, explicit_service_id: Optional[int] = None, spots: Optional[int] = None, price: Optional[float] = None) -> Optional[int]:
     """Resolve the canonical Altegio service for an event.
 
@@ -2485,11 +2535,24 @@ async def _persist_event(event_data: EventCreate, settings, source_event_id: str
     await db.events.insert_one(event.model_dump())
 
     if sync_external:
+        # Poriadok is the source of truth for the team: the event is ALWAYS kept
+        # here (it drives tasks), even if the Altegio push didn't fully succeed.
+        # Any Altegio problem (no service / disabled service / push error) is
+        # carried back as an actionable `altegio_warning` on the event rather
+        # than deleting it and failing the request.
         sync_result = await _sync_event_to_external(event)
+        if ALTEGIO_PARTNER_TOKEN and not sync_result.get("altegio_ok") and not sync_result.get("altegio_warning"):
+            # Genuine push error with no structured warning — attach a generic one
+            # so the frontend can still tell the user the event isn't in Altegio.
+            generic = {
+                "type": "push_error",
+                "service_title": event.title,
+                "detail": (sync_result.get("altegio_error") or "")[:300],
+                "company_id": ALTEGIO_COMPANY_ID,
+                "altegio_url": f"https://app.alteg.io/company/{ALTEGIO_COMPANY_ID}/services",
+            }
+            await db.events.update_one({"id": event.id}, {"$set": {"altegio_warning": generic}})
         updated = await db.events.find_one({"id": event.id}, {"_id": 0})
-        if ALTEGIO_PARTNER_TOKEN and not sync_result.get("altegio_ok"):
-            await _cleanup_created_event(updated or event.model_dump())
-            raise HTTPException(status_code=502, detail=sync_result.get("altegio_error") or "не вдалося створити подію в Altegio")
         if updated:
             return Event(**updated)
 
@@ -2564,6 +2627,10 @@ async def _sync_event_to_external(event: Event) -> dict:
                 )
                 if result.get("ok") and result.get("activity_id"):
                     altegio_id = str(result["activity_id"])
+                    # Activity created — but if the service is disabled/offline the
+                    # activity stays invisible. Detect and surface as a warning.
+                    state = await _altegio_service_state(int(service_id))
+                    warning = _build_altegio_warning(state, int(service_id), event.title)
                     await db.events.update_one(
                         {"id": event.id},
                         {"$set": {
@@ -2573,10 +2640,14 @@ async def _sync_event_to_external(event: Event) -> dict:
                             "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
                             "altegio_last_error": None,
                             "altegio_last_status_code": result.get("status_code"),
+                            "altegio_warning": warning,
                         }}
                     )
-                    logging.info(f"Auto-pushed event '{event.title}' to Altegio: {altegio_id}")
+                    logging.info(f"Auto-pushed event '{event.title}' to Altegio: {altegio_id}"
+                                 + (f" — WARNING: {warning['type']}" if warning else ""))
                     result_status["altegio_ok"] = True
+                    if warning:
+                        result_status["altegio_warning"] = warning
                 else:
                     error_body = result.get("body")
                     if not isinstance(error_body, str):
@@ -2595,15 +2666,18 @@ async def _sync_event_to_external(event: Event) -> dict:
             else:
                 message = f"Altegio push skipped — no matching service for '{event.title}'"
                 logging.error(message)
+                warning = _build_altegio_warning(None, None, event.title)
                 await db.events.update_one(
                     {"id": event.id},
                     {"$set": {
                         "altegio_last_error": message,
                         "altegio_last_status_code": None,
                         "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+                        "altegio_warning": warning,
                     }},
                 )
                 result_status["altegio_error"] = message
+                result_status["altegio_warning"] = warning
     except Exception as e:
         logging.error(f"Failed to push event to Altegio: {e}")
         result_status["altegio_error"] = str(e)
@@ -5699,7 +5773,18 @@ async def sync_single_event_from_altegio(event_id: str):
         event = await db.events.find_one({"id": event_id})
         if not event:
             raise HTTPException(status_code=404, detail="Event not found")
-        
+
+        # Short-circuit: if the bound service is disabled/offline, the activity
+        # (even if it exists) is invisible to Altegio's search and to clients.
+        # Surface the actionable warning instead of a misleading "synced".
+        svc_id = event.get("altegio_service_id")
+        if svc_id:
+            state = await _altegio_service_state(int(svc_id))
+            warn = _build_altegio_warning(state, int(svc_id), event.get("title") or "")
+            if warn:
+                await db.events.update_one({"id": event_id}, {"$set": {"altegio_warning": warn}})
+                return {"event_id": event_id, "altegio_warning": warn, "message": "сервіс вимкнений в Altegio"}
+
         altegio_id = event.get("altegio_id") or event.get("altegio_activity_id")
         event_date = (event.get("date") or "")[:10] or None
         activities_result = await altegio_client.get_group_events_result(date_from=event_date, date_to=event_date)
@@ -5732,7 +5817,8 @@ async def sync_single_event_from_altegio(event_id: str):
                             "spots": int(altegio_event.get("capacity") or event.get("spots") or 10),
                             "altegio_last_error": None,
                             "altegio_last_status_code": activities_result.get("status_code"),
-                            "altegio_last_sync": datetime.now(timezone.utc).isoformat()
+                            "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+                            "altegio_warning": None,
                         }}
                     )
                     return {

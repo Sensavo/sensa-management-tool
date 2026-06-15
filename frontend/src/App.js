@@ -56,7 +56,8 @@ import {
   Info,
   Maximize2,
   Minimize2,
-  ArrowRight
+  ArrowRight,
+  AlertTriangle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -75,6 +76,16 @@ const ACTOR_USER_STORAGE_KEY = "poriadok_actor_user";
 const ACCESS_CODE_STORAGE_KEY = "poriadok_access_granted";
 const ACCESS_TOKEN_STORAGE_KEY = "poriadok_access_token";
 const ACCESS_REVOKED_EVENT = "poriadok-access-revoked";
+
+// Global Altegio-warning channel. Create/sync responses may carry an
+// `altegio_warning` (service disabled / not in Altegio / push error). Any
+// handler can surface it via emitAltegioWarning; <AltegioWarningHost/> renders
+// the actionable dialog once, app-wide.
+const ALTEGIO_WARNING_EVENT = "poriadok-altegio-warning";
+const emitAltegioWarning = (warning) => {
+  if (warning) window.dispatchEvent(new CustomEvent(ALTEGIO_WARNING_EVENT, { detail: warning }));
+};
+
 const TEAM_USER_OPTIONS = [
   { id: "manager", label: "Manager" },
   { id: "smm", label: "SMM" },
@@ -400,6 +411,12 @@ const getAltegioActivityUrl = async (eventId) => {
 
 const ensureAltegioSyncResult = (response) => {
   const data = response?.data || {};
+  // Disabled/offline service (or no service) — surface the actionable dialog
+  // instead of throwing or claiming success.
+  if (data.altegio_warning) {
+    emitAltegioWarning(data.altegio_warning);
+    return data;
+  }
   if (!data.altegio_id) {
     throw new Error(data.message || "Altegio не повернув id події");
   }
@@ -2202,7 +2219,7 @@ const EventDetailPage = () => {
 
   const handleSyncAltegio = async () => {
     setSyncing(true);
-    try { ensureAltegioSyncResult(await api.syncEventFromAltegio(eventId)); toast.success("синхронізовано"); loadEvent(); refreshEvents(); }
+    try { const _s = ensureAltegioSyncResult(await api.syncEventFromAltegio(eventId)); if (!_s.altegio_warning) toast.success("синхронізовано"); loadEvent(); refreshEvents(); }
     catch (error) { toast.error(getApiErrorMessage(error, "помилка синхронізації")); }
     finally { setSyncing(false); }
   };
@@ -2500,11 +2517,12 @@ const EventForm = () => {
         repeat_days: isRegular ? (event.repeat_days || []) : [],
       });
       const result = await api.createEvent(data);
-      if (isRegular && result?.series_count > 1) {
-        toast.success(`серія "${event.title}" — ${result.series_count} подій створено!`);
+      if (isRegular && result?.data?.series_count > 1) {
+        toast.success(`серія "${event.title}" — ${result.data.series_count} подій створено!`);
       } else {
         toast.success(`"${event.title}" створено!`);
       }
+      emitAltegioWarning(result?.data?.altegio_warning);
 
       // Remove from list
       setParsedEvents(prev => prev.filter((_, i) => i !== index));
@@ -2539,8 +2557,8 @@ const EventForm = () => {
     e.preventDefault(); setLoading(true);
     try {
       const data = normalizeEventPayload({ ...formData, price: parseFloat(formData.price), event_type: formData.event_type || "new", repeat_days: formData.repeat_days || [] });
-      if (isNew) { await api.createEvent(data); toast.success("створено! 🎉"); }
-      else { await api.updateEvent(eventId, data); toast.success("збережено!"); }
+      if (isNew) { const _r = await api.createEvent(data); toast.success("створено! 🎉"); emitAltegioWarning(_r?.data?.altegio_warning); }
+      else { const _r = await api.updateEvent(eventId, data); toast.success("збережено!"); emitAltegioWarning(_r?.data?.altegio_warning); }
       await refreshEvents(); navigate("/");
     } catch { toast.error("помилка"); } finally { setLoading(false); }
   };
@@ -5441,8 +5459,8 @@ const DesktopDashboard = () => {
     if (!selectedEvent) return;
     setSyncingEvent(true);
     try {
-      ensureAltegioSyncResult(await api.syncEventFromAltegio(selectedEvent.id));
-      toast.success("синхронізовано");
+      const _s = ensureAltegioSyncResult(await api.syncEventFromAltegio(selectedEvent.id));
+      if (!_s.altegio_warning) toast.success("синхронізовано");
       const r = await axios.get(`${API}/events/${selectedEvent.id}`);
       setSelectedEvent(r.data);
       refreshEvents();
@@ -8119,7 +8137,7 @@ const EventsDesktopExpanded = () => {
   const handleSyncAltegio = async () => {
     if (!selectedEvent) return;
     setSyncingEvent(true);
-    try { ensureAltegioSyncResult(await api.syncEventFromAltegio(selectedEvent.id)); toast.success("синхронізовано"); refreshEvents(); }
+    try { const _s = ensureAltegioSyncResult(await api.syncEventFromAltegio(selectedEvent.id)); if (!_s.altegio_warning) toast.success("синхронізовано"); refreshEvents(); }
     catch (error) { toast.error(getApiErrorMessage(error, "помилка синхронізації")); }
     finally { setSyncingEvent(false); }
   };
@@ -8514,6 +8532,97 @@ const ResponsiveWrapper = ({ children, desktop }) => {
   return children;
 };
 
+// Toggle visual used inside the Altegio warning — an OFF pill with an arrow to
+// an ON pill, so the manager sees exactly what to flip.
+const ToggleHint = ({ label }) => (
+  <div className="flex items-center justify-between gap-3 py-2">
+    <span className="text-sm text-[#1A1717]">{label}</span>
+    <div className="flex items-center gap-2 flex-shrink-0">
+      <span className="inline-flex items-center w-9 h-5 rounded-full bg-black/15 px-0.5">
+        <span className="w-4 h-4 rounded-full bg-white shadow" />
+      </span>
+      <ChevronRight className="w-4 h-4 text-secondary" />
+      <span className="inline-flex items-center justify-end w-9 h-5 rounded-full bg-[#3F8F4F] px-0.5">
+        <span className="w-4 h-4 rounded-full bg-white shadow" />
+      </span>
+    </div>
+  </div>
+);
+
+// App-wide dialog that renders the actionable Altegio warning. Listens for the
+// ALTEGIO_WARNING_EVENT and shows what to enable, where, with a deep link.
+const AltegioWarningHost = () => {
+  const [warning, setWarning] = useState(null);
+  useEffect(() => {
+    const h = (e) => setWarning(e.detail || null);
+    window.addEventListener(ALTEGIO_WARNING_EVENT, h);
+    return () => window.removeEventListener(ALTEGIO_WARNING_EVENT, h);
+  }, []);
+
+  const open = !!warning;
+  const onClose = () => setWarning(null);
+  const w = warning || {};
+  const svc = w.service_title || "послуга";
+  const url = w.altegio_url || "https://app.alteg.io/";
+
+  const headline = w.type === "no_service"
+    ? "Подію створено, але в Altegio її немає"
+    : w.type === "push_error"
+      ? "Подію створено, але Altegio не оновився"
+      : "Подію створено, але вона прихована в Altegio";
+
+  const lead = w.type === "no_service"
+    ? `Для «${svc}» в Altegio немає активної послуги, тож подія не з'явиться в записі, поки ти її не створиш і не увімкнеш.`
+    : w.type === "push_error"
+      ? `Подію збережено в Poriadok, але синхронізація з Altegio не пройшла${w.detail ? `: ${w.detail}` : "."}`
+      : `Послуга «${svc}» в Altegio вимкнена, тому подія створилась, але прихована й недоступна для запису. Увімкни її — і ця подія (та всі майбутні цього типу) одразу запрацюють.`;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="dialog-content max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-[#C4703D]" /> {headline}
+          </DialogTitle>
+          <DialogDescription>{lead}</DialogDescription>
+        </DialogHeader>
+
+        <div className="mt-3 rounded-2xl border border-black/10 overflow-hidden">
+          <div className="px-4 py-2.5 bg-black/[0.03] text-[10px] uppercase tracking-wide text-secondary font-semibold">
+            Altegio → Послуги → «{svc}»
+          </div>
+          <div className="px-4 py-2 divide-y divide-black/5">
+            {(w.type !== "no_service") ? (
+              <>
+                {(w.needs_active !== false) && <ToggleHint label="Активна послуга" />}
+                {(w.needs_online !== false) && <ToggleHint label="Онлайн-запис" />}
+              </>
+            ) : (
+              <div className="py-2 text-sm text-[#1A1717]">
+                Створи послугу «{svc}» → увімкни <b>Активна</b> + <b>Онлайн-запис</b> → збережи.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter className="mt-5">
+          <button
+            onClick={onClose}
+            className="h-11 px-5 rounded-full text-sm font-medium text-[#1A1717]/60 hover:bg-black/5 transition-colors"
+          >пізніше</button>
+          <a
+            href={url} target="_blank" rel="noopener noreferrer"
+            onClick={onClose}
+            className="h-11 px-5 rounded-full text-sm font-medium bg-[#1A1717] text-[#F5F5F0] hover:bg-[#333] transition-colors inline-flex items-center gap-2"
+          >
+            <ExternalLink className="w-4 h-4" /> відкрити Altegio
+          </a>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 // Theme Context
 // Main App
 function App() {
@@ -8650,6 +8759,7 @@ function App() {
         <BrowserRouter>
           <div className="app-container">
             <Toaster position="top-center" richColors />
+            <AltegioWarningHost />
             <Routes>
               <Route path="/" element={<ResponsiveWrapper><Dashboard /></ResponsiveWrapper>} />
               <Route path="/events" element={<ResponsiveWrapper desktop={<EventsDesktopExpanded />}><EventsPage /></ResponsiveWrapper>} />
