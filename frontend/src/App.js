@@ -381,6 +381,16 @@ const getApiErrorMessage = (error, fallback = "помилка") => {
   return fallback;
 };
 
+const isKadlTitle = (title = "") => /кадл|kadl/i.test(String(title));
+
+const normalizeEventPayload = (event) => {
+  const spots = parseInt(event.spots);
+  return {
+    ...event,
+    spots: isKadlTitle(event.title) && (!spots || spots === 10) ? 16 : (spots || 10),
+  };
+};
+
 const getAltegioActivityUrl = async (eventId) => {
   const response = await api.getEventAltegioUrl(eventId);
   const url = response.data?.activity_url;
@@ -2478,17 +2488,17 @@ const EventForm = () => {
   const handleConfirmEvent = async (event, index) => {
     try {
       const isRegular = event.event_type === "regular";
-      const data = {
+      const data = normalizeEventPayload({
         title: event.title,
         date: event.date || formatDateLocal(new Date()),
         price: parseFloat(event.price) || 0,
-        spots: parseInt(event.spots) || 10,
+        spots: event.spots,
         description: event.description || "",
         start_time: event.start_time || "",
         end_time: event.end_time || "",
         event_type: event.event_type || "new",
         repeat_days: isRegular ? (event.repeat_days || []) : [],
-      };
+      });
       const result = await api.createEvent(data);
       if (isRegular && result?.series_count > 1) {
         toast.success(`серія "${event.title}" — ${result.series_count} подій створено!`);
@@ -2528,7 +2538,7 @@ const EventForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault(); setLoading(true);
     try {
-      const data = { ...formData, price: parseFloat(formData.price), spots: parseInt(formData.spots) || 10, event_type: formData.event_type || "new", repeat_days: formData.repeat_days || [] };
+      const data = normalizeEventPayload({ ...formData, price: parseFloat(formData.price), event_type: formData.event_type || "new", repeat_days: formData.repeat_days || [] });
       if (isNew) { await api.createEvent(data); toast.success("створено! 🎉"); }
       else { await api.updateEvent(eventId, data); toast.success("збережено!"); }
       await refreshEvents(); navigate("/");

@@ -511,8 +511,8 @@ async def require_access_code(request: Request, call_next):
 DEFAULT_ALTEGIO_SERVICE_MAPPINGS = {
     # Stable Poriadok event-type keys -> Altegio service ids.
     # Can be overridden via /api/settings without code deploy.
-    "kadli_short": 12999207,
-    "kadli_medium": 13170797,
+    "kadl": 13170797,
+    "kadli_medium": 13170797,  # legacy alias; KADL is now a single active service
     "acro_yoga": 13294345,
     "body_art": 12743239,
 }
@@ -2292,7 +2292,7 @@ def _altegio_event_type_key(title: str, spots: Optional[int] = None) -> Optional
     title_norm = _normalize_for_match(title)
 
     if "кадл" in title_norm or "kadl" in title_norm:
-        return "kadli_medium" if (spots or 0) > 10 else "kadli_short"
+        return "kadl"
     if "акро" in title_norm or "acro" in title_norm:
         return "acro_yoga"
     if "бодіарт" in title_norm or "bodyart" in title_norm:
@@ -2348,6 +2348,14 @@ async def _ensure_no_duplicate_active_event(title: str, date_str: str, start_tim
             detail=f"Схожа активна подія вже існує: «{duplicate.get('title')}» {duplicate.get('date', '')[:10]} {duplicate.get('start_time') or ''}".strip(),
         )
 
+
+
+def _apply_event_defaults(event_data: EventCreate) -> EventCreate:
+    title_norm = _normalize_for_match(event_data.title)
+    if "кадл" in title_norm or "kadl" in title_norm:
+        updates = {"spots": 16, "altegio_service_id": DEFAULT_ALTEGIO_SERVICE_MAPPINGS["kadl"]}
+        return event_data.model_copy(update=updates)
+    return event_data
 
 async def _persist_event(event_data: EventCreate, settings, source_event_id: str = "", sync_external: bool = True) -> Event:
     """Insert one event into DB; optionally push to Google Calendar + Altegio.
@@ -2507,6 +2515,7 @@ async def _sync_event_to_external(event: Event) -> dict:
 @api_router.post("/events")
 async def create_event(event_data: EventCreate, request: Request):
     actor = _actor_from_request(request)
+    event_data = _apply_event_defaults(event_data)
     settings = await get_settings()
 
     is_regular = event_data.event_type == "regular" and bool(event_data.repeat_days)
