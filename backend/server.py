@@ -2338,6 +2338,43 @@ async def _altegio_match_service_by_title(title: str) -> Optional[int]:
     return _unique_altegio_service_id(substring_matches, f"substring '{title}'")
 
 
+
+
+async def _altegio_match_service_by_title_and_price(title: str, expected_price: Optional[float]) -> Optional[int]:
+    services = await _get_altegio_services_cached()
+    title_norm = _normalize_for_match(title)
+    if not services or not title_norm or expected_price is None:
+        return None
+
+    try:
+        expected = int(round(float(expected_price)))
+    except (TypeError, ValueError):
+        return None
+
+    candidates = []
+    for svc in services:
+        if svc.get("active") in (0, False):
+            continue
+        prices = []
+        for key in ("price_min", "price_max"):
+            value = svc.get(key)
+            try:
+                prices.append(int(value))
+            except (TypeError, ValueError):
+                continue
+        if expected not in prices:
+            continue
+
+        title_variants = [
+            svc.get("title", ""),
+            svc.get("booking_title", ""),
+            svc.get("original_title", ""),
+        ]
+        if any(_titles_match(variant, title) for variant in title_variants if variant):
+            candidates.append(svc)
+
+    return _unique_altegio_service_id(candidates, f"title+price '{title}'/{expected}")
+
 def _altegio_event_type_key(title: str, spots: Optional[int] = None) -> Optional[str]:
     title_norm = _normalize_for_match(title)
 
@@ -2360,18 +2397,25 @@ async def _mapped_altegio_service_id(title: str, spots: Optional[int] = None) ->
     return int(service_id) if service_id else None
 
 
-async def _resolve_altegio_service_id(title: str, explicit_service_id: Optional[int] = None, spots: Optional[int] = None) -> Optional[int]:
+async def _resolve_altegio_service_id(title: str, explicit_service_id: Optional[int] = None, spots: Optional[int] = None, price: Optional[float] = None) -> Optional[int]:
     """Resolve the Altegio service for an event.
 
-    Known Poriadok event types use the settings-backed mapping first. That keeps
-    booking-critical pushes deterministic and leaves fuzzy matching as fallback.
+    Order matters:
+    1. explicit per-event service id
+    2. exact active service match by title family + price
+    3. settings-backed mapping for known event families
+    4. conservative title-only fallback
     """
+    if explicit_service_id:
+        return int(explicit_service_id)
+
+    price_match = await _altegio_match_service_by_title_and_price(title, price)
+    if price_match:
+        return price_match
+
     mapped = await _mapped_altegio_service_id(title, spots)
     if mapped:
         return mapped
-
-    if explicit_service_id:
-        return int(explicit_service_id)
 
     return await _altegio_match_service_by_title(title)
 
@@ -2499,6 +2543,7 @@ async def _sync_event_to_external(event: Event) -> dict:
                 event.title,
                 explicit_service_id=event.altegio_service_id or None,
                 spots=event.spots,
+                price=event.price,
             )
             if service_id and int(service_id) != (event.altegio_service_id or 0):
                 # Persist match so subsequent updates reuse it without re-matching
@@ -2810,6 +2855,7 @@ async def update_event(event_id: str, event_data: EventUpdate):
             merged.get("title", existing.get("title", "")),
             explicit_service_id=merged.get("altegio_service_id") or existing.get("altegio_service_id"),
             spots=merged.get("spots") or existing.get("spots") or 10,
+            price=merged.get("price") or existing.get("price") or 0,
         )
         if not service_id:
             raise HTTPException(status_code=400, detail="не знайдено відповідний сервіс Altegio для цієї події")
@@ -3070,6 +3116,7 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
                 existing.get("title", ""),
                 explicit_service_id=existing.get("altegio_service_id") or None,
                 spots=existing.get("spots") or 10,
+                price=existing.get("price") or 0,
             )
             if not service_id:
                 raise HTTPException(status_code=400, detail="не знайдено відповідний сервіс Altegio для цієї події")
@@ -5504,6 +5551,7 @@ async def push_single_event_to_altegio(event_id: str):
         event.get("title", ""),
         explicit_service_id=event.get("altegio_service_id") or None,
         spots=event.get("spots") or 10,
+        price=event.get("price") or 0,
     )
 
     if not service_id:
