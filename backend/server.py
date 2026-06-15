@@ -2032,13 +2032,29 @@ def _altegio_booked_count(altegio_event: dict) -> int:
     return 0
 
 
-def _altegio_activity_url(activity_id: Optional[str] = None) -> Optional[str]:
+def _altegio_activity_url(activity_id: Optional[str] = None, event_date: Optional[str] = None) -> Optional[str]:
+    """Deep link into the Altegio group-activities calendar.
+
+    The current Altegio cabinet lives at app.alteg.io/dashboard/activities/{cid}.
+    Group activities open as an in-app panel (no per-activity URL), so the most
+    precise link we can build pins the calendar to the event's exact day —
+    landing the manager right on the event instead of the whole calendar.
+    The old `n{cid}.alteg.io/.../activity/{id}` format is dead and redirected
+    to the generic calendar, which was the bug.
+    """
     if not ALTEGIO_COMPANY_ID:
         return None
-    base = f"https://n{ALTEGIO_COMPANY_ID}.alteg.io/company/{ALTEGIO_COMPANY_ID}"
-    if activity_id:
-        return f"{base}/activity/{activity_id}"
-    return f"{base}/menu"
+    base = f"https://app.alteg.io/dashboard/activities/{ALTEGIO_COMPANY_ID}"
+    day = None
+    if event_date:
+        try:
+            d = datetime.strptime(str(event_date)[:10], "%Y-%m-%d")
+            day = d.strftime("%d.%m.%Y")
+        except Exception:
+            day = None
+    if day:
+        return f"{base}/?start_date={day}&end_date={day}"
+    return f"{base}/"
 
 
 def _google_calendar_event_id(event: Optional[dict]) -> Optional[str]:
@@ -5211,10 +5227,11 @@ async def get_altegio_url(event_id: str):
         }
     
     altegio_id = event.get("altegio_id") or event.get("altegio_activity_id")
-    url = _altegio_activity_url(str(altegio_id) if altegio_id else None)
+    event_date = event.get("date")
+    url = _altegio_activity_url(str(altegio_id) if altegio_id else None, event_date)
     return {
         "url": url,
-        "activity_url": _altegio_activity_url(str(altegio_id)) if altegio_id else None,
+        "activity_url": _altegio_activity_url(str(altegio_id), event_date) if altegio_id else None,
         "altegio_id": str(altegio_id) if altegio_id else None,
         "message": "Відкриваю подію в Altegio." if altegio_id else "Відкриваю сторінку бронювання.",
         "can_create": False,
