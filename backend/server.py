@@ -2070,7 +2070,20 @@ async def _ensure_altegio_service_price_matches(service_id: int, expected_price:
     except (TypeError, ValueError):
         current_max_int = None
 
-    if current_min_int == expected and (current_max_int in (None, expected)):
+    price_ok = current_min_int == expected and (current_max_int in (None, expected))
+    # Even when the price already matches, the service may be disabled/offline
+    # (the original КАДЛ failure). Make sure it is live regardless of price.
+    if price_ok:
+        if not service.get("active") or not service.get("is_online"):
+            live = await altegio_client.update_service_price_result(int(service_id), expected, ensure_live=True)
+            if live.get("ok"):
+                _altegio_services_cache["fetched_at"] = 0.0
+                merged = live.get("data") or dict(service)
+                merged["price_min"] = expected
+                merged["price_max"] = expected
+                return merged
+            # Activation failed — fall through is not useful here; return current
+            # state so the warning layer can surface it.
         return service
 
     conflict_query = {
@@ -5327,8 +5340,15 @@ class AltegioClient:
             logging.error(f"Altegio service detail error: {response.status_code} - {response.text[:200]}")
             return {"ok": False, "status_code": response.status_code, "data": None, "body": response.text[:1000]}
 
-    async def update_service_price_result(self, service_id: int, price: float):
-        """Update an Altegio service price using the full PATCH payload shape required by Altegio."""
+    async def update_service_price_result(self, service_id: int, price: float, ensure_live: bool = True):
+        """Update an Altegio service price (and, by default, make it live) via the
+        full PATCH payload Altegio requires.
+
+        ensure_live=True also flips the service to active + online-bookable. The
+        decisive field is `service_type=1`: while it is 0, Altegio silently
+        ignores `active`/`is_online`. Setting all three together is what makes a
+        Poriadok event actually visible & bookable in Altegio — no manual UI step.
+        """
         try:
             target_price = int(round(float(price or 0)))
         except (TypeError, ValueError):
@@ -5342,6 +5362,10 @@ class AltegioClient:
         payload = {key: service.get(key) for key in ALTEGIO_SERVICE_PATCH_KEYS if key in service}
         payload["price_min"] = target_price
         payload["price_max"] = target_price
+        if ensure_live:
+            payload["active"] = 1
+            payload["is_online"] = True
+            payload["service_type"] = 1
 
         url = f"{self.base_url}/company/{self.company_id}/services/{int(service_id)}"
         async with httpx.AsyncClient(timeout=30.0) as client:
