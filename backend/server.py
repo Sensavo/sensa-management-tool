@@ -2033,28 +2033,21 @@ def _altegio_booked_count(altegio_event: dict) -> int:
 
 
 def _altegio_activity_url(activity_id: Optional[str] = None, event_date: Optional[str] = None) -> Optional[str]:
-    """Deep link into the Altegio group-activities calendar.
+    """Public online-booking deep link for a group event — the page an
+    unregistered client lands on to buy a ticket for THIS event.
 
-    The current Altegio cabinet lives at app.alteg.io/dashboard/activities/{cid}.
-    Group activities open as an in-app panel (no per-activity URL), so the most
-    precise link we can build pins the calendar to the event's exact day —
-    landing the manager right on the event instead of the whole calendar.
-    The old `n{cid}.alteg.io/.../activity/{id}` format is dead and redirected
-    to the generic calendar, which was the bug.
+    Canonical widget route (extracted from the live Altegio booking SPA):
+        https://n{cid}.alteg.io/company/{cid}/activity/info/{activity_id}
+    The `/info/` segment is what pins the widget to a single event; without it
+    the widget redirects to `activity/select` (the generic events calendar),
+    which was the bug. `event_date` is unused now (kept for signature compat).
     """
     if not ALTEGIO_COMPANY_ID:
         return None
-    base = f"https://app.alteg.io/dashboard/activities/{ALTEGIO_COMPANY_ID}"
-    day = None
-    if event_date:
-        try:
-            d = datetime.strptime(str(event_date)[:10], "%Y-%m-%d")
-            day = d.strftime("%d.%m.%Y")
-        except Exception:
-            day = None
-    if day:
-        return f"{base}/?start_date={day}&end_date={day}"
-    return f"{base}/"
+    base = f"https://n{ALTEGIO_COMPANY_ID}.alteg.io/company/{ALTEGIO_COMPANY_ID}"
+    if activity_id:
+        return f"{base}/activity/info/{activity_id}"
+    return f"{base}/activity/select"
 
 
 def _google_calendar_event_id(event: Optional[dict]) -> Optional[str]:
