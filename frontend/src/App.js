@@ -1,6 +1,6 @@
 import { useState, useEffect, createContext, useContext, useCallback, useMemo, useRef } from "react";
 import "@/App.css";
-import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { Toaster, toast } from "sonner";
 import {
@@ -4940,6 +4940,7 @@ const DesktopDashboard = () => {
   const { pushUndo } = useUndo();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showSettings, setShowSettings] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
@@ -5405,7 +5406,7 @@ const DesktopDashboard = () => {
       }
     } catch { toast.error("помилка"); }
   };
-  const loadArchive = async () => { try { const r = await api.getTaskArchive(); setArchive(r.data); setShowArchive(true); } catch { toast.error("помилка"); } };
+  const loadArchive = async () => { try { const r = await api.getTaskArchive(); setArchive(r.data); openView("archive"); } catch { toast.error("помилка"); } };
   const handleRestoreTask = async (item) => {
     try {
       if (item.is_standalone) { await api.updateStandaloneTask(item.event_id, false); refreshStandaloneTasks(); }
@@ -5430,25 +5431,44 @@ const DesktopDashboard = () => {
     }
   };
 
-  const handleEventClick = async (eventId) => {
+  // URL is the source of truth for which overlay is open, so every event and
+  // screen has a shareable, auto-updating link (e.g. /?event=ID, /?view=settings).
+  const openEventDetail = async (eventId) => {
     try {
       const r = await axios.get(`${API}/events/${eventId}`);
       setSelectedEvent(r.data);
       setShowEventDetail(true);
-      // Fetch series instances if this event belongs to a regular series
       const isSeries = !!r.data?.source_event_id || r.data?.event_type === "regular";
       if (isSeries) {
         try {
           const s = await axios.get(`${API}/events/${eventId}/series`);
           setSeriesData(s.data);
-        } catch {
-          setSeriesData(null);
-        }
+        } catch { setSeriesData(null); }
       } else {
         setSeriesData(null);
       }
     } catch { toast.error("помилка"); }
   };
+  // Click handlers only mutate the URL; the effect below reconciles UI to it.
+  const handleEventClick = (eventId) => setSearchParams(p => { const n = new URLSearchParams(p); n.set("event", eventId); n.delete("view"); return n; });
+  const closeEventDetail = () => setSearchParams(p => { const n = new URLSearchParams(p); n.delete("event"); return n; });
+  const openView = (view) => setSearchParams(p => { const n = new URLSearchParams(p); n.set("view", view); n.delete("event"); return n; });
+  const closeView = () => setSearchParams(p => { const n = new URLSearchParams(p); n.delete("view"); return n; });
+
+  // Reconcile overlays to the URL (handles clicks, direct links, back/forward).
+  useEffect(() => {
+    const ev = searchParams.get("event");
+    const view = searchParams.get("view");
+    if (ev) {
+      if (!showEventDetail || selectedEvent?.id !== ev) openEventDetail(ev);
+    } else if (showEventDetail) {
+      setShowEventDetail(false); setSelectedEvent(null); setSeriesData(null);
+    }
+    setShowSettings(view === "settings");
+    setShowStats(view === "stats");
+    setShowArchive(view === "archive");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
   const handleToggleTaskInPopup = async (reminderId, completed) => { try { await api.completeTask({ event_id: selectedEvent.id, reminder_id: reminderId, completed }); refreshEvents(); const r = await axios.get(`${API}/events/${selectedEvent.id}`); setSelectedEvent(r.data); } catch { toast.error("помилка"); } };
   const handleToggleSMMTaskInPopup = async (taskId, completed) => { try { await api.completeSMMTask({ event_id: selectedEvent.id, task_id: taskId, completed }); refreshEvents(); const r = await axios.get(`${API}/events/${selectedEvent.id}`); setSelectedEvent(r.data); } catch { toast.error("помилка"); } };
 
@@ -5657,7 +5677,7 @@ const DesktopDashboard = () => {
       setCancelSeriesDialogFor(ev);
       return;
     }
-    const didCancel = await cancelEventAndArchive(ev || { id: eventId }, { refreshEvents, onDone: () => setShowEventDetail(false) });
+    const didCancel = await cancelEventAndArchive(ev || { id: eventId }, { refreshEvents, onDone: () => closeEventDetail() });
     if (didCancel) pushUndo({ label: "скасування події", run: async () => { await axios.patch(`${API}/events/${eventId}`, { cancelled: false }); refreshEvents(); } });
   };
 
@@ -5668,7 +5688,7 @@ const DesktopDashboard = () => {
       await axios.patch(`${API}/events/${id}`, { cancelled: true });
       toast.success("подію скасовано");
       setCancelSeriesDialogFor(null);
-      setShowEventDetail(false);
+      closeEventDetail();
       refreshEvents();
     } catch (error) {
       if (confirmCancellationGuard(error)) {
@@ -5690,7 +5710,7 @@ const DesktopDashboard = () => {
       const r = await api.cancelEventSeries(id);
       toast.success(`серію скасовано — ${r.data.cancelled_count} подій`);
       setCancelSeriesDialogFor(null);
-      setShowEventDetail(false);
+      closeEventDetail();
       refreshEvents();
     } catch (error) {
       if (confirmCancellationGuard(error)) {
@@ -5892,11 +5912,11 @@ const DesktopDashboard = () => {
           <span className="desktop-date-label text-sm text-secondary lowercase">{todayFormatted.weekday} • {todayFormatted.day} {todayFormatted.month}</span>
         </div>
         <div className="desktop-header-right">
-          <button className="desktop-header-btn" onClick={() => setShowStats(true)} title="Аналітика" data-testid="analytics-btn"><BarChart3 className="w-5 h-5" /></button>
+          <button className="desktop-header-btn" onClick={() => openView("stats")} title="Аналітика" data-testid="analytics-btn"><BarChart3 className="w-5 h-5" /></button>
           <button className="desktop-header-btn" onClick={() => navigate("/content")} title="Контент" data-testid="content-btn"><FileText className="w-5 h-5" /></button>
           <button className="desktop-header-btn" onClick={() => setShowDayOffDialog(true)} title="Вихідний" data-testid="dayoff-btn"><Coffee className="w-5 h-5" /></button>
           <button className="btn-dark" onClick={() => navigate("/event/new")}><Plus className="w-4 h-4" /><span>подія</span></button>
-          <button className="desktop-header-btn" onClick={() => setShowSettings(true)} title="Налаштування"><Settings className="w-5 h-5" /></button>
+          <button className="desktop-header-btn" onClick={() => openView("settings")} title="Налаштування"><Settings className="w-5 h-5" /></button>
         </div>
       </header>
 
@@ -6285,7 +6305,7 @@ const DesktopDashboard = () => {
       </Dialog>
 
       {/* Event Detail Fullscreen */}
-      <FullscreenModal isOpen={showEventDetail} onClose={() => setShowEventDetail(false)} title={selectedEvent?.title || "подія"}>
+      <FullscreenModal isOpen={showEventDetail} onClose={() => closeEventDetail()} title={selectedEvent?.title || "подія"}>
         {selectedEvent && (
           <div className="desktop-columns-4">
             {/* Column 1 - Event Info */}
@@ -6413,7 +6433,7 @@ const DesktopDashboard = () => {
                   )}
                 </div>
                 <div className="flex gap-2 mt-4">
-                  <Button variant="outline" className="flex-1" onClick={() => { setShowEventDetail(false); navigate(`/event/${selectedEvent.id}`); }}>
+                  <Button variant="outline" className="flex-1" onClick={() => { closeEventDetail(); navigate(`/event/${selectedEvent.id}`); }}>
                     <Edit className="w-4 h-4 mr-2" />редагувати
                   </Button>
                   {!selectedEvent.cancelled ? (
@@ -6689,14 +6709,14 @@ const DesktopDashboard = () => {
         </DialogContent>
       </Dialog>
 
-      <FullscreenModal isOpen={showSettings} onClose={() => setShowSettings(false)} title="налаштування">
+      <FullscreenModal isOpen={showSettings} onClose={() => closeView()} title="налаштування">
         <SettingsContent />
       </FullscreenModal>
 
       {/* Analytics Modal - no animation, custom header */}
       {showStats && (
         <div className="fixed inset-0 z-50 bg-[#F6F5F1]">
-          <StatsContent onClose={() => setShowStats(false)} settings={settings} />
+          <StatsContent onClose={() => closeView()} settings={settings} />
         </div>
       )}
 
@@ -8079,7 +8099,15 @@ const StatsContent = ({ onClose, settings }) => {
 const EventsDesktopExpanded = () => {
   const { events, smmTasksDefinition, allTaskDefs, settings, refreshEvents } = useApp();
   const navigate = useNavigate();
-  const [selectedEventId, setSelectedEventId] = useState(null);
+  // Selected event lives in the URL (?event=ID) so /events?event=ID is a
+  // shareable, auto-updating link and back/forward works.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedEventId = searchParams.get("event");
+  const setSelectedEventId = (id) => setSearchParams(p => {
+    const n = new URLSearchParams(p);
+    if (id) n.set("event", id); else n.delete("event");
+    return n;
+  }, { replace: true });
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [openRoles, setOpenRoles] = useState({ management: false, smm: false, marketing: false });
   const [exportingEvent, setExportingEvent] = useState(false);
