@@ -86,6 +86,13 @@ const emitAltegioWarning = (warning) => {
   if (warning) window.dispatchEvent(new CustomEvent(ALTEGIO_WARNING_EVENT, { detail: warning }));
 };
 
+// True when any Radix dialog/alert/popover is open. Page-level ESC handlers use
+// this so ESC first closes the active overlay (the overlay closes itself) and
+// only navigates away when nothing is open.
+const anyOverlayOpen = () => !!document.querySelector(
+  '[role="dialog"],[role="alertdialog"],[data-radix-popper-content-wrapper],[data-state="open"][data-radix-popover-content]'
+);
+
 const TEAM_USER_OPTIONS = [
   { id: "manager", label: "Manager" },
   { id: "smm", label: "SMM" },
@@ -2248,7 +2255,7 @@ const EventDetailPage = () => {
 
   // ESC to go back
   useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') navigate(-1); };
+    const h = (e) => { if (e.key === 'Escape' && !anyOverlayOpen()) navigate(-1); };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
   }, [navigate]);
@@ -2453,7 +2460,7 @@ const EventForm = () => {
 
   // ESC to close
   useEffect(() => {
-    const handleKey = (e) => { if (e.key === 'Escape' && isNew) navigate("/"); };
+    const handleKey = (e) => { if (e.key === 'Escape' && isNew && !anyOverlayOpen()) navigate("/"); };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
   }, [isNew, navigate]);
@@ -3514,7 +3521,7 @@ const ContentPage = () => {
 
   // ESC to close
   useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') navigate('/'); };
+    const h = (e) => { if (e.key === 'Escape' && !anyOverlayOpen()) navigate('/'); };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
   }, [navigate]);
@@ -8149,7 +8156,7 @@ const EventsDesktopExpanded = () => {
 
   // ESC closes the expanded view and returns to the dashboard.
   useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') navigate('/'); };
+    const h = (e) => { if (e.key === 'Escape' && !anyOverlayOpen()) navigate('/'); };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
   }, [navigate]);

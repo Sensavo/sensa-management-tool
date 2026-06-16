@@ -7,3 +7,4 @@ frontend/.env
 __pycache__/
 *.pyc
 .DS_Store
+.railway-token
