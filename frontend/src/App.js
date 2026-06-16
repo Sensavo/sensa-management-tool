@@ -89,9 +89,18 @@ const emitAltegioWarning = (warning) => {
 // True when any Radix dialog/alert/popover is open. Page-level ESC handlers use
 // this so ESC first closes the active overlay (the overlay closes itself) and
 // only navigates away when nothing is open.
-const anyOverlayOpen = () => !!document.querySelector(
-  '[role="dialog"],[role="alertdialog"],[data-radix-popper-content-wrapper],[data-state="open"][data-radix-popover-content]'
-);
+const anyOverlayOpen = () => {
+  try {
+    if (document.querySelector('[role="dialog"],[role="alertdialog"]')) return true;
+    // Radix modal dialogs lock body scroll + disable body pointer events while open.
+    if (document.body.hasAttribute('data-scroll-locked')) return true;
+    if (document.body.style.pointerEvents === 'none') return true;
+    // Open popovers / dropdowns (calendars etc.)
+    if (document.querySelector('[data-radix-popper-content-wrapper]')) return true;
+    if (document.querySelector('[data-state="open"][role="menu"]')) return true;
+  } catch {}
+  return false;
+};
 
 const TEAM_USER_OPTIONS = [
   { id: "manager", label: "Manager" },
