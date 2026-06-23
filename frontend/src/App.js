@@ -454,14 +454,14 @@ const EarlyBirdTiers = ({ tiers, onChange }) => {
   return (
     <div className="space-y-3">
       {rows.map((r, i) => (
-        <div key={i} className="grid gap-3 grid-cols-3 items-end">
-          <div className="form-field">
+        <div key={i} className="flex items-end gap-3">
+          <div className="form-field flex-1">
             <Label className="text-sm text-secondary">ціна (₴)</Label>
             <input type="text" inputMode="numeric" placeholder="0" value={r.price}
               onChange={(e) => update(i, { price: e.target.value.replace(/[^0-9]/g, "") })}
               className="form-input w-full" />
           </div>
-          <div className="form-field">
+          <div className="form-field flex-1">
             <Label className="text-sm text-secondary">діє до</Label>
             <Popover open={openCal === i} onOpenChange={(o) => setOpenCal(o ? i : null)}>
               <PopoverTrigger asChild>
@@ -475,12 +475,10 @@ const EarlyBirdTiers = ({ tiers, onChange }) => {
               </PopoverContent>
             </Popover>
           </div>
-          <div className="form-field flex flex-col justify-end">
-            <button type="button" onClick={() => remove(i)}
-              className="form-input w-full flex items-center justify-center text-secondary hover:text-red-500 transition-colors">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+          <button type="button" onClick={() => remove(i)} title="прибрати"
+            className="h-12 w-9 shrink-0 flex items-center justify-center rounded-full text-secondary hover:text-red-500 hover:bg-black/5 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       ))}
       <button type="button" onClick={add} className="text-sm underline text-secondary hover:text-[#1A1717] transition-colors">+ додати ще одну сходинку</button>
