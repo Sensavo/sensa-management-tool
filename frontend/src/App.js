@@ -433,34 +433,57 @@ const effectivePrice = (base, tiers, todayStr) => {
 };
 
 // Early-bird editor: a bird icon; click adds one row [ціна · діє до]; then an
-// underlined "+ додати ще одну сходинку" adds more. Regular price stays in the
-// main ціна field; these are the cheaper windows valid until their dates.
+// underlined "+ додати ще одну сходинку" adds more. Uses the exact same field
+// styling and date picker as the main form so rows line up pixel-for-pixel.
 const EarlyBirdTiers = ({ tiers, onChange }) => {
   const rows = tiers || [];
+  const [openCal, setOpenCal] = useState(null);
   const update = (i, patch) => onChange(rows.map((r, idx) => idx === i ? { ...r, ...patch } : r));
   const add = () => onChange([...rows, { price: "", until: "" }]);
   const remove = (i) => onChange(rows.filter((_, idx) => idx !== i));
+  const fmt = (d) => d ? `${new Date(d).getDate()} ${UK_MONTHS_NOMINATIVE[new Date(d).getMonth()]}` : "обери дату";
 
   if (rows.length === 0) {
     return (
       <button type="button" onClick={add}
-        className="flex items-center gap-2 text-sm text-secondary hover:text-[#1A1717] transition-colors">
+        className="inline-flex items-center gap-2 text-sm font-medium text-secondary hover:text-[#1A1717] transition-colors">
         <Bird className="w-4 h-4" /> рання пташка
       </button>
     );
   }
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {rows.map((r, i) => (
-        <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
-          <div className="form-field"><Label className="text-xs text-secondary">ціна (₴)</Label>
-            <Input type="number" placeholder="0" value={r.price} onChange={(e) => update(i, { price: e.target.value })} className="form-input" /></div>
-          <div className="form-field"><Label className="text-xs text-secondary">діє до</Label>
-            <Input type="date" value={r.until || ""} onChange={(e) => update(i, { until: e.target.value })} className="form-input" /></div>
-          <button type="button" onClick={() => remove(i)} className="p-2 mb-1 rounded-full hover:bg-black/5 text-secondary"><X className="w-4 h-4" /></button>
+        <div key={i} className="grid gap-3 grid-cols-3 items-end">
+          <div className="form-field">
+            <Label className="text-sm text-secondary">ціна (₴)</Label>
+            <input type="text" inputMode="numeric" placeholder="0" value={r.price}
+              onChange={(e) => update(i, { price: e.target.value.replace(/[^0-9]/g, "") })}
+              className="form-input w-full" />
+          </div>
+          <div className="form-field">
+            <Label className="text-sm text-secondary">діє до</Label>
+            <Popover open={openCal === i} onOpenChange={(o) => setOpenCal(o ? i : null)}>
+              <PopoverTrigger asChild>
+                <button type="button" className={`form-input w-full text-left cursor-pointer ${r.until ? "" : "text-secondary"}`}>{fmt(r.until)}</button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-2" align="start">
+                <Calendar mode="single" locale={uk} weekStartsOn={1}
+                  selected={r.until ? new Date(r.until) : undefined}
+                  onSelect={(d) => { if (d) update(i, { until: formatDateLocal(d) }); setOpenCal(null); }}
+                  className="calendar-minimal" modifiersClassNames={{ today: "calendar-today-visible" }} />
+              </PopoverContent>
+            </Popover>
+          </div>
+          <div className="form-field flex flex-col justify-end">
+            <button type="button" onClick={() => remove(i)}
+              className="form-input w-full flex items-center justify-center text-secondary hover:text-red-500 transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       ))}
-      <button type="button" onClick={add} className="text-sm underline text-secondary hover:text-[#1A1717]">+ додати ще одну сходинку</button>
+      <button type="button" onClick={add} className="text-sm underline text-secondary hover:text-[#1A1717] transition-colors">+ додати ще одну сходинку</button>
     </div>
   );
 };
