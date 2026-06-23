@@ -57,7 +57,8 @@ import {
   Maximize2,
   Minimize2,
   ArrowRight,
-  AlertTriangle
+  AlertTriangle,
+  Bird
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -418,59 +419,48 @@ const normalizeEventPayload = (event) => {
   };
 };
 
-// Early-bird: the price active for `today` given a list of {price, starts} tiers.
-// Active = the tier with the latest `starts` that has already arrived; empty
-// `starts` = from the beginning. Mirrors the backend so the UI shows the same.
-const activeTierPrice = (tiers, todayStr) => {
-  const list = (tiers || []).filter(t => t && t.price !== "" && t.price != null);
-  if (!list.length) return null;
+// Early-bird effective price today: regular `base` unless a still-valid tier
+// (until >= today) is in effect; among valid tiers the one closing soonest wins.
+// Mirrors backend _effective_price.
+const effectivePrice = (base, tiers, todayStr) => {
   const today = todayStr || formatDateLocal(new Date());
-  const started = list.filter(t => !t.starts || String(t.starts).slice(0, 10) <= today);
-  const pool = started.length ? started : list;
-  const key = (t) => t.starts || (started.length ? "0000-00-00" : "9999-99-99");
-  const pick = pool.reduce((a, b) => (started.length ? (key(b) >= key(a) ? b : a) : (key(b) <= key(a) ? b : a)));
-  return pick?.price != null ? parseFloat(pick.price) : null;
+  const valid = (tiers || [])
+    .filter(t => t && t.price !== "" && t.price != null && t.until && String(t.until).slice(0, 10) >= today)
+    .map(t => ({ until: String(t.until).slice(0, 10), price: parseFloat(t.price) }));
+  if (valid.length) return valid.reduce((a, b) => (b.until < a.until ? b : a)).price;
+  const b = parseFloat(base);
+  return Number.isFinite(b) ? b : null;
 };
 
-// Early-bird editor: 1–3 price steps, each with a price and a "діє з" date.
-// Driven by formData.price_tiers via setFormData. The first tier is "з зараз".
+// Early-bird editor: a bird icon; click adds one row [ціна · діє до]; then an
+// underlined "+ додати ще одну сходинку" adds more. Regular price stays in the
+// main ціна field; these are the cheaper windows valid until their dates.
 const EarlyBirdTiers = ({ tiers, onChange }) => {
   const rows = tiers || [];
   const update = (i, patch) => onChange(rows.map((r, idx) => idx === i ? { ...r, ...patch } : r));
-  const add = () => onChange([...rows, { label: "", price: "", starts: rows.length === 0 ? null : "" }]);
+  const add = () => onChange([...rows, { price: "", until: "" }]);
   const remove = (i) => onChange(rows.filter((_, idx) => idx !== i));
-  const current = activeTierPrice(rows);
+
+  if (rows.length === 0) {
+    return (
+      <button type="button" onClick={add}
+        className="flex items-center gap-2 text-sm text-secondary hover:text-[#1A1717] transition-colors">
+        <Bird className="w-4 h-4" /> рання пташка
+      </button>
+    );
+  }
   return (
-    <div className="rounded-2xl border border-black/10 p-3 space-y-2 bg-black/[0.015]">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-[#1A1717]">рання пташка — ціна росте по датах</span>
-        {current != null && <span className="text-xs text-secondary">зараз: <b className="text-[#1A1717]">{current} ₴</b></span>}
-      </div>
+    <div className="space-y-2">
       {rows.map((r, i) => (
-        <div key={i} className="flex items-center gap-2">
-          <span className="text-[10px] text-secondary w-12 shrink-0">{i === 0 ? "з зараз" : "діє з"}</span>
-          <Input type="number" placeholder="ціна" value={r.price}
-                 onChange={(e) => update(i, { price: e.target.value })}
-                 className="form-input h-9 text-sm flex-1" />
-          {i === 0 ? (
-            <span className="text-xs text-secondary w-28 shrink-0 text-center">від створення</span>
-          ) : (
-            <Input type="date" value={r.starts || ""} onChange={(e) => update(i, { starts: e.target.value })}
-                   className="form-input h-9 text-sm w-36 shrink-0" />
-          )}
-          <button type="button" onClick={() => remove(i)} className="p-1.5 rounded-full hover:bg-black/5 text-secondary shrink-0"><X className="w-4 h-4" /></button>
+        <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
+          <div className="form-field"><Label className="text-xs text-secondary">ціна (₴)</Label>
+            <Input type="number" placeholder="0" value={r.price} onChange={(e) => update(i, { price: e.target.value })} className="form-input" /></div>
+          <div className="form-field"><Label className="text-xs text-secondary">діє до</Label>
+            <Input type="date" value={r.until || ""} onChange={(e) => update(i, { until: e.target.value })} className="form-input" /></div>
+          <button type="button" onClick={() => remove(i)} className="p-2 mb-1 rounded-full hover:bg-black/5 text-secondary"><X className="w-4 h-4" /></button>
         </div>
       ))}
-      {rows.length < 3 && (
-        <button type="button" onClick={add} className="text-xs text-[#1A1717]/70 hover:text-[#1A1717] flex items-center gap-1 pt-0.5">
-          <Plus className="w-3.5 h-3.5" /> {rows.length === 0 ? "додати рання пташка" : "ще щабель"}
-        </button>
-      )}
-      {rows.length > 0 && (
-        <p className="text-[10px] text-secondary leading-snug pt-0.5">
-          вже куплені квитки лишаються по сплаченій ціні; нові — по поточній. Порядок сам підніме ціну в Altegio коли вікно закриється.
-        </p>
-      )}
+      <button type="button" onClick={add} className="text-sm underline text-secondary hover:text-[#1A1717]">+ додати ще одну сходинку</button>
     </div>
   );
 };
@@ -2541,12 +2531,12 @@ const EventForm = () => {
       setFormData({
         title: e.title,
         date: e.date.split("T")[0],
-        price: e.price.toString(),
+        price: ((e.base_price != null ? e.base_price : e.price) ?? "").toString(),
         description: e.description,
         spots: (e.spots || 10).toString(),
         start_time: e.start_time || "",
         end_time: e.end_time || "",
-        price_tiers: (e.price_tiers || []).map(t => ({ label: t.label || "", price: t.price?.toString() ?? "", starts: t.starts || null })),
+        price_tiers: (e.price_tiers || []).map(t => ({ price: t.price?.toString() ?? "", until: t.until || "" })),
       });
       setSelectedDate(new Date(e.date));
     } catch { toast.error("помилка"); navigate("/"); }
@@ -2579,11 +2569,11 @@ const EventForm = () => {
   const handleConfirmEvent = async (event, index) => {
     try {
       const isRegular = event.event_type === "regular";
-      const tiers = (event.price_tiers || []).filter(t => t.price !== "" && t.price != null).map(t => ({ label: t.label || "", price: parseFloat(t.price), starts: t.starts || null }));
+      const tiers = (event.price_tiers || []).filter(t => t.price !== "" && t.price != null && t.until).map(t => ({ price: parseFloat(t.price), until: t.until }));
       const data = normalizeEventPayload({
         title: event.title,
         date: event.date || formatDateLocal(new Date()),
-        price: tiers.length ? activeTierPrice(tiers) : (parseFloat(event.price) || 0),
+        price: parseFloat(event.price) || 0,
         price_tiers: tiers,
         spots: event.spots,
         description: event.description || "",
@@ -2632,9 +2622,8 @@ const EventForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault(); setLoading(true);
     try {
-      const tiers = (formData.price_tiers || []).filter(t => t.price !== "" && t.price != null).map(t => ({ label: t.label || "", price: parseFloat(t.price), starts: t.starts || null }));
-      const effPrice = tiers.length ? activeTierPrice(tiers) : parseFloat(formData.price);
-      const data = normalizeEventPayload({ ...formData, price: effPrice, price_tiers: tiers, event_type: formData.event_type || "new", repeat_days: formData.repeat_days || [] });
+      const tiers = (formData.price_tiers || []).filter(t => t.price !== "" && t.price != null && t.until).map(t => ({ price: parseFloat(t.price), until: t.until }));
+      const data = normalizeEventPayload({ ...formData, price: parseFloat(formData.price), price_tiers: tiers, event_type: formData.event_type || "new", repeat_days: formData.repeat_days || [] });
       if (isNew) { const _r = await api.createEvent(data); toast.success("створено! 🎉"); emitAltegioWarning(_r?.data?.altegio_warning); }
       else { const _r = await api.updateEvent(eventId, data); toast.success("збережено!"); emitAltegioWarning(_r?.data?.altegio_warning); }
       await refreshEvents(); navigate("/");
@@ -2674,7 +2663,7 @@ const EventForm = () => {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div className="form-field"><Label>{(formData.price_tiers||[]).length ? "ціна (керується пташками)" : "ціна (₴)"}</Label><Input type="number" placeholder="0" value={(formData.price_tiers||[]).length ? (activeTierPrice(formData.price_tiers) ?? "") : formData.price} disabled={(formData.price_tiers||[]).length > 0} onFocus={(e) => { if (e.target.value === "0") setFormData({ ...formData, price: "" }); }} onChange={(e) => setFormData({ ...formData, price: e.target.value })} required={(formData.price_tiers||[]).length === 0} className="form-input" /></div>
+            <div className="form-field"><Label>{(formData.price_tiers||[]).length ? "звичайна ціна (₴)" : "ціна (₴)"}</Label><Input type="number" placeholder="0" value={formData.price} onFocus={(e) => { if (e.target.value === "0") setFormData({ ...formData, price: "" }); }} onChange={(e) => setFormData({ ...formData, price: e.target.value })} required className="form-input" /></div>
             <div className="form-field"><Label>місць</Label><Input type="number" placeholder="10" value={formData.spots} onChange={(e) => setFormData({ ...formData, spots: e.target.value })} className="form-input" /></div>
           </div>
           <div className="form-field"><EarlyBirdTiers tiers={formData.price_tiers} onChange={(t) => setFormData({ ...formData, price_tiers: t })} /></div>

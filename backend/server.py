@@ -537,15 +537,15 @@ async def unlock_with_access_code(payload: AccessCodeRequest):
     return _issue_access_token()
 
 class PriceTier(BaseModel):
-    """One early-bird pricing step. `starts` = first date (YYYY-MM-DD) this price
-    is in effect; empty/None means "from the start" (event creation). The active
-    tier at any moment is the one with the latest `starts` that is <= today. The
-    event's `price` is always set to the active tier's price, so Altegio and the
-    UI show the current price; expired tiers are kept (hidden as history)."""
+    """One early-bird step: `price` is in effect UNTIL `until` (YYYY-MM-DD,
+    inclusive). The regular price lives on the event (`base_price`). The
+    effective price today = the still-valid early-bird tier whose `until` is
+    soonest (the current discount window); if all early-bird windows passed →
+    the regular `base_price`."""
     model_config = ConfigDict(extra="ignore")
-    label: str = ""           # e.g. "дуже рання", "рання", "звичайна"
+    label: str = ""
     price: float
-    starts: Optional[str] = None  # YYYY-MM-DD; None = from creation/now
+    until: Optional[str] = None  # YYYY-MM-DD inclusive; the date this price is valid through
 
 class EventCreate(BaseModel):
     title: str
@@ -587,7 +587,8 @@ class Event(BaseModel):
     event_type: str = "new"  # "new", "regular", "repeat"
     repeat_days: List[int] = []
     source_event_id: str = ""
-    price_tiers: List[PriceTier] = []  # early-bird steps; price reflects active tier
+    price_tiers: List[PriceTier] = []  # early-bird steps ("діє до"); regular price = base_price
+    base_price: Optional[float] = None  # regular price; `price` is the effective price today
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     reminders: Dict[str, str] = {}
     completed_tasks: Dict[str, str] = {}
@@ -2542,33 +2543,32 @@ def _apply_event_defaults(event_data: EventCreate) -> EventCreate:
     return event_data
 
 
-def _active_price_tier(price_tiers, today_str: Optional[str] = None):
-    """(index, tier_dict) of the early-bird tier active for `today`, or (None, None).
-
-    Active = tier with the latest `starts` that has already arrived (<= today);
-    empty `starts` counts as "from the beginning". If no tier has started yet,
-    fall back to the earliest upcoming tier as the current intro price.
-    """
-    if not price_tiers:
-        return None, None
+def _effective_price(base_price, price_tiers, today_str: Optional[str] = None):
+    """Effective price today = the still-valid early-bird tier whose `until` is
+    soonest (current discount window); if none valid → regular base_price."""
     today = today_str or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    tiers = [t.model_dump() if hasattr(t, "model_dump") else dict(t) for t in price_tiers]
-    started = [(i, t) for i, t in enumerate(tiers)
-               if not t.get("starts") or str(t["starts"])[:10] <= today]
-    if started:
-        return max(started, key=lambda it: (it[1].get("starts") or "0000-00-00"))
-    return min(enumerate(tiers), key=lambda it: (it[1].get("starts") or "9999-99-99"))
+    valid = []
+    for t in (price_tiers or []):
+        t = t.model_dump() if hasattr(t, "model_dump") else dict(t)
+        u, p = t.get("until"), t.get("price")
+        if u and p is not None and str(u)[:10] >= today:
+            valid.append((str(u)[:10], float(p)))
+    if valid:
+        return min(valid, key=lambda x: x[0])[1]
+    return float(base_price) if base_price is not None else None
 
 
-def _apply_active_tier_price(event_dict: dict) -> Optional[float]:
-    """If the event carries early-bird tiers, force `price` to the active tier.
-    Returns the effective price. No-op when there are no tiers."""
+def _apply_pricing(event_dict: dict) -> Optional[float]:
+    """Treat the incoming `price` (or existing base_price) as the regular price,
+    store it in base_price, and set `price` to the effective price for today
+    given the early-bird tiers. No-op shape when there are no tiers."""
     tiers = event_dict.get("price_tiers") or []
-    if not tiers:
-        return event_dict.get("price")
-    _, tier = _active_price_tier(tiers)
-    if tier and tier.get("price") is not None:
-        event_dict["price"] = float(tier["price"])
+    base = event_dict.get("base_price")
+    if base is None:
+        base = event_dict.get("price")
+    event_dict["base_price"] = float(base) if base is not None else None
+    if tiers:
+        event_dict["price"] = _effective_price(event_dict["base_price"], tiers)
     return event_dict.get("price")
 
 
@@ -2583,11 +2583,13 @@ async def _advance_early_bird_prices():
         {"_id": 0},
     ).to_list(1000)
     for ev in events:
-        _, tier = _active_price_tier(ev.get("price_tiers") or [], today)
-        if not tier or tier.get("price") is None:
+        base = ev.get("base_price")
+        if base is None:
+            base = ev.get("price")
+        new_price = _effective_price(base, ev.get("price_tiers") or [], today)
+        if new_price is None:
             continue
-        new_price = float(tier["price"])
-        if abs(float(ev.get("price") or 0) - new_price) < 0.01:
+        if abs(float(ev.get("price") or 0) - float(new_price)) < 0.01:
             continue  # already current
         await db.events.update_one({"id": ev["id"]}, {"$set": {"price": new_price}})
         logging.info(f"early-bird: '{ev.get('title')}' price {ev.get('price')} -> {new_price}")
@@ -2628,8 +2630,8 @@ async def _persist_event(event_data: EventCreate, settings, source_event_id: str
     payload = event_data.model_dump()
     if source_event_id:
         payload["source_event_id"] = source_event_id
-    # Early-bird: price always reflects the tier active for today.
-    _apply_active_tier_price(payload)
+    # Early-bird: keep regular price in base_price, set price to today's effective.
+    _apply_pricing(payload)
 
     event = Event(
         **payload,
@@ -3030,9 +3032,13 @@ async def update_event(event_id: str, event_data: EventUpdate):
 
     merged = {**existing, **update_dict}
 
-    # Early-bird: price always follows the active tier (if tiers are set).
-    if merged.get("price_tiers"):
-        update_dict["price"] = _apply_active_tier_price(merged)
+    # Early-bird: incoming `price` is the regular price; recompute effective.
+    if "price" in update_dict or "price_tiers" in update_dict:
+        if "price" in update_dict:
+            merged["base_price"] = update_dict["price"]  # the edited regular price
+        _apply_pricing(merged)
+        update_dict["base_price"] = merged.get("base_price")
+        update_dict["price"] = merged.get("price")
 
     # Push changes to Altegio before local persistence. If the external update
     # fails, keep the local event unchanged so Poriadok does not drift from the
