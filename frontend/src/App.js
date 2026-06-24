@@ -494,7 +494,7 @@ const EarlyBirdTiers = ({ tiers, onChange, eventDate, regularPrice }) => {
     return (
       <button type="button" onClick={add}
         className="inline-flex items-center gap-2 text-sm font-medium text-secondary hover:text-[#1A1717] transition-colors">
-        <Bird className="w-4 h-4" /> рання пташка
+        додати ранню пташку <Bird className="w-4 h-4" />
       </button>
     );
   }
@@ -503,7 +503,7 @@ const EarlyBirdTiers = ({ tiers, onChange, eventDate, regularPrice }) => {
       {rows.map((r, i) => (
         <div key={i} className={`grid gap-3 grid-cols-3 items-end ${i > 0 ? "mt-2" : ""}`}>
           <div className="form-field">
-            {i === 0 && <Label className="text-sm text-secondary">ціна (₴)</Label>}
+            {i === 0 && <Label className="text-sm text-secondary flex items-center gap-1.5"><Bird className="w-3.5 h-3.5" /> рання пташка</Label>}
             <input type="text" inputMode="numeric" placeholder="0" value={r.price}
               onChange={(e) => update(i, { price: e.target.value.replace(/[^0-9]/g, "") })}
               className={`form-input w-full ${issues[i]?.price ? "ring-2 ring-red-400 ring-inset" : ""}`} />
@@ -531,7 +531,7 @@ const EarlyBirdTiers = ({ tiers, onChange, eventDate, regularPrice }) => {
           </div>
         </div>
       ))}
-      <button type="button" onClick={add} className="mt-3 text-sm underline text-secondary hover:text-[#1A1717] transition-colors">+ додати ще одну сходинку</button>
+      <button type="button" onClick={add} className="mt-3 text-sm underline text-secondary hover:text-[#1A1717] transition-colors">+ додати ще одну дату</button>
     </div>
   );
 };
