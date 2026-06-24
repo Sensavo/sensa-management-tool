@@ -58,7 +58,11 @@ import {
   Minimize2,
   ArrowRight,
   AlertTriangle,
-  Bird
+  Bird,
+  Laptop,
+  Pencil,
+  Paintbrush,
+  Film
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -298,8 +302,8 @@ const TASK_HOTKEYS = [
 
 const TaskHotkeysPanel = () => (
   <div
-    className="hidden lg:block fixed z-[160] w-36 rounded-2xl border border-black/5 bg-[#F1EEE7]/95 px-3 py-3 shadow-sm backdrop-blur"
-    style={{ left: "calc(50vw - 390px)", top: "50%", transform: "translateY(-50%)" }}
+    className="hidden lg:block fixed z-[160] w-36 rounded-2xl border border-black/5 bg-[#F1EEE7] px-3 py-3 shadow-sm"
+    style={{ left: "calc(50vw + 226px)", top: "50%", transform: "translateY(-50%)" }}
     data-testid="task-hotkeys-panel"
   >
     <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#1A1717]/45 mb-2">хоткеї</p>
@@ -772,6 +776,7 @@ const ICONS = {
   instagram: Instagram, gift: Gift, coffee: Coffee, music: Music, heart: Heart,
   bookmark: Bookmark, flag: Flag, lightbulb: Lightbulb, phone: Phone, mail: Mail,
   mappin: MapPin, briefcase: Briefcase, headphones: Headphones,
+  laptop: Laptop, pencil: Pencil, brush: Paintbrush, film: Film,
 };
 
 // Unique icons for custom tasks (not used in standard reminders)
@@ -781,12 +786,13 @@ const TASK_ICONS = [
   { value: "send", Icon: Send },
   { value: "video", Icon: Video },
   { value: "camera", Icon: Camera },
-  { value: "share", Icon: Share2 },
+  { value: "film", Icon: Film },
+  { value: "laptop", Icon: Laptop },
+  { value: "pencil", Icon: Pencil },
+  { value: "brush", Icon: Paintbrush },
   { value: "users", Icon: Users },
   { value: "message", Icon: MessageCircle },
   { value: "coffee", Icon: Coffee },
-  { value: "heart", Icon: Heart },
-  { value: "star", Icon: Star },
   { value: "mappin", Icon: MapPin },
   { value: "briefcase", Icon: Briefcase },
   { value: "bell", Icon: Bell },
@@ -6849,9 +6855,11 @@ const DesktopDashboard = () => {
       </Dialog>
 
       {/* Edit Task Dialog (both standalone and event-based) */}
+      {/* Hotkeys panel rendered OUTSIDE the dialog (a transformed+overflow box
+          would clip a fixed child) so it sits to the right of the popup. */}
+      {showEditStandaloneDialog && editingStandaloneTask && <TaskHotkeysPanel />}
       <Dialog open={showEditStandaloneDialog} onOpenChange={setShowEditStandaloneDialog}>
         <DialogContent className="sm:max-w-[420px] !p-5 sm:!p-6" onOpenAutoFocus={(e) => e.preventDefault()}>
-          {editingStandaloneTask && <TaskHotkeysPanel />}
           {editingStandaloneTask && (() => {
             const getAssigneeName = () => {
               const a = editingStandaloneTask.assignee;
