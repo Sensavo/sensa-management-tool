@@ -436,10 +436,47 @@ const effectivePrice = (base, tiers, todayStr) => {
   return Number.isFinite(b) ? b : null;
 };
 
+// Flags suspicious early-bird rows (esp. from AI parsing) so the UI can paint
+// the offending input red and the card can warn. Returns [{price, until}] of
+// booleans per row — true = problematic. Rules: missing/≥regular price, missing
+// date, duplicate "діє до" date, date in the past or after the event, and an
+// inverted ladder (a later window cheaper than an earlier one).
+const earlyBirdTierIssues = (tiers, regularPrice, eventDate) => {
+  const rows = tiers || [];
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const eventDay = eventDate ? new Date(eventDate) : null;
+  const reg = (regularPrice === "" || regularPrice == null) ? null : parseFloat(regularPrice);
+  const untilCounts = {};
+  rows.forEach((r) => { if (r.until) untilCounts[r.until] = (untilCounts[r.until] || 0) + 1; });
+  // ladder: sorted by date, price should not drop as the date gets later
+  const dated = rows.map((r, i) => ({ i, until: r.until, price: (r.price === "" || r.price == null) ? null : parseFloat(r.price) }))
+    .filter((x) => x.until && x.price != null && !isNaN(x.price))
+    .sort((a, b) => (a.until < b.until ? -1 : 1));
+  const orderBad = new Set();
+  for (let k = 1; k < dated.length; k++) {
+    if (dated[k].price < dated[k - 1].price) { orderBad.add(dated[k].i); orderBad.add(dated[k - 1].i); }
+  }
+  return rows.map((r, i) => {
+    const p = (r.price === "" || r.price == null) ? null : parseFloat(r.price);
+    const d = r.until ? new Date(r.until) : null;
+    let price = false, until = false;
+    if (p == null || isNaN(p) || p <= 0) price = true;
+    if (reg != null && p != null && p >= reg) price = true;
+    if (orderBad.has(i)) price = true;
+    if (!r.until) until = true;
+    else {
+      if (untilCounts[r.until] > 1) until = true;
+      if (d && d < today) until = true;
+      if (eventDay && d && d > eventDay) until = true;
+    }
+    return { price, until };
+  });
+};
+
 // Early-bird editor: a bird icon; click adds one row [ціна · діє до]; then an
 // underlined "+ додати ще одну сходинку" adds more. Uses the exact same field
 // styling and date picker as the main form so rows line up pixel-for-pixel.
-const EarlyBirdTiers = ({ tiers, onChange, eventDate }) => {
+const EarlyBirdTiers = ({ tiers, onChange, eventDate, regularPrice }) => {
   const rows = tiers || [];
   const [openCal, setOpenCal] = useState(null);
   const update = (i, patch) => onChange(rows.map((r, idx) => idx === i ? { ...r, ...patch } : r));
@@ -451,6 +488,7 @@ const EarlyBirdTiers = ({ tiers, onChange, eventDate }) => {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const eventDay = eventDate ? new Date(eventDate) : null;
   const calDisabled = eventDay ? { before: today, after: eventDay } : { before: today };
+  const issues = earlyBirdTierIssues(rows, regularPrice, eventDate);
 
   if (rows.length === 0) {
     return (
@@ -468,13 +506,13 @@ const EarlyBirdTiers = ({ tiers, onChange, eventDate }) => {
             {i === 0 && <Label className="text-sm text-secondary">ціна (₴)</Label>}
             <input type="text" inputMode="numeric" placeholder="0" value={r.price}
               onChange={(e) => update(i, { price: e.target.value.replace(/[^0-9]/g, "") })}
-              className="form-input w-full" />
+              className={`form-input w-full ${issues[i]?.price ? "ring-2 ring-red-400 ring-inset" : ""}`} />
           </div>
           <div className="form-field">
             {i === 0 && <Label className="text-sm text-secondary">діє до</Label>}
             <Popover open={openCal === i} onOpenChange={(o) => setOpenCal(o ? i : null)}>
               <PopoverTrigger asChild>
-                <button type="button" className={`form-input w-full text-left cursor-pointer ${r.until ? "" : "text-secondary"}`}>{fmt(r.until)}</button>
+                <button type="button" className={`form-input w-full text-left cursor-pointer ${r.until ? "" : "text-secondary"} ${issues[i]?.until ? "ring-2 ring-red-400 ring-inset" : ""}`}>{fmt(r.until)}</button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-2" align="start">
                 <Calendar mode="single" locale={uk} weekStartsOn={1}
@@ -2701,7 +2739,7 @@ const EventForm = () => {
             <div className="form-field"><Label>{(formData.price_tiers||[]).length ? "звичайна ціна (₴)" : "ціна (₴)"}</Label><Input type="number" placeholder="0" value={formData.price} onFocus={(e) => { if (e.target.value === "0") setFormData({ ...formData, price: "" }); }} onChange={(e) => setFormData({ ...formData, price: e.target.value })} required className="form-input" /></div>
             <div className="form-field"><Label>місць</Label><Input type="number" placeholder="10" value={formData.spots} onChange={(e) => setFormData({ ...formData, spots: e.target.value })} className="form-input" /></div>
           </div>
-          <div className="form-field"><EarlyBirdTiers tiers={formData.price_tiers} eventDate={formData.date} onChange={(t) => setFormData({ ...formData, price_tiers: t })} /></div>
+          <div className="form-field"><EarlyBirdTiers tiers={formData.price_tiers} eventDate={formData.date} regularPrice={formData.price} onChange={(t) => setFormData({ ...formData, price_tiers: t })} /></div>
           <div className="form-field"><Label>опис</Label><Textarea placeholder="що буде цікавого?" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="form-input min-h-24 resize-none py-3" /></div>
           <button type="submit" className="btn-dark w-full" disabled={loading}>{loading ? "зберігаю..." : "зберегти"}</button>
           <div className="h-12" />
@@ -2758,9 +2796,16 @@ const EventForm = () => {
                 TIME_OPTIONS.push(`${String(h).padStart(2,'0')}:00`);
                 TIME_OPTIONS.push(`${String(h).padStart(2,'0')}:30`);
               }
+              const hasTierIssue = earlyBirdTierIssues(event.price_tiers, event.price, event.date).some((x) => x.price || x.until);
 
               return (
               <div key={index} className="p-6 rounded-2xl bg-black/5 space-y-4" data-testid={`parsed-event-${index}`}>
+                {hasTierIssue && (
+                  <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm" data-testid={`tier-warning-${index}`}>
+                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>Перевір підсвічені червоним поля ранньої пташки — можлива помилка розпізнавання.</span>
+                  </div>
+                )}
                 <div className="flex-1 space-y-4">
                   {/* Title + Type on same row */}
                   <div className="flex gap-3 items-start">
@@ -2984,7 +3029,7 @@ const EventForm = () => {
                   </div>
 
                   <div className="mt-3">
-                    <EarlyBirdTiers tiers={event.price_tiers || []} eventDate={event.date} onChange={(t) => updateParsedEvent(index, "price_tiers", t)} />
+                    <EarlyBirdTiers tiers={event.price_tiers || []} eventDate={event.date} regularPrice={event.price} onChange={(t) => updateParsedEvent(index, "price_tiers", t)} />
                   </div>
 
                   {/* Calendar is now in Popover above */}
