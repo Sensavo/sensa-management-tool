@@ -4112,6 +4112,7 @@ async def parse_events_with_ai(request: ParseEventRequest):
 - start_time: час початку у форматі HH:MM (24-годинний формат). ОБОВ'ЯЗКОВО витягни якщо вказано ("о 19:00", "об 11", "початок о 18:30", "18:30-21:00" → start_time "18:30"). Якщо не вказано - ""
 - end_time: час закінчення у форматі HH:MM. Якщо вказано діапазон "18:30-21:00" → end_time "21:00". Якщо не вказано - ""
 - price_tiers: масив СХОДИНОК РАННЬОЇ ПТАШКИ. Якщо в тексті є знижені ціни на ранні дати ("рання пташка 800 до 1 липня", "до 10.07 — 900 грн, далі 1200", "early bird 700 грн до 15 числа") — витягни кожну як обʼєкт {{"price": число, "until": "YYYY-MM-DD"}}, де until — ОСТАННІЙ день дії цієї ціни (включно). Повну ціну клади в price, а не сюди. Якщо ранніх пташок нема - порожній масив []
+  КРИТИЧНО: НІКОЛИ не вигадуй і не здогадуйся про дату until. Якщо для зниженої ціни кінцеву дату НЕ вказано явно в тексті — постав until: "" (порожній рядок), а ціну все одно витягни. Краще порожня дата (користувач сам впише), ніж вигадана. Те саме для будь-якого поля: не вигадуй значення, яких нема в тексті.
 
 Відповідай ТІЛЬКИ валідним JSON у форматі:
 {{
@@ -4166,12 +4167,15 @@ async def parse_events_with_ai(request: ParseEventRequest):
             if not ev.get("date"):
                 missing.append("дата")
             
-            # Early-bird tiers: keep only well-formed {price, until}
+            # Early-bird tiers: keep any with a price. A missing/blank "until" is
+            # kept as None (not dropped) so the UI flags it red and the user fills
+            # it in — better than silently swallowing a tier the model half-read.
             tiers = []
             for t in (ev.get("price_tiers") or []):
-                if isinstance(t, dict) and t.get("until") and t.get("price") is not None:
+                if isinstance(t, dict) and t.get("price") is not None:
                     try:
-                        tiers.append(PriceTier(price=float(t["price"]), until=str(t["until"])[:10], label=t.get("label", "")))
+                        u = str(t["until"])[:10] if t.get("until") else None
+                        tiers.append(PriceTier(price=float(t["price"]), until=u, label=t.get("label", "")))
                     except (TypeError, ValueError):
                         pass
 
