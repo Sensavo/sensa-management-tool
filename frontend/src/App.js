@@ -2719,7 +2719,7 @@ const EventForm = () => {
   // New event with AI parsing
   return (
     <div className="fixed inset-0 z-50 bg-[#F6F5F1]">
-      <div className="desktop-dashboard">
+      <div className="desktop-dashboard flex flex-col">
         <header className="desktop-header" style={{position: 'relative'}}>
           <div className="desktop-header-left">
             <span className="text-xl font-semibold">нова подія</span>
