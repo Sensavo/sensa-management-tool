@@ -439,13 +439,18 @@ const effectivePrice = (base, tiers, todayStr) => {
 // Early-bird editor: a bird icon; click adds one row [ціна · діє до]; then an
 // underlined "+ додати ще одну сходинку" adds more. Uses the exact same field
 // styling and date picker as the main form so rows line up pixel-for-pixel.
-const EarlyBirdTiers = ({ tiers, onChange }) => {
+const EarlyBirdTiers = ({ tiers, onChange, eventDate }) => {
   const rows = tiers || [];
   const [openCal, setOpenCal] = useState(null);
   const update = (i, patch) => onChange(rows.map((r, idx) => idx === i ? { ...r, ...patch } : r));
   const add = () => onChange([...rows, { price: "", until: "" }]);
   const remove = (i) => onChange(rows.filter((_, idx) => idx !== i));
   const fmt = (d) => d ? `${new Date(d).getDate()} ${UK_MONTHS_NOMINATIVE[new Date(d).getMonth()]}` : "обери дату";
+  // "діє до" must be within [today, дата події] — an early-bird can't end in the
+  // past, nor run past the event itself.
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const eventDay = eventDate ? new Date(eventDate) : null;
+  const calDisabled = eventDay ? { before: today, after: eventDay } : { before: today };
 
   if (rows.length === 0) {
     return (
@@ -474,6 +479,7 @@ const EarlyBirdTiers = ({ tiers, onChange }) => {
               <PopoverContent className="w-auto p-2" align="start">
                 <Calendar mode="single" locale={uk} weekStartsOn={1}
                   selected={r.until ? new Date(r.until) : undefined}
+                  disabled={calDisabled}
                   onSelect={(d) => { if (d) update(i, { until: formatDateLocal(d) }); setOpenCal(null); }}
                   className="calendar-minimal" modifiersClassNames={{ today: "calendar-today-visible" }} />
               </PopoverContent>
@@ -2695,7 +2701,7 @@ const EventForm = () => {
             <div className="form-field"><Label>{(formData.price_tiers||[]).length ? "звичайна ціна (₴)" : "ціна (₴)"}</Label><Input type="number" placeholder="0" value={formData.price} onFocus={(e) => { if (e.target.value === "0") setFormData({ ...formData, price: "" }); }} onChange={(e) => setFormData({ ...formData, price: e.target.value })} required className="form-input" /></div>
             <div className="form-field"><Label>місць</Label><Input type="number" placeholder="10" value={formData.spots} onChange={(e) => setFormData({ ...formData, spots: e.target.value })} className="form-input" /></div>
           </div>
-          <div className="form-field"><EarlyBirdTiers tiers={formData.price_tiers} onChange={(t) => setFormData({ ...formData, price_tiers: t })} /></div>
+          <div className="form-field"><EarlyBirdTiers tiers={formData.price_tiers} eventDate={formData.date} onChange={(t) => setFormData({ ...formData, price_tiers: t })} /></div>
           <div className="form-field"><Label>опис</Label><Textarea placeholder="що буде цікавого?" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="form-input min-h-24 resize-none py-3" /></div>
           <button type="submit" className="btn-dark w-full" disabled={loading}>{loading ? "зберігаю..." : "зберегти"}</button>
           <div className="h-12" />
@@ -2978,7 +2984,7 @@ const EventForm = () => {
                   </div>
 
                   <div className="mt-3">
-                    <EarlyBirdTiers tiers={event.price_tiers || []} onChange={(t) => updateParsedEvent(index, "price_tiers", t)} />
+                    <EarlyBirdTiers tiers={event.price_tiers || []} eventDate={event.date} onChange={(t) => updateParsedEvent(index, "price_tiers", t)} />
                   </div>
 
                   {/* Calendar is now in Popover above */}
