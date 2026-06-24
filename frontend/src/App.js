@@ -452,17 +452,17 @@ const EarlyBirdTiers = ({ tiers, onChange }) => {
     );
   }
   return (
-    <div className="space-y-3">
+    <div>
       {rows.map((r, i) => (
-        <div key={i} className="flex items-end gap-3">
-          <div className="form-field flex-1">
-            <Label className="text-sm text-secondary">ціна (₴)</Label>
+        <div key={i} className={`grid gap-3 grid-cols-3 items-end ${i > 0 ? "mt-2" : ""}`}>
+          <div className="form-field">
+            {i === 0 && <Label className="text-sm text-secondary">ціна (₴)</Label>}
             <input type="text" inputMode="numeric" placeholder="0" value={r.price}
               onChange={(e) => update(i, { price: e.target.value.replace(/[^0-9]/g, "") })}
               className="form-input w-full" />
           </div>
-          <div className="form-field flex-1">
-            <Label className="text-sm text-secondary">діє до</Label>
+          <div className="form-field">
+            {i === 0 && <Label className="text-sm text-secondary">діє до</Label>}
             <Popover open={openCal === i} onOpenChange={(o) => setOpenCal(o ? i : null)}>
               <PopoverTrigger asChild>
                 <button type="button" className={`form-input w-full text-left cursor-pointer ${r.until ? "" : "text-secondary"}`}>{fmt(r.until)}</button>
@@ -475,13 +475,15 @@ const EarlyBirdTiers = ({ tiers, onChange }) => {
               </PopoverContent>
             </Popover>
           </div>
-          <button type="button" onClick={() => remove(i)} title="прибрати"
-            className="h-12 w-9 shrink-0 flex items-center justify-center rounded-full text-secondary hover:text-red-500 hover:bg-black/5 transition-colors">
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center h-12">
+            <button type="button" onClick={() => remove(i)} title="прибрати"
+              className="w-9 h-9 flex items-center justify-center rounded-full text-secondary hover:text-red-500 hover:bg-black/5 transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       ))}
-      <button type="button" onClick={add} className="text-sm underline text-secondary hover:text-[#1A1717] transition-colors">+ додати ще одну сходинку</button>
+      <button type="button" onClick={add} className="mt-3 text-sm underline text-secondary hover:text-[#1A1717] transition-colors">+ додати ще одну сходинку</button>
     </div>
   );
 };
@@ -2863,7 +2865,7 @@ const EventForm = () => {
 
                   {/* Date + Price + Spots row. For regular series, date = старт серії. */}
                   <div className="grid gap-3 grid-cols-3">
-                    <div className="form-field">
+                    <div className="form-field" style={{ order: 2 }}>
                       <Label className="text-sm text-secondary">
                         {event.event_type === "regular" ? "початок серії" : "дата"}
                       </Label>
@@ -2891,7 +2893,7 @@ const EventForm = () => {
                         </PopoverContent>
                       </Popover>
                     </div>
-                      <div className="form-field relative">
+                      <div className="form-field relative" style={{ order: 1 }}>
                         <Label className="text-sm text-secondary">ціна (₴)</Label>
                         <div className="relative">
                           <input
@@ -2924,7 +2926,7 @@ const EventForm = () => {
                           )}
                         </div>
                       </div>
-                      <div className="form-field relative">
+                      <div className="form-field relative" style={{ order: 3 }}>
                         <Label className="text-sm text-secondary">місць</Label>
                         <div className="relative">
                           <button
