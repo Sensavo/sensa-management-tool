@@ -712,6 +712,7 @@ class ParsedEvent(BaseModel):
     description: str = ""
     start_time: str = ""
     end_time: str = ""
+    price_tiers: List[PriceTier] = []
     confidence: float = 1.0
     missing_fields: List[str] = []
 
@@ -4105,11 +4106,12 @@ async def parse_events_with_ai(request: ParseEventRequest):
 Для кожної події потрібно витягнути:
 - title: назва події
 - date: дата у форматі YYYY-MM-DD (якщо рік не вказано, використовуй {current_year} або {current_year + 1} якщо дата вже минула)
-- price: ціна в гривнях (число, без валюти). Якщо не вказано - 0
+- price: ЗВИЧАЙНА (повна) ціна в гривнях — та, що діє після завершення всіх ранніх пташок. Число, без валюти. Якщо не вказано - 0
 - spots: кількість місць/учасників (число). Якщо не вказано - 10
 - description: короткий опис (якщо є)
-- start_time: час початку у форматі HH:MM (24-годинний формат). Якщо не вказано - ""
-- end_time: час закінчення у форматі HH:MM (24-годинний формат). Якщо не вказано - "" (якщо вказано тільки початок, можна залишити пустим)
+- start_time: час початку у форматі HH:MM (24-годинний формат). ОБОВ'ЯЗКОВО витягни якщо вказано ("о 19:00", "об 11", "початок о 18:30", "18:30-21:00" → start_time "18:30"). Якщо не вказано - ""
+- end_time: час закінчення у форматі HH:MM. Якщо вказано діапазон "18:30-21:00" → end_time "21:00". Якщо не вказано - ""
+- price_tiers: масив СХОДИНОК РАННЬОЇ ПТАШКИ. Якщо в тексті є знижені ціни на ранні дати ("рання пташка 800 до 1 липня", "до 10.07 — 900 грн, далі 1200", "early bird 700 грн до 15 числа") — витягни кожну як обʼєкт {{"price": число, "until": "YYYY-MM-DD"}}, де until — ОСТАННІЙ день дії цієї ціни (включно). Повну ціну клади в price, а не сюди. Якщо ранніх пташок нема - порожній масив []
 
 Відповідай ТІЛЬКИ валідним JSON у форматі:
 {{
@@ -4117,11 +4119,15 @@ async def parse_events_with_ai(request: ParseEventRequest):
     {{
       "title": "Назва",
       "date": "2026-02-15",
-      "price": 500,
+      "price": 1200,
       "spots": 20,
       "description": "Опис",
       "start_time": "19:00",
-      "end_time": "22:00"
+      "end_time": "22:00",
+      "price_tiers": [
+        {{"price": 800, "until": "2026-01-20"}},
+        {{"price": 1000, "until": "2026-02-05"}}
+      ]
     }}
   ],
   "clarification_needed": false,
@@ -4160,12 +4166,24 @@ async def parse_events_with_ai(request: ParseEventRequest):
             if not ev.get("date"):
                 missing.append("дата")
             
+            # Early-bird tiers: keep only well-formed {price, until}
+            tiers = []
+            for t in (ev.get("price_tiers") or []):
+                if isinstance(t, dict) and t.get("until") and t.get("price") is not None:
+                    try:
+                        tiers.append(PriceTier(price=float(t["price"]), until=str(t["until"])[:10], label=t.get("label", "")))
+                    except (TypeError, ValueError):
+                        pass
+
             events.append(ParsedEvent(
                 title=ev.get("title", ""),
                 date=ev.get("date", ""),
                 price=float(ev.get("price", 0)),
                 spots=int(ev.get("spots", 10)),
                 description=ev.get("description", ""),
+                start_time=ev.get("start_time", "") or "",
+                end_time=ev.get("end_time", "") or "",
+                price_tiers=tiers,
                 missing_fields=missing,
                 confidence=0.9 if not missing else 0.5
             ))
