@@ -6938,8 +6938,6 @@ const DesktopDashboard = () => {
                   ))}
                 </div>
 
-                <TaskHotkeysInline />
-
                 <Input
                   placeholder="що треба зробити?"
                   value={editingStandaloneTask.title}
