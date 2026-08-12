@@ -90,6 +90,54 @@ TEAM_PERSON_LABELS = {
     "smm": "софійка",
     "marketer": "во",
 }
+TELEGRAM_MORNING_HOUR_MIN = 7
+TELEGRAM_MORNING_HOUR_MAX = 11
+TELEGRAM_MORNING_HOUR_DEFAULT = 9
+TELEGRAM_SECOND_PING_OFFSET_HOURS = 5
+TELEGRAM_SECOND_PING_MAX_HOUR = 16
+TELEGRAM_COMMUNICATION_STYLES = ("serious", "balanced", "haha")
+TELEGRAM_COMMUNICATION_STYLE_DEFAULT = "balanced"
+TELEGRAM_COPY = {
+    "serious": {
+        "morning_greeting": ["доброго ранку", "ранок на звʼязку", "план на сьогодні"],
+        "morning_load": ["сьогодні {count} тасків", "на сьогодні бачу {count} тасків", "у плані дня {count} тасків"],
+        "no_today": ["на сьогодні тасків немає", "сьогодні чистий день", "сьогодні без запланованих тасків"],
+        "leftover": ["з попередніх днів лишилось {count}", "активних старіших тасків: {count}", "ще тягнеться з раніше: {count}"],
+        "yesterday": ["з учора лишилось {count}", "учорашніх активних: {count}", "ще не закрилось з учора: {count}"],
+        "morning_question": ["все беремо сьогодні чи щось рухаємо?", "план сходиться чи відкриваємо день?", "залишаємо так чи переглянемо навантаження?"],
+        "second_ping": ["схоже, ранковий план міг не зайти. допомогти переглянути день?", "бачу, що ранковий пінг без відповіді. день ще можна підправити?", "план на сьогодні актуальний чи відкриваємо порядок?"],
+        "ignored": ["чи ці пінги ще корисні? можу лишити тихіше", "можливо, варто зменшити шум. залишаємо ранкові пінги?", "якщо формат не допомагає, краще підкрутити його"],
+        "ack": ["ок, зафіксував", "прийняв", "добре, працюємо з цим"],
+        "open_day": ["відкриваю день у poriadok", "ось день у poriadok", "йдемо в poriadok"],
+        "mindful": ["перед тим як рухати таски, добре б побачити весь стіл", "спершу дивимось на день цілком", "порядок починається з чесної картинки"],
+    },
+    "balanced": {
+        "morning_greeting": ["доброго ранку", "ага, порядок пише", "ранок, дивимось день"],
+        "morning_load": ["сьогодні в тебе {count} тасків", "на сьогодні бачу {count} тасків", "у дні стоїть {count} тасків"],
+        "no_today": ["на сьогодні тасків немає", "сьогодні в календарі тихо", "сьогодні без тасків у плані"],
+        "leftover": ["ще {count} активних тягнеться з раніше", "з попередніх днів лишилось {count}", "старіших активних тасків: {count}"],
+        "yesterday": ["з учора лишилось {count}", "учора не закрилось: {count}", "ще {count} з учора"],
+        "morning_question": ["все беремо сьогодні чи щось рухаємо?", "план норм чи треба підчистити день?", "залишаємо так чи відкриваємо навантаження?"],
+        "second_ping": ["схоже, план міг не скластися. допомогти розвантажити день?", "ти сьогодні встигаєш чи відкриваємо порядок?", "ранковий пінг лишився без відповіді. день ще актуальний?"],
+        "ignored": ["бачу, що пінги можуть ставати фоном. залишаємо їх?", "можу писати тихіше або в інший час. як краще?", "якщо порядок зараз не допомагає, краще це чесно підкрутити"],
+        "ack": ["ага, зафіксував", "ок, беру це як план", "домовились"],
+        "open_day": ["ось poriadok", "відкриваю poriadok", "сюди зручніше рухати задачі"],
+        "mindful": ["спершу глянемо на весь день, тоді рухаємо", "краще один раз розкласти, ніж носити в голові", "бачити день цілком вже трохи порядок"],
+    },
+    "haha": {
+        "morning_greeting": ["ага, порядок пише", "йо, це порядок", "ранок, відкриваємо пульт"],
+        "morning_load": ["сьогодні в меню {count} тасків", "на сьогодні лежить {count} тасків", "у дні припарковано {count} тасків"],
+        "no_today": ["на сьогодні тасків нема, рідкісний експонат", "сьогодні список мовчить", "у плані чисто, аж підозріло"],
+        "leftover": ["з минулих днів лишилось {count}", "ще {count} тасків не пішли додому", "старіших активних: {count}, вони тут"],
+        "yesterday": ["з учора лишилось {count}", "учорашніх хвостів: {count}", "ще {count} з учора сидить"],
+        "morning_question": ["беремо як є чи трохи пересаджуємо задачі?", "день витримає це все чи відкриваємо план?", "їдемо так чи робимо перестановку?"],
+        "second_ping": ["ранковий план мовчить. може, день уже поїхав іншим маршрутом?", "виглядає, що план просить ревізію. відкриваємо?", "таски на місці, відповіді нема. допомогти розкласти?"],
+        "ignored": ["може, ці пінги вже стали шпалерами. залишаємо чи приглушуємо?", "якщо я занадто часто стукаю, можна підкрутити", "порядок має допомагати, а не дзижчати"],
+        "ack": ["ага, записав у бортжурнал", "ок, курс зрозумів", "прийняв, капітане"],
+        "open_day": ["ось двері в poriadok", "відкриваю poriadok", "тут зручніше пересадити задачі"],
+        "mindful": ["спершу дивимось на весь стіл, потім рухаємо тарілки", "коли все видно, воно менше шумить", "карта дня краще за туман у голові"],
+    },
+}
 LEGACY_ASSIGNEE_ALIASES = {
     "manager": "manager",
     "management": "manager",
@@ -701,6 +749,10 @@ class SMMTaskUpdate(BaseModel):
     color: Optional[str] = None  # "standard", "emerald", "red"
     is_text_work: Optional[bool] = None
 
+class TelegramPreferencesUpdate(BaseModel):
+    morning_hour: Optional[int] = None
+    communication_style: Optional[str] = None
+
 class ParseEventRequest(BaseModel):
     text: str
 
@@ -1103,8 +1155,37 @@ def _next_telegram_run_at(hour: int, minute: int = 0, now: Optional[datetime] = 
     return target
 
 
+def _clamp_telegram_morning_hour(value: Optional[int]) -> int:
+    try:
+        hour = int(value)
+    except Exception:
+        hour = TELEGRAM_MORNING_HOUR_DEFAULT
+    return min(TELEGRAM_MORNING_HOUR_MAX, max(TELEGRAM_MORNING_HOUR_MIN, hour))
+
+
+def _normalize_telegram_style(value: Optional[str]) -> str:
+    style = (value or TELEGRAM_COMMUNICATION_STYLE_DEFAULT).strip().lower()
+    return style if style in TELEGRAM_COMMUNICATION_STYLES else TELEGRAM_COMMUNICATION_STYLE_DEFAULT
+
+
+def _telegram_second_ping_hour(morning_hour: Optional[int]) -> int:
+    return min(_clamp_telegram_morning_hour(morning_hour) + TELEGRAM_SECOND_PING_OFFSET_HOURS, TELEGRAM_SECOND_PING_MAX_HOUR)
+
+
+def _telegram_phrase(category: str, style: str = TELEGRAM_COMMUNICATION_STYLE_DEFAULT, seed: str = "") -> str:
+    style = _normalize_telegram_style(style)
+    options = TELEGRAM_COPY.get(style, {}).get(category) or TELEGRAM_COPY[TELEGRAM_COMMUNICATION_STYLE_DEFAULT].get(category) or [""]
+    digest = hashlib.sha256(f"{style}:{category}:{seed}".encode("utf-8")).hexdigest()
+    return options[int(digest[:8], 16) % len(options)]
+
+
+def _telegram_doc_style(doc: Optional[dict]) -> str:
+    return _normalize_telegram_style((doc or {}).get("telegram_communication_style"))
+
+
 def _telegram_runtime_status() -> dict:
     now = datetime.now(_telegram_tz())
+    default_second_hour = _telegram_second_ping_hour(TELEGRAM_MORNING_HOUR_DEFAULT)
     return {
         "enabled": bool(TELEGRAM_BOT_TOKEN),
         "dependency_loaded": bool(Application and CommandHandler and MessageHandler and filters),
@@ -1115,8 +1196,11 @@ def _telegram_runtime_status() -> dict:
         "lock_owner_active": bool(telegram_bot_lock_owner),
         "timezone": getattr(_telegram_tz(), "key", TELEGRAM_TIMEZONE),
         "now": now.isoformat(),
-        "next_morning_summary_at": _next_telegram_run_at(9, 0, now).isoformat(),
+        "morning_window": f"{TELEGRAM_MORNING_HOUR_MIN:02d}:00-{TELEGRAM_MORNING_HOUR_MAX:02d}:00",
+        "second_ping_rule": f"+{TELEGRAM_SECOND_PING_OFFSET_HOURS}h, max {TELEGRAM_SECOND_PING_MAX_HOUR:02d}:00",
+        "next_morning_summary_at": _next_telegram_run_at(TELEGRAM_MORNING_HOUR_DEFAULT, 0, now).isoformat(),
         "next_overdue_cleanup_at": _next_telegram_run_at(14, 0, now).isoformat(),
+        "next_second_ping_default_at": _next_telegram_run_at(default_second_hour, 0, now).isoformat(),
         "bot_username": TELEGRAM_BOT_USERNAME,
     }
 
@@ -1160,6 +1244,16 @@ async def _ensure_user_setting(user_id: str) -> dict:
         "link_code": None,
         "muted": False,
         "link_expires_at": None,
+        "telegram_morning_hour": TELEGRAM_MORNING_HOUR_DEFAULT,
+        "telegram_communication_style": TELEGRAM_COMMUNICATION_STYLE_DEFAULT,
+        "telegram_last_morning_ping_date": None,
+        "telegram_last_morning_ping_at": None,
+        "telegram_last_morning_response_date": None,
+        "telegram_last_morning_response_at": None,
+        "telegram_last_morning_response": "",
+        "telegram_last_second_ping_date": None,
+        "telegram_last_second_ping_at": None,
+        "telegram_ignore_streak": 0,
     }
     await db.user_settings.update_one(
         {"user_id": user_id},
@@ -1167,7 +1261,7 @@ async def _ensure_user_setting(user_id: str) -> dict:
         upsert=True,
     )
     doc = await db.user_settings.find_one({"user_id": user_id}, {"_id": 0})
-    return doc or defaults
+    return {**defaults, **(doc or {})}
 
 
 async def _find_user_by_chat(chat_id: int) -> Optional[dict]:
@@ -1184,6 +1278,7 @@ async def _telegram_status_payload(user_id: str) -> dict:
     expires_at = doc.get("link_expires_at")
     if isinstance(expires_at, datetime):
         expires_at = expires_at.isoformat()
+    morning_hour = _clamp_telegram_morning_hour(doc.get("telegram_morning_hour"))
     return {
         "user_id": user_id,
         "linked": linked,
@@ -1193,6 +1288,15 @@ async def _telegram_status_payload(user_id: str) -> dict:
         "link_expires_at": expires_at,
         "bot_username": TELEGRAM_BOT_USERNAME,
         "enabled": bool(TELEGRAM_BOT_TOKEN),
+        "morning_hour": morning_hour,
+        "second_ping_hour": _telegram_second_ping_hour(morning_hour),
+        "communication_style": _telegram_doc_style(doc),
+        "communication_styles": list(TELEGRAM_COMMUNICATION_STYLES),
+        "last_morning_ping_date": doc.get("telegram_last_morning_ping_date"),
+        "last_morning_response_date": doc.get("telegram_last_morning_response_date"),
+        "last_morning_response": doc.get("telegram_last_morning_response") or "",
+        "last_second_ping_date": doc.get("telegram_last_second_ping_date"),
+        "ignore_streak": int(doc.get("telegram_ignore_streak") or 0),
     }
 
 
@@ -1276,19 +1380,20 @@ async def _collect_user_tasks(user_id: str, *, target_date: Optional[str] = None
     return tasks
 
 
-def _format_task_list(tasks: List[dict], empty_text: str) -> str:
+def _format_task_list(tasks: List[dict], empty_text: str, limit: int = 12) -> str:
     if not tasks:
         return empty_text
+    limit = max(1, int(limit or 12))
     lines = []
-    for idx, task in enumerate(tasks[:12], start=1):
+    for idx, task in enumerate(tasks[:limit], start=1):
         event_part = f" · {_html_escape(task.get('event_title'))}" if task.get("event_title") else ""
         lines.append(f"{idx}. {_html_escape(task.get('title'))} — {_format_task_date(task.get('date', ''))}{event_part}")
-    if len(tasks) > 12:
-        lines.append(f"ще {len(tasks) - 12}")
+    if len(tasks) > limit:
+        lines.append(f"ще {len(tasks) - limit}")
     return "\n".join(lines)
 
 
-async def send_telegram(user_id: str, text: str) -> bool:
+async def send_telegram(user_id: str, text: str, reply_markup=None) -> bool:
     user_id = normalize_assignee(user_id, "")
     if not telegram_app:
         return False
@@ -1296,12 +1401,15 @@ async def send_telegram(user_id: str, text: str) -> bool:
     if not doc or not doc.get("telegram_chat_id") or doc.get("muted"):
         return False
     try:
-        await telegram_app.bot.send_message(
-            chat_id=doc["telegram_chat_id"],
-            text=text,
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-        )
+        kwargs = {
+            "chat_id": doc["telegram_chat_id"],
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        }
+        if reply_markup is not None:
+            kwargs["reply_markup"] = reply_markup
+        await telegram_app.bot.send_message(**kwargs)
         return True
     except Exception as e:
         logging.error(f"Telegram send error for {user_id}: {e}")
@@ -1510,37 +1618,95 @@ async def _build_today_tasks_message(user_id: str) -> str:
 
 async def _build_morning_summary(user_id: str) -> str:
     user_id = normalize_assignee(user_id, "")
-    today_tasks = await _collect_user_tasks(user_id, target_date=_today_kyiv())
+    doc = await _ensure_user_setting(user_id)
+    style = _telegram_doc_style(doc)
+    today = datetime.now(_telegram_tz()).date()
+    today_iso = today.isoformat()
+    yesterday_iso = (today - timedelta(days=1)).isoformat()
+    today_tasks = await _collect_user_tasks(user_id, target_date=today_iso)
     overdue_tasks = await _collect_user_tasks(user_id, overdue=True)
+    yesterday_tasks = [task for task in overdue_tasks if (task.get("date") or "")[:10] == yesterday_iso]
+    older_tasks = [task for task in overdue_tasks if (task.get("date") or "")[:10] < yesterday_iso]
     event_line = await _today_events_summary()
-    greeting_name = TEAM_PERSON_LABELS.get(user_id, TEAM_USER_LABELS.get(user_id, user_id))
+    name = TEAM_PERSON_LABELS.get(user_id, TEAM_USER_LABELS.get(user_id, user_id))
+    seed = f"{user_id}:{today_iso}"
+    load_line = _telegram_phrase("morning_load", style, seed).format(count=len(today_tasks)) if today_tasks else _telegram_phrase("no_today", style, seed)
     lines = [
-        f"доброго ранку, {_html_escape(greeting_name)}.",
-        f"сьогодні в тебе: <b>{len(today_tasks)}</b> тасків ({len(overdue_tasks)} протерм).",
-        "",
-        "сьогодні:",
-        _format_task_list(today_tasks, "тасків на сьогодні немає"),
+        f"{_telegram_phrase('morning_greeting', style, seed)}, {_html_escape(name)}.",
+        load_line,
     ]
-    if overdue_tasks:
-        lines.extend(["", "протерміновано:", _format_task_list(overdue_tasks, "")])
+    if today_tasks:
+        lines.extend(["", "сьогодні:", _format_task_list(today_tasks, "", limit=5)])
+    if yesterday_tasks:
+        lines.extend(["", _telegram_phrase("yesterday", style, seed).format(count=len(yesterday_tasks)), _format_task_list(yesterday_tasks, "", limit=3)])
+    if older_tasks:
+        lines.extend(["", _telegram_phrase("leftover", style, seed).format(count=len(older_tasks)), _format_task_list(older_tasks, "", limit=3)])
     if event_line:
         lines.extend(["", event_line])
-    lines.append("")
-    lines.append(_poriadok_link())
-    return "\n".join(lines)
+    if len(today_tasks) + len(overdue_tasks) >= 7:
+        lines.extend(["", _telegram_phrase("mindful", style, seed)])
+    lines.extend(["", _telegram_phrase("morning_question", style, seed), "", _poriadok_link()])
+    return "\n".join(line for line in lines if line is not None)
 
 
-async def _send_morning_summaries() -> dict:
+async def _mark_morning_ping_sent(user_id: str, today_iso: Optional[str] = None) -> None:
+    today_iso = today_iso or _today_kyiv()
+    await db.user_settings.update_one(
+        {"user_id": normalize_assignee(user_id, "")},
+        {"$set": {
+            "telegram_last_morning_ping_date": today_iso,
+            "telegram_last_morning_ping_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True,
+    )
+
+
+async def _mark_second_ping_sent(user_id: str, today_iso: Optional[str] = None) -> None:
+    today_iso = today_iso or _today_kyiv()
+    await db.user_settings.update_one(
+        {"user_id": normalize_assignee(user_id, "")},
+        {
+            "$set": {
+                "telegram_last_second_ping_date": today_iso,
+                "telegram_last_second_ping_at": datetime.now(timezone.utc).isoformat(),
+            },
+            "$inc": {"telegram_ignore_streak": 1},
+        },
+        upsert=True,
+    )
+
+
+async def _record_telegram_response(user_id: str, response: str) -> None:
+    user_id = normalize_assignee(user_id, "")
+    await db.user_settings.update_one(
+        {"user_id": user_id},
+        {"$set": {
+            "telegram_last_morning_response_date": _today_kyiv(),
+            "telegram_last_morning_response_at": datetime.now(timezone.utc).isoformat(),
+            "telegram_last_morning_response": response,
+            "telegram_ignore_streak": 0,
+        }},
+        upsert=True,
+    )
+
+
+async def _send_morning_summary_to_user(user_id: str, mark_sent: bool = False) -> bool:
+    message = await _build_morning_summary(user_id)
+    ok = await send_telegram(user_id, message, reply_markup=_telegram_morning_keyboard())
+    if ok and mark_sent:
+        await _mark_morning_ping_sent(user_id)
+    return ok
+
+
+async def _send_morning_summaries(mark_sent: bool = False) -> dict:
     sent = 0
     skipped = 0
     for user_id in TEAM_USERS:
-        message = await _build_morning_summary(user_id)
-        if await send_telegram(user_id, message):
+        if await _send_morning_summary_to_user(user_id, mark_sent=mark_sent):
             sent += 1
         else:
             skipped += 1
     return {"sent": sent, "skipped": skipped}
-
 
 
 async def _build_overdue_tasks_message(user_id: str) -> str:
@@ -1583,6 +1749,25 @@ async def _build_overdue_cleanup_message(user_id: str) -> Optional[str]:
     ])
 
 
+async def _build_second_ping_message(user_id: str) -> str:
+    user_id = normalize_assignee(user_id, "")
+    doc = await _ensure_user_setting(user_id)
+    style = _telegram_doc_style(doc)
+    today_iso = _today_kyiv()
+    seed = f"second:{user_id}:{today_iso}"
+    streak = int(doc.get("telegram_ignore_streak") or 0)
+    name = TEAM_PERSON_LABELS.get(user_id, TEAM_USER_LABELS.get(user_id, user_id))
+    lead = _telegram_phrase("ignored" if streak >= 3 else "second_ping", style, seed)
+    lines = [
+        f"{_html_escape(name)}, {lead}",
+        "",
+        _telegram_phrase("mindful", style, seed),
+        "",
+        _poriadok_cleanup_link(),
+    ]
+    return "\n".join(lines)
+
+
 async def _telegram_message_preview(kind: str, user_id: Optional[str] = None) -> dict:
     kind = (kind or "").strip().lower().replace("-", "_")
     users = [normalize_assignee(user_id, "")] if user_id else list(TEAM_USERS)
@@ -1599,6 +1784,8 @@ async def _telegram_message_preview(kind: str, user_id: Optional[str] = None) ->
             message = await _build_overdue_tasks_message(uid)
         elif kind == "overdue_cleanup":
             message = await _build_overdue_cleanup_message(uid)
+        elif kind == "second_ping":
+            message = await _build_second_ping_message(uid)
         else:
             raise HTTPException(status_code=400, detail="Unknown Telegram preview kind")
         previews.append({
@@ -1620,8 +1807,81 @@ async def _send_overdue_cleanup_pings() -> dict:
         if not text:
             skipped += 1
             continue
-        if await send_telegram(user_id, text):
+        if await send_telegram(user_id, text, reply_markup=_telegram_second_ping_keyboard()):
             sent += 1
+        else:
+            skipped += 1
+    return {"sent": sent, "skipped": skipped}
+
+
+async def _send_due_morning_summaries(now: Optional[datetime] = None) -> dict:
+    now = now or datetime.now(_telegram_tz())
+    today_iso = now.date().isoformat()
+    sent = 0
+    skipped = 0
+    for user_id in TEAM_USERS:
+        doc = await _ensure_user_setting(user_id)
+        send_doc = await _telegram_send_setting(user_id)
+        hour = _clamp_telegram_morning_hour(doc.get("telegram_morning_hour"))
+        if (
+            not send_doc
+            or not send_doc.get("telegram_chat_id")
+            or send_doc.get("muted")
+            or doc.get("telegram_last_morning_ping_date") == today_iso
+            or now.hour < hour
+            or now.hour > TELEGRAM_MORNING_HOUR_MAX
+        ):
+            skipped += 1
+            continue
+
+        async def run_summary(uid=user_id):
+            ok = await _send_morning_summary_to_user(uid, mark_sent=True)
+            return {"sent": 1, "skipped": 0} if ok else {"sent": 0, "skipped": 1}
+
+        result = await _run_with_job_lock(f"telegram_morning_summary:{user_id}:{today_iso}", 26 * 60 * 60, run_summary, release=False)
+        if result:
+            sent += result.get("sent", 0)
+            skipped += result.get("skipped", 0)
+        else:
+            skipped += 1
+    return {"sent": sent, "skipped": skipped}
+
+
+async def _send_due_second_pings(now: Optional[datetime] = None) -> dict:
+    now = now or datetime.now(_telegram_tz())
+    today_iso = now.date().isoformat()
+    sent = 0
+    skipped = 0
+    for user_id in TEAM_USERS:
+        doc = await _ensure_user_setting(user_id)
+        send_doc = await _telegram_send_setting(user_id)
+        morning_hour = _clamp_telegram_morning_hour(doc.get("telegram_morning_hour"))
+        second_hour = _telegram_second_ping_hour(morning_hour)
+        should_skip = (
+            not send_doc
+            or not send_doc.get("telegram_chat_id")
+            or send_doc.get("muted")
+            or doc.get("telegram_last_morning_ping_date") != today_iso
+            or doc.get("telegram_last_morning_response_date") == today_iso
+            or doc.get("telegram_last_second_ping_date") == today_iso
+            or now.hour < second_hour
+            or now.hour > 18
+        )
+        if should_skip:
+            skipped += 1
+            continue
+
+        async def run_ping(uid=user_id):
+            text = await _build_second_ping_message(uid)
+            ok = await send_telegram(uid, text, reply_markup=_telegram_second_ping_keyboard())
+            if ok:
+                await _mark_second_ping_sent(uid, today_iso)
+            return {"sent": 1, "skipped": 0} if ok else {"sent": 0, "skipped": 1}
+
+        result = await _run_with_job_lock(f"telegram_second_ping:{user_id}:{today_iso}", 26 * 60 * 60, run_ping, release=False)
+        if result:
+            sent += result.get("sent", 0)
+            skipped += result.get("skipped", 0)
         else:
             skipped += 1
     return {"sent": sent, "skipped": skipped}
@@ -1632,16 +1892,10 @@ async def telegram_summary_loop():
         return
     while True:
         try:
-            now = datetime.now(_telegram_tz())
-            target = _next_telegram_run_at(9, 0, now)
-            await asyncio.sleep(max(1, (target - now).total_seconds()))
-            summary_date = datetime.now(_telegram_tz()).date().isoformat()
-
-            async def run_summary():
-                result = await _send_morning_summaries()
+            result = await _send_due_morning_summaries()
+            if result.get("sent"):
                 logging.info(f"Telegram morning summary completed: {result}")
-
-            await _run_with_job_lock(f"telegram_morning_summary:{summary_date}", 26 * 60 * 60, run_summary, release=False)
+            await asyncio.sleep(60)
         except asyncio.CancelledError:
             logging.info("Telegram summary task cancelled")
             break
@@ -1655,21 +1909,15 @@ async def telegram_overdue_cleanup_loop():
         return
     while True:
         try:
-            now = datetime.now(_telegram_tz())
-            target = _next_telegram_run_at(14, 0, now)
-            await asyncio.sleep(max(1, (target - now).total_seconds()))
-            ping_date = datetime.now(_telegram_tz()).date().isoformat()
-
-            async def run_ping():
-                result = await _send_overdue_cleanup_pings()
-                logging.info(f"Telegram overdue cleanup ping completed: {result}")
-
-            await _run_with_job_lock(f"telegram_overdue_cleanup:{ping_date}", 26 * 60 * 60, run_ping, release=False)
+            result = await _send_due_second_pings()
+            if result.get("sent"):
+                logging.info(f"Telegram second ping completed: {result}")
+            await asyncio.sleep(60)
         except asyncio.CancelledError:
-            logging.info("Telegram overdue cleanup task cancelled")
+            logging.info("Telegram second ping task cancelled")
             break
         except Exception as e:
-            logging.error(f"Telegram overdue cleanup error: {e}")
+            logging.error(f"Telegram second ping error: {e}")
             await asyncio.sleep(60)
 
 
@@ -1679,6 +1927,15 @@ TELEGRAM_TEXT_ACTIONS = {
     "протерміновано": "overdue",
     "протерм": "overdue",
     "overdue": "overdue",
+    "все ок": "morning_ok",
+    "роблю": "morning_ok",
+    "ок": "morning_ok",
+    "переглянути день": "review_day",
+    "переглянути навантаження": "review_day",
+    "хочу перенести": "move_tasks",
+    "перенести задачі": "move_tasks",
+    "відкрити poriadok": "open_poriadok",
+    "відкрити порядок": "open_poriadok",
     "вимкнути": "mute",
     "тиша": "mute",
     "mute": "mute",
@@ -1697,12 +1954,42 @@ def _telegram_main_keyboard():
         return None
     return ReplyKeyboardMarkup(
         [
-            ["сьогодні", "протерміновано"],
-            ["вимкнути", "увімкнути", "відвʼязати"],
+            ["сьогодні", "відкрити poriadok"],
+            ["протерміновано", "вимкнути"],
+            ["увімкнути", "відвʼязати"],
         ],
         resize_keyboard=True,
         is_persistent=True,
         input_field_placeholder="код або кнопка",
+    )
+
+
+def _telegram_morning_keyboard():
+    if not ReplyKeyboardMarkup:
+        return None
+    return ReplyKeyboardMarkup(
+        [
+            ["все ок", "роблю"],
+            ["переглянути день", "перенести задачі"],
+            ["відкрити poriadok"],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+        input_field_placeholder="натисни кнопку",
+    )
+
+
+def _telegram_second_ping_keyboard():
+    if not ReplyKeyboardMarkup:
+        return None
+    return ReplyKeyboardMarkup(
+        [
+            ["переглянути день", "перенести задачі"],
+            ["все ок", "відкрити poriadok"],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+        input_field_placeholder="що робимо?",
     )
 
 
@@ -1724,14 +2011,14 @@ async def _telegram_set_bot_commands():
 
 async def telegram_start_command(update, context):
     await update.message.reply_text(
-        "привіт. натискай кнопки або надішли 6-значний код.",
+        "ага, порядок пише. надішли 6-значний код або тисни кнопку.",
         reply_markup=_telegram_main_keyboard(),
     )
 
 
 async def telegram_help_command(update, context):
     await update.message.reply_text(
-        "можу показати: сьогодні, протерміновано. для привʼязки надішли 6-значний код з poriadok.",
+        "можу показати день, протерміноване або відкрити poriadok. для привʼязки надішли 6-значний код.",
         reply_markup=_telegram_main_keyboard(),
     )
 
@@ -1784,6 +2071,8 @@ async def telegram_text_command(update, context):
         await telegram_today_command(update, context)
     elif action == "overdue":
         await telegram_overdue_command(update, context)
+    elif action in {"morning_ok", "review_day", "move_tasks", "open_poriadok"}:
+        await telegram_morning_action(update, context, action)
     elif action == "mute":
         await telegram_mute_command(update, context)
     elif action == "unmute":
@@ -1794,6 +2083,28 @@ async def telegram_text_command(update, context):
         await telegram_help_command(update, context)
     else:
         await telegram_help_command(update, context)
+
+
+async def telegram_morning_action(update, context, action: str):
+    user = await _find_user_by_chat(update.effective_chat.id)
+    if not user:
+        await update.message.reply_text("спершу привʼяжи акаунт: надішли 6-значний код", reply_markup=_telegram_main_keyboard())
+        return
+    user_id = user["user_id"]
+    await _record_telegram_response(user_id, action)
+    doc = await _ensure_user_setting(user_id)
+    style = _telegram_doc_style(doc)
+    seed = f"action:{user_id}:{_today_kyiv()}:{action}"
+    if action == "morning_ok":
+        await update.message.reply_text(_telegram_phrase("ack", style, seed), reply_markup=_telegram_main_keyboard())
+        return
+    if action == "open_poriadok":
+        await update.message.reply_html(f"{_telegram_phrase('open_day', style, seed)}\n\n{_poriadok_link()}", reply_markup=_telegram_main_keyboard())
+        return
+    if action == "review_day":
+        await update.message.reply_html(f"{_telegram_phrase('open_day', style, seed)}\n\n{_poriadok_link('/?review_day=1')}", reply_markup=_telegram_second_ping_keyboard())
+        return
+    await update.message.reply_html(f"{_telegram_phrase('open_day', style, seed)}\n\n{_poriadok_cleanup_link()}", reply_markup=_telegram_second_ping_keyboard())
 
 
 async def telegram_today_command(update, context):
@@ -1851,6 +2162,20 @@ async def telegram_unlink_command(update, context):
 
 @api_router.get("/users/{user_id}/telegram/status")
 async def get_telegram_status(user_id: str):
+    return await _telegram_status_payload(user_id)
+
+
+@api_router.patch("/users/{user_id}/telegram/preferences")
+async def update_telegram_preferences(user_id: str, payload: TelegramPreferencesUpdate):
+    user_id = normalize_assignee(user_id, "")
+    await _ensure_user_setting(user_id)
+    updates = {}
+    if payload.morning_hour is not None:
+        updates["telegram_morning_hour"] = _clamp_telegram_morning_hour(payload.morning_hour)
+    if payload.communication_style is not None:
+        updates["telegram_communication_style"] = _normalize_telegram_style(payload.communication_style)
+    if updates:
+        await db.user_settings.update_one({"user_id": user_id}, {"$set": updates}, upsert=True)
     return await _telegram_status_payload(user_id)
 
 
@@ -1926,6 +2251,23 @@ async def test_telegram_summary():
 @api_router.post("/admin/telegram/test-overdue-cleanup")
 async def test_telegram_overdue_cleanup():
     return await _send_overdue_cleanup_pings()
+
+
+@api_router.post("/admin/telegram/test-second-ping")
+async def test_telegram_second_ping(user_id: Optional[str] = None):
+    users = [normalize_assignee(user_id, "")] if user_id else list(TEAM_USERS)
+    sent = 0
+    skipped = 0
+    for uid in users:
+        if uid not in TEAM_USERS:
+            skipped += 1
+            continue
+        text = await _build_second_ping_message(uid)
+        if await send_telegram(uid, text, reply_markup=_telegram_second_ping_keyboard()):
+            sent += 1
+        else:
+            skipped += 1
+    return {"sent": sent, "skipped": skipped}
 
 
 @api_router.post("/admin/telegram/test-today")

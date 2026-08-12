@@ -381,6 +381,7 @@ const api = {
   syncEventFromAltegio: (eventId) => axios.post(`${API}/altegio/event/${eventId}/sync`),
   exportEventToCalendar: (eventId) => axios.post(`${API}/calendar/events/${eventId}/export`),
   getTelegramStatus: (userId) => axios.get(`${API}/users/${userId}/telegram/status`),
+  updateTelegramPreferences: (userId, data) => axios.patch(`${API}/users/${userId}/telegram/preferences`, data),
   createTelegramLinkCode: (userId) => axios.post(`${API}/users/${userId}/telegram/link-code`),
   getTelegramPreview: (kind, userId) => axios.get(`${API}/admin/telegram/preview/${kind}`, { params: { user_id: userId } }),
   muteTelegram: (userId) => axios.post(`${API}/users/${userId}/telegram/mute`),
@@ -3387,6 +3388,7 @@ const TelegramSettingsSection = ({ compact = false }) => {
   const [previewKind, setPreviewKind] = useState("today");
   const [previewData, setPreviewData] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [prefsSaving, setPrefsSaving] = useState(false);
 
   const loadStatus = useCallback(async (userId = currentUser) => {
     if (!userId) {
@@ -3487,6 +3489,20 @@ const TelegramSettingsSection = ({ compact = false }) => {
     }
   };
 
+  const handleUpdatePreferences = async (patch) => {
+    if (!currentUser) return;
+    setPrefsSaving(true);
+    try {
+      const res = await api.updateTelegramPreferences(currentUser, patch);
+      setStatus(res.data);
+      toast.success("налаштування збережено");
+    } catch {
+      toast.error("не вдалося зберегти налаштування");
+    } finally {
+      setPrefsSaving(false);
+    }
+  };
+
   const botUsername = linkData?.bot_username || status?.bot_username;
   const botUrl = botUsername ? `https://t.me/${botUsername.replace("@", "")}` : "";
   const codeText = linkData?.code || "";
@@ -3533,6 +3549,38 @@ const TelegramSettingsSection = ({ compact = false }) => {
         </button>
       </div>
 
+      {!compact && currentUser && status && (
+        <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-black/5 p-3">
+          <label className="text-[11px] text-secondary space-y-1">
+            <span>ранковий пінг</span>
+            <select
+              value={status.morning_hour || 9}
+              onChange={(e) => handleUpdatePreferences({ morning_hour: Number(e.target.value) })}
+              disabled={prefsSaving}
+              className="w-full h-8 rounded-full bg-[#F1EEE7] border border-black/10 px-2 text-xs text-primary"
+            >
+              {[7, 8, 9, 10, 11].map(hour => <option key={hour} value={hour}>{String(hour).padStart(2, "0")}:00</option>)}
+            </select>
+          </label>
+          <label className="text-[11px] text-secondary space-y-1">
+            <span>стиль</span>
+            <select
+              value={status.communication_style || "balanced"}
+              onChange={(e) => handleUpdatePreferences({ communication_style: e.target.value })}
+              disabled={prefsSaving}
+              className="w-full h-8 rounded-full bg-[#F1EEE7] border border-black/10 px-2 text-xs text-primary"
+            >
+              <option value="balanced">balanced</option>
+              <option value="serious">serious</option>
+              <option value="haha">хі-ханьки</option>
+            </select>
+          </label>
+          <p className="col-span-2 text-[11px] text-secondary">
+            другий пінг: {String(status.second_ping_hour || 14).padStart(2, "0")}:00, тільки без реакції
+          </p>
+        </div>
+      )}
+
       {linkData?.code && (
         <div className="rounded-xl bg-black/5 p-3 flex gap-3 items-center">
           {botUrl && (
@@ -3568,8 +3616,8 @@ const TelegramSettingsSection = ({ compact = false }) => {
           <div className="grid grid-cols-3 gap-1.5">
             {[
               ["today", "сьогодні"],
-              ["morning", "09:00"],
-              ["overdue-cleanup", "14:00"],
+              ["morning", "ранок"],
+              ["second-ping", "другий"],
             ].map(([kind, label]) => (
               <button
                 key={kind}

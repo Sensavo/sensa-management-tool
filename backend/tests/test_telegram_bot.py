@@ -133,3 +133,58 @@ def test_telegram_text_actions_cover_main_buttons():
     assert server.TELEGRAM_TEXT_ACTIONS["вимкнути"] == "mute"
     assert server.TELEGRAM_TEXT_ACTIONS["увімкнути"] == "unmute"
     assert server.TELEGRAM_TEXT_ACTIONS["відвʼязати"] == "unlink"
+
+
+
+def test_telegram_preferences_are_clamped_and_second_ping_is_capped():
+    assert server._clamp_telegram_morning_hour(6) == 7
+    assert server._clamp_telegram_morning_hour(12) == 11
+    assert server._clamp_telegram_morning_hour("bad") == 9
+    assert server._telegram_second_ping_hour(7) == 12
+    assert server._telegram_second_ping_hour(11) == 16
+
+
+def test_telegram_style_normalization_defaults_to_balanced():
+    assert server._normalize_telegram_style("serious") == "serious"
+    assert server._normalize_telegram_style("haha") == "haha"
+    assert server._normalize_telegram_style("unknown") == "balanced"
+
+
+def test_telegram_copy_library_has_controlled_phrase_volume():
+    banned = [
+        "без героїзму",
+        "світ не зламається",
+        "один маленький крок",
+        "ти впораєшся",
+    ]
+    phrases = [phrase for style in server.TELEGRAM_COPY.values() for group in style.values() for phrase in group]
+
+    assert len(phrases) >= 30
+    assert all(phrase == phrase.lower() for phrase in phrases)
+    assert not any(bad in phrase for bad in banned for phrase in phrases)
+
+
+def test_telegram_message_preview_accepts_dashed_second_ping(monkeypatch):
+    async def status_payload(user_id):
+        return {"linked": True, "muted": False}
+
+    async def second_ping(user_id):
+        return f"second for {user_id}"
+
+    monkeypatch.setattr(server, "_telegram_status_payload", status_payload)
+    monkeypatch.setattr(server, "_build_second_ping_message", second_ping)
+
+    preview = server.asyncio.run(server._telegram_message_preview("second-ping", "manager"))
+
+    assert preview["kind"] == "second_ping"
+    assert preview["count"] == 1
+    assert preview["previews"][0]["would_send"] is True
+    assert preview["previews"][0]["message"] == "second for manager"
+
+
+def test_telegram_text_actions_cover_morning_buttons():
+    assert server.TELEGRAM_TEXT_ACTIONS["все ок"] == "morning_ok"
+    assert server.TELEGRAM_TEXT_ACTIONS["роблю"] == "morning_ok"
+    assert server.TELEGRAM_TEXT_ACTIONS["переглянути день"] == "review_day"
+    assert server.TELEGRAM_TEXT_ACTIONS["перенести задачі"] == "move_tasks"
+    assert server.TELEGRAM_TEXT_ACTIONS["відкрити poriadok"] == "open_poriadok"
