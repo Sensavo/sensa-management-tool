@@ -2417,7 +2417,7 @@ def _google_calendar_event_id(event: Optional[dict]) -> Optional[str]:
 
 
 
-async def _ensure_altegio_service_price_matches(service_id: int, expected_price: float, event_id: Optional[str] = None) -> dict:
+async def _ensure_altegio_service_price_matches(service_id: int, expected_price: float, event_id: Optional[str] = None, min_capacity: Optional[int] = None) -> dict:
     expected = int(round(float(expected_price or 0)))
     services = await _get_altegio_services_cached(ttl_seconds=0)
     service = next((item for item in services if str(item.get("id")) == str(int(service_id))), None)
@@ -2439,16 +2439,25 @@ async def _ensure_altegio_service_price_matches(service_id: int, expected_price:
         current_max_int = None
 
     price_ok = current_min_int == expected and (current_max_int in (None, expected))
+    try:
+        current_capacity = int(service.get("capacity") or 0)
+    except (TypeError, ValueError):
+        current_capacity = 0
+    capacity_missing = current_capacity < 1
     # Even when the price already matches, the service may be disabled/offline
-    # (the original КАДЛ failure). Make sure it is live regardless of price.
+    # (the original КАДЛ failure) or have capacity=0 (the Чайний пікнік failure:
+    # Altegio rejects activity creation with "The service is not available for
+    # group appointment"). Make sure it is live and group-capable regardless.
     if price_ok:
-        if not service.get("active") or not service.get("is_online"):
-            live = await altegio_client.update_service_price_result(int(service_id), expected, ensure_live=True)
+        if not service.get("active") or not service.get("is_online") or capacity_missing:
+            live = await altegio_client.update_service_price_result(int(service_id), expected, ensure_live=True, min_capacity=min_capacity)
             if live.get("ok"):
                 _altegio_services_cache["fetched_at"] = 0.0
                 merged = live.get("data") or dict(service)
                 merged["price_min"] = expected
                 merged["price_max"] = expected
+                if capacity_missing and min_capacity:
+                    merged["capacity"] = int(min_capacity)
                 return merged
             # Activation failed — fall through is not useful here; return current
             # state so the warning layer can surface it.
@@ -2473,12 +2482,14 @@ async def _ensure_altegio_service_price_matches(service_id: int, expected_price:
             ),
         )
 
-    update_result = await altegio_client.update_service_price_result(int(service_id), expected)
+    update_result = await altegio_client.update_service_price_result(int(service_id), expected, min_capacity=min_capacity)
     if update_result.get("ok"):
         _altegio_services_cache["fetched_at"] = 0.0
         updated = update_result.get("data") or dict(service)
         updated["price_min"] = expected
         updated["price_max"] = expected
+        if capacity_missing and min_capacity:
+            updated["capacity"] = int(min_capacity)
         return updated
 
     error_body = update_result.get("body")
@@ -2939,7 +2950,7 @@ async def _advance_early_bird_prices():
         sid = ev.get("altegio_service_id")
         if sid and ALTEGIO_PARTNER_TOKEN:
             try:
-                await _ensure_altegio_service_price_matches(int(sid), new_price, ev["id"])
+                await _ensure_altegio_service_price_matches(int(sid), new_price, ev["id"], min_capacity=ev.get("spots") or 10)
             except Exception as e:
                 logging.error(f"early-bird Altegio sync failed for {ev['id']}: {e}")
 
@@ -3069,7 +3080,7 @@ async def _sync_event_to_external(event: Event) -> dict:
                 # Persist match so subsequent updates reuse it without re-matching
                 await db.events.update_one({"id": event.id}, {"$set": {"altegio_service_id": int(service_id)}})
             if service_id:
-                await _ensure_altegio_service_price_matches(int(service_id), event.price, event.id)
+                await _ensure_altegio_service_price_matches(int(service_id), event.price, event.id, min_capacity=event.spots or 10)
                 result = await altegio_client.create_activity_result(
                     title=event.title,
                     date=event.date[:10],
@@ -3398,7 +3409,7 @@ async def update_event(event_id: str, event_data: EventUpdate):
         )
         if not service_id:
             raise HTTPException(status_code=400, detail="не знайдено відповідний сервіс Altegio для цієї події")
-        await _ensure_altegio_service_price_matches(int(service_id), merged.get("price") or existing.get("price") or 0, event_id)
+        await _ensure_altegio_service_price_matches(int(service_id), merged.get("price") or existing.get("price") or 0, event_id, min_capacity=merged.get("spots") or existing.get("spots") or 10)
         update_result = await altegio_client.update_activity_result(
             activity_id=altegio_id,
             title=merged.get("title", existing.get("title", "")),
@@ -3659,7 +3670,7 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
             )
             if not service_id:
                 raise HTTPException(status_code=400, detail="не знайдено відповідний сервіс Altegio для цієї події")
-            await _ensure_altegio_service_price_matches(int(service_id), existing.get("price") or 0, event_id)
+            await _ensure_altegio_service_price_matches(int(service_id), existing.get("price") or 0, event_id, min_capacity=existing.get("spots") or 10)
             result = await altegio_client.create_activity_result(
                 title=existing.get("title", ""),
                 date=existing.get("date", "")[:10],
@@ -5811,7 +5822,7 @@ class AltegioClient:
             logging.error(f"Altegio service detail error: {response.status_code} - {response.text[:200]}")
             return {"ok": False, "status_code": response.status_code, "data": None, "body": response.text[:1000]}
 
-    async def update_service_price_result(self, service_id: int, price: float, ensure_live: bool = True):
+    async def update_service_price_result(self, service_id: int, price: float, ensure_live: bool = True, min_capacity: Optional[int] = None):
         """Update an Altegio service price (and, by default, make it live) via the
         full PATCH payload Altegio requires.
 
@@ -5819,6 +5830,12 @@ class AltegioClient:
         decisive field is `service_type=1`: while it is 0, Altegio silently
         ignores `active`/`is_online`. Setting all three together is what makes a
         Poriadok event actually visible & bookable in Altegio — no manual UI step.
+
+        min_capacity: when the service has capacity=0, Altegio rejects group
+        activity creation ("The service is not available for group appointment").
+        If provided and the current capacity is < 1, the PATCH also enables
+        `is_multi` and sets `capacity` so the service becomes group-capable.
+        Existing non-zero capacities are never shrunk.
         """
         try:
             target_price = int(round(float(price or 0)))
@@ -5837,6 +5854,16 @@ class AltegioClient:
             payload["active"] = 1
             payload["is_online"] = True
             payload["service_type"] = 1
+        if min_capacity:
+            try:
+                current_capacity = int(service.get("capacity") or 0)
+            except (TypeError, ValueError):
+                current_capacity = 0
+            if current_capacity < 1:
+                # Altegio ignores `capacity` while is_multi is false — group
+                # capability requires BOTH flags (verified on service 13778174).
+                payload["is_multi"] = True
+                payload["capacity"] = int(min_capacity)
 
         url = f"{self.base_url}/company/{self.company_id}/services/{int(service_id)}"
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -6155,7 +6182,7 @@ async def push_single_event_to_altegio(event_id: str):
     if not service_id:
         raise HTTPException(status_code=400, detail="No matching Altegio service for event title")
 
-    await _ensure_altegio_service_price_matches(int(service_id), event.get("price") or 0, event_id)
+    await _ensure_altegio_service_price_matches(int(service_id), event.get("price") or 0, event_id, min_capacity=event.get("spots") or 10)
     result = await altegio_client.create_activity_result(
         title=event.get("title", ""),
         date=event.get("date", "")[:10],
