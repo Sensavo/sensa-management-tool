@@ -8799,7 +8799,9 @@ const AltegioWarningHost = () => {
       ? "Подію створено, але Altegio не оновився"
       : w.type === "no_staff"
         ? "Подію створено, але запис на неї не працює"
-        : "Подію створено, але вона прихована в Altegio";
+        : w.type === "prepaid_off"
+          ? "Подію створено, але запис без оплати"
+          : "Подію створено, але вона прихована в Altegio";
 
   const lead = w.type === "no_service"
     ? `Для «${svc}» в Altegio немає активної послуги, тож подія не з'явиться в записі, поки ти її не створиш і не увімкнеш.`
@@ -8807,7 +8809,9 @@ const AltegioWarningHost = () => {
       ? `Подію збережено в Poriadok, але синхронізація з Altegio не пройшла${w.detail ? `: ${w.detail}` : "."}`
       : w.type === "no_staff"
         ? `Послуга «${svc}» не призначена жодному учаснику команди — Altegio відхиляє запис з помилкою «Учасник команди не надає обрану послугу». Відкрий Altegio → Команда → sensa → Послуги й увімкни «${svc}» для онлайн-запису.`
-        : `Послуга «${svc}» в Altegio вимкнена, тому подія створилась, але прихована й недоступна для запису. Увімкни її — і ця подія (та всі майбутні цього типу) одразу запрацюють.`;
+        : w.type === "prepaid_off"
+          ? `У послуги «${svc}» вимкнена онлайн-передоплата — люди записуються без оплати. Altegio не дає ввімкнути її через API, тож це один клік вручну, один раз на послугу.`
+          : `Послуга «${svc}» в Altegio вимкнена, тому подія створилась, але прихована й недоступна для запису. Увімкни її — і ця подія (та всі майбутні цього типу) одразу запрацюють.`;
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -8824,7 +8828,7 @@ const AltegioWarningHost = () => {
             Altegio → Послуги → «{svc}»
           </div>
           <div className="px-4 py-2 divide-y divide-black/5">
-            {(w.type !== "no_service" && w.type !== "no_staff") ? (
+            {(w.type !== "no_service" && w.type !== "no_staff" && w.type !== "prepaid_off") ? (
               <>
                 {(w.needs_active !== false) && <ToggleHint label="Активна послуга" />}
                 {(w.needs_online !== false) && <ToggleHint label="Онлайн-запис" />}
@@ -8832,6 +8836,10 @@ const AltegioWarningHost = () => {
             ) : w.type === "no_staff" ? (
               <div className="py-2 text-sm text-[#1A1717]">
                 Команда → <b>sensa</b> → вкладка <b>Послуги</b> → знайди «{svc}» → тумблер <b>Онлайн-запис</b> увімкнено.
+              </div>
+            ) : w.type === "prepaid_off" ? (
+              <div className="py-2 text-sm text-[#1A1717]">
+                Послуги → <b>«{svc}»</b> → <b>Онлайн-передоплата</b> → увімкнути, <b>100%</b> → Зберегти.
               </div>
             ) : (
               <div className="py-2 text-sm text-[#1A1717]">

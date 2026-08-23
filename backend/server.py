@@ -2807,16 +2807,21 @@ async def _altegio_service_state(service_id: int) -> Optional[dict]:
         "active": bool(svc.get("active")),
         "is_online": bool(svc.get("is_online")),
         "has_staff": bool(svc.get("staff")),
+        "prepaid": svc.get("prepaid") or "",
     }
 
 
-def _build_altegio_warning(state: Optional[dict], service_id: Optional[int], title: str) -> Optional[dict]:
+def _build_altegio_warning(state: Optional[dict], service_id: Optional[int], title: str, price: Optional[float] = None) -> Optional[dict]:
     """Construct an actionable warning dict for the frontend, or None if healthy.
 
-    Two cases:
+    Cases:
       • no_service  — no Altegio service matched the event; it will NOT appear.
+      • no_staff — service not assigned to any team member; online booking dies
+        with «Учасник команди не надає обрану послугу».
       • service_disabled — service exists but active=0 and/or offline; the
         activity is created but hidden until the manager flips the toggles.
+      • prepaid_off — priced event on a service without required prepayment;
+        people book without paying (prepaid is UI-only, API cannot set it).
     """
     if not service_id or state is None:
         return {
@@ -2825,8 +2830,6 @@ def _build_altegio_warning(state: Optional[dict], service_id: Optional[int], tit
             "company_id": ALTEGIO_COMPANY_ID,
             "altegio_url": f"https://app.alteg.io/company/{ALTEGIO_COMPANY_ID}/services",
         }
-    needs_active = not state.get("active")
-    needs_online = not state.get("is_online")
     if not state.get("has_staff"):
         # Service not assigned to any team member — online booking dies with
         # "Учасник команди не надає обрану послугу" (the Чайний пікнік failure).
@@ -2837,17 +2840,31 @@ def _build_altegio_warning(state: Optional[dict], service_id: Optional[int], tit
             "company_id": ALTEGIO_COMPANY_ID,
             "altegio_url": f"https://app.alteg.io/company/{ALTEGIO_COMPANY_ID}/staff",
         }
-    if not needs_active and not needs_online:
-        return None
-    return {
-        "type": "service_disabled",
-        "service_id": state.get("id"),
-        "service_title": state.get("title") or title,
-        "needs_active": needs_active,
-        "needs_online": needs_online,
-        "company_id": ALTEGIO_COMPANY_ID,
-        "altegio_url": f"https://app.alteg.io/company/{ALTEGIO_COMPANY_ID}/services",
-    }
+    needs_active = not state.get("active")
+    needs_online = not state.get("is_online")
+    if needs_active or needs_online:
+        return {
+            "type": "service_disabled",
+            "service_id": state.get("id"),
+            "service_title": state.get("title") or title,
+            "needs_active": needs_active,
+            "needs_online": needs_online,
+            "company_id": ALTEGIO_COMPANY_ID,
+            "altegio_url": f"https://app.alteg.io/company/{ALTEGIO_COMPANY_ID}/services",
+        }
+    try:
+        priced = float(price or 0) > 0
+    except (TypeError, ValueError):
+        priced = False
+    if priced and state.get("prepaid") != "required":
+        return {
+            "type": "prepaid_off",
+            "service_id": state.get("id"),
+            "service_title": state.get("title") or title,
+            "company_id": ALTEGIO_COMPANY_ID,
+            "altegio_url": f"https://app.alteg.io/company/{ALTEGIO_COMPANY_ID}/services",
+        }
+    return None
 
 
 async def _resolve_altegio_service_id(title: str, explicit_service_id: Optional[int] = None, spots: Optional[int] = None, price: Optional[float] = None) -> Optional[int]:
@@ -3092,6 +3109,14 @@ async def _sync_event_to_external(event: Event) -> dict:
                 await db.events.update_one({"id": event.id}, {"$set": {"altegio_service_id": int(service_id)}})
             if service_id:
                 await _ensure_altegio_service_price_matches(int(service_id), event.price, event.id, min_capacity=event.spots or 10)
+                if ALTEGIO_DEFAULT_STAFF_ID:
+                    staff_link = await altegio_client.ensure_service_staff_result(
+                        int(service_id),
+                        ALTEGIO_DEFAULT_STAFF_ID,
+                        length_seconds=altegio_client._calc_length_seconds(event.start_time or "14:00", event.end_time or "16:00"),
+                    )
+                    if not staff_link.get("ok"):
+                        logging.warning(f"Altegio staff link failed for service {service_id}: {staff_link.get('body')}")
                 result = await altegio_client.create_activity_result(
                     title=event.title,
                     date=event.date[:10],
@@ -3106,7 +3131,7 @@ async def _sync_event_to_external(event: Event) -> dict:
                     # Activity created — but if the service is disabled/offline the
                     # activity stays invisible. Detect and surface as a warning.
                     state = await _altegio_service_state(int(service_id))
-                    warning = _build_altegio_warning(state, int(service_id), event.title)
+                    warning = _build_altegio_warning(state, int(service_id), event.title, price=event.price)
                     await db.events.update_one(
                         {"id": event.id},
                         {"$set": {
@@ -3687,6 +3712,14 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
             if not service_id:
                 raise HTTPException(status_code=400, detail="не знайдено відповідний сервіс Altegio для цієї події")
             await _ensure_altegio_service_price_matches(int(service_id), existing.get("price") or 0, event_id, min_capacity=existing.get("spots") or 10)
+            if ALTEGIO_DEFAULT_STAFF_ID:
+                staff_link = await altegio_client.ensure_service_staff_result(
+                    int(service_id),
+                    ALTEGIO_DEFAULT_STAFF_ID,
+                    length_seconds=altegio_client._calc_length_seconds(existing.get("start_time") or "14:00", existing.get("end_time") or "16:00"),
+                )
+                if not staff_link.get("ok"):
+                    logging.warning(f"Altegio staff link failed for service {service_id}: {staff_link.get('body')}")
             result = await altegio_client.create_activity_result(
                 title=existing.get("title", ""),
                 date=existing.get("date", "")[:10],
@@ -6076,6 +6109,48 @@ class AltegioClient:
             logging.error(f"Altegio delete activity error: {response.status_code} - {response.text}")
             return {"ok": False, "status_code": response.status_code, "body": response.text}
 
+    async def ensure_service_staff_result(self, service_id: int, staff_id: int, length_seconds: int = 3600):
+        """Guarantee the service is assigned to the given team member.
+
+        Without this link online booking dies with «Учасник команди не надає
+        обрану послугу» (the Чайний пікнік failure, 2026-08-23). The service
+        PATCH silently ignores `staff` — the link is created only via
+        POST /company/{id}/services/{service_id}/staff.
+        """
+        if not ALTEGIO_PARTNER_TOKEN or not self.push_user_token or not service_id or not staff_id:
+            return {"ok": False, "status_code": None, "body": "tokens, service_id or staff_id missing"}
+
+        detail = await self.get_service_detail_result(int(service_id))
+        svc = (detail.get("data") or {}) if detail.get("ok") else {}
+        existing = svc.get("staff") or []
+        if any(int(m.get("id") or 0) == int(staff_id) for m in existing):
+            return {"ok": True, "status_code": None, "body": "already linked"}
+
+        try:
+            seance = int(svc.get("duration") or 0) or int(length_seconds or 3600)
+        except (TypeError, ValueError):
+            seance = int(length_seconds or 3600)
+
+        payload = {
+            "master_id": int(staff_id),
+            "service_id": int(service_id),
+            "length": seance,
+            "seance_length": seance,
+            "technological_card_id": None,
+            "api_id": "",
+            "is_online": True,
+            "is_offline_records_allowed": True,
+        }
+        url = f"{self.base_url}/company/{self.company_id}/services/{int(service_id)}/staff"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, headers=self.get_v2_push_headers(), json=payload)
+            if response.status_code in (200, 201):
+                logging.info(f"Altegio service {service_id} linked to staff {staff_id}")
+                return {"ok": True, "status_code": response.status_code, "body": response.json()}
+
+            logging.error(f"Altegio link service-staff error: {response.status_code} - {response.text[:300]}")
+            return {"ok": False, "status_code": response.status_code, "body": response.text[:1000]}
+
 altegio_client = AltegioClient()
 
 # Altegio API Response Models
@@ -6204,6 +6279,14 @@ async def push_single_event_to_altegio(event_id: str):
         raise HTTPException(status_code=400, detail="No matching Altegio service for event title")
 
     await _ensure_altegio_service_price_matches(int(service_id), event.get("price") or 0, event_id, min_capacity=event.get("spots") or 10)
+    if ALTEGIO_DEFAULT_STAFF_ID:
+        staff_link = await altegio_client.ensure_service_staff_result(
+            int(service_id),
+            ALTEGIO_DEFAULT_STAFF_ID,
+            length_seconds=altegio_client._calc_length_seconds(event.get("start_time") or "14:00", event.get("end_time") or "16:00"),
+        )
+        if not staff_link.get("ok"):
+            logging.warning(f"Altegio staff link failed for service {service_id}: {staff_link.get('body')}")
     result = await altegio_client.create_activity_result(
         title=event.get("title", ""),
         date=event.get("date", "")[:10],
@@ -6323,7 +6406,7 @@ async def sync_single_event_from_altegio(event_id: str):
         svc_id = event.get("altegio_service_id")
         if svc_id:
             state = await _altegio_service_state(int(svc_id))
-            warn = _build_altegio_warning(state, int(svc_id), event.get("title") or "")
+            warn = _build_altegio_warning(state, int(svc_id), event.get("title") or "", price=event.get("price"))
             if warn:
                 await db.events.update_one({"id": event_id}, {"$set": {"altegio_warning": warn}})
                 return {"event_id": event_id, "altegio_warning": warn, "message": "сервіс вимкнений в Altegio"}
