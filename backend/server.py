@@ -2806,6 +2806,7 @@ async def _altegio_service_state(service_id: int) -> Optional[dict]:
         "title": svc.get("title") or "",
         "active": bool(svc.get("active")),
         "is_online": bool(svc.get("is_online")),
+        "has_staff": bool(svc.get("staff")),
     }
 
 
@@ -2826,6 +2827,16 @@ def _build_altegio_warning(state: Optional[dict], service_id: Optional[int], tit
         }
     needs_active = not state.get("active")
     needs_online = not state.get("is_online")
+    if not state.get("has_staff"):
+        # Service not assigned to any team member — online booking dies with
+        # "Учасник команди не надає обрану послугу" (the Чайний пікнік failure).
+        return {
+            "type": "no_staff",
+            "service_id": state.get("id"),
+            "service_title": state.get("title") or title,
+            "company_id": ALTEGIO_COMPANY_ID,
+            "altegio_url": f"https://app.alteg.io/company/{ALTEGIO_COMPANY_ID}/staff",
+        }
     if not needs_active and not needs_online:
         return None
     return {
@@ -5853,6 +5864,11 @@ class AltegioClient:
             return {"ok": False, "status_code": 404, "data": None, "body": f"service {service_id} not found in catalog"}
 
         payload = {key: service.get(key) for key in ALTEGIO_SERVICE_PATCH_KEYS if key in service}
+        # Never echo `staff` back: the service PATCH silently ignores it today,
+        # but if Altegio starts honoring it, a stale/empty list here would wipe
+        # team-member assignments. Staff links live in their own endpoint
+        # (POST /company/{id}/services/{service_id}/staff).
+        payload.pop("staff", None)
         payload["price_min"] = target_price
         payload["price_max"] = target_price
         if ensure_live:
