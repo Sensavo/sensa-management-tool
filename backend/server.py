@@ -5721,6 +5721,62 @@ async def altegio_status():
     }
 
 
+@api_router.get("/altegio/services-health")
+async def altegio_services_health():
+    """Health table of all ACTIVE Altegio services: the exact fields that make
+    online booking + payment work (staff link, group capability, capacity,
+    required prepayment). Powers the "здоровʼя Altegio" block in Settings."""
+    if not ALTEGIO_PARTNER_TOKEN:
+        raise HTTPException(status_code=503, detail="Altegio не налаштований")
+
+    services = await _get_altegio_services_cached(ttl_seconds=0)
+    rows = []
+    for s in services:
+        if not s.get("active"):
+            continue
+        price = s.get("price_min") or 0
+        try:
+            priced = float(price) > 0
+        except (TypeError, ValueError):
+            priced = False
+        capacity = s.get("capacity") or 0
+        has_staff = bool(s.get("staff"))
+        is_online = bool(s.get("is_online"))
+        is_multi = bool(s.get("is_multi"))
+        prepaid_ok = (s.get("prepaid") == "required") or not priced
+
+        issues = []
+        if not is_online:
+            issues.append("online_off")
+        if not has_staff:
+            issues.append("no_staff")
+        if not is_multi or int(capacity) < 1:
+            issues.append("not_group")
+        if not prepaid_ok:
+            issues.append("prepaid_off")
+
+        rows.append({
+            "id": s.get("id"),
+            "title": s.get("title") or "",
+            "price": price,
+            "is_online": is_online,
+            "has_staff": has_staff,
+            "is_multi": is_multi,
+            "capacity": int(capacity) if str(capacity).lstrip('-').isdigit() else 0,
+            "prepaid": s.get("prepaid") or "",
+            "priced": priced,
+            "ok": not issues,
+            "issues": issues,
+        })
+
+    rows.sort(key=lambda r: (r["ok"], r["title"].lower()))
+    return {
+        "services": rows,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "altegio_services_url": f"https://app.alteg.io/company/{ALTEGIO_COMPANY_ID}/services",
+    }
+
+
 
 
 # ==================== ALTEGIO INTEGRATION ====================

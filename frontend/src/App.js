@@ -7377,6 +7377,58 @@ const DesktopDashboard = () => {
 };
 
 // Settings Content for modals - with 4 columns layout
+const AltegioHealthSection = () => {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await axios.get(`${API}/altegio/services-health`);
+      setData(r.data);
+    } catch { toast.error("не вдалося перевірити сервіси"); }
+    finally { setLoading(false); }
+  };
+
+  const ISSUE_LABELS = {
+    online_off: "онлайн-запис вимкнено",
+    no_staff: "не призначена учаснику команди",
+    not_group: "не групова / 0 місць",
+    prepaid_off: "без передоплати",
+  };
+
+  return (
+    <div className="pt-2 border-t border-[#E8E5DC]">
+      <button className="btn-subtle w-full text-xs !h-7" onClick={() => { const next = !open; setOpen(next); if (next && !data) load(); }} disabled={loading}>
+        <Heart className="w-3.5 h-3.5" /><span>{loading ? "перевіряю..." : open ? "сховати здоровʼя сервісів" : "здоровʼя сервісів Altegio"}</span>
+      </button>
+      {open && data && (
+        <div className="mt-2 space-y-0.5">
+          {data.services.map(s => (
+            <div key={s.id} className="reminder-item !py-1.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className={s.ok ? "text-green-600" : "text-amber-600"}>{s.ok ? "✓" : "!"}</span>
+                <div className="min-w-0">
+                  <p className="font-medium text-xs truncate">{s.title}</p>
+                  {!s.ok && <p className="text-[10px] text-amber-700">{s.issues.map(i => ISSUE_LABELS[i] || i).join(" · ")}</p>}
+                </div>
+              </div>
+              <span className="text-[10px] text-secondary whitespace-nowrap">{s.price > 0 ? `${s.price} ₴` : "free"}</span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between pt-1">
+            <button className="text-[10px] text-secondary underline" onClick={load}>оновити</button>
+            <a href={data.altegio_services_url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-secondary underline inline-flex items-center gap-1">
+              <ExternalLink className="w-3 h-3" /> відкрити Altegio
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const SettingsContent = () => {
   const { settings, refreshSettings, refreshSMMTasksDefinition, refreshEvents, allTaskDefs, googleCalendarStatus, refreshGoogleStatus } = useApp();
   const [exportingAll, setExportingAll] = useState(false);
@@ -7544,6 +7596,7 @@ const SettingsContent = () => {
                 </div>
                 <span className={`text-xs ${altegioConnected ? 'text-green-600' : 'text-secondary'}`}>{altegioConnected ? "активний" : "—"}</span>
               </div>
+              <AltegioHealthSection />
               <div className="pt-2 border-t border-[#E8E5DC]">
                 <TelegramSettingsSection compact />
               </div>
