@@ -3370,6 +3370,10 @@ async def update_event(event_id: str, event_data: EventUpdate):
         raise HTTPException(status_code=404, detail="Event not found")
     
     update_dict = {k: v for k, v in event_data.model_dump().items() if v is not None}
+    externally_synced_fields = {
+        "title", "date", "price", "spots", "start_time", "end_time", "price_tiers"
+    }
+    needs_external_sync = bool(externally_synced_fields.intersection(update_dict))
 
     if update_dict.get("cancelled") is True:
         raise HTTPException(status_code=400, detail="Use PATCH /events/{event_id} to cancel events so payment guards and cleanup tasks run.")
@@ -3394,11 +3398,12 @@ async def update_event(event_id: str, event_data: EventUpdate):
         update_dict["base_price"] = merged.get("base_price")
         update_dict["price"] = merged.get("price")
 
-    # Push changes to Altegio before local persistence. If the external update
-    # fails, keep the local event unchanged so Poriadok does not drift from the
-    # booking system.
+    # Booking fields must stay aligned with Altegio and Google Calendar before
+    # local persistence. Editorial-only changes (currently `description`) do
+    # not affect a booking and must remain editable when either integration is
+    # temporarily unavailable.
     altegio_id = existing.get("altegio_activity_id") or existing.get("altegio_id")
-    if altegio_id:
+    if altegio_id and needs_external_sync:
         if not ALTEGIO_PARTNER_TOKEN:
             raise HTTPException(status_code=502, detail="Altegio не налаштований для оновлення — локальну подію не змінено")
         service_id = await _resolve_altegio_service_id(
@@ -3437,7 +3442,7 @@ async def update_event(event_id: str, event_data: EventUpdate):
             update_dict["altegio_service_id"] = int(service_id)
 
     gcal_id = _google_calendar_event_id(existing)
-    if gcal_id:
+    if gcal_id and needs_external_sync:
         try:
             service = await get_google_calendar_service()
             if not service:
