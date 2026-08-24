@@ -3399,17 +3399,51 @@ async def get_event(event_id: str):
         raise HTTPException(status_code=404, detail="Event not found")
     return event
 
+def _sync_field_value_changed(field: str, new, old) -> bool:
+    """True when an externally-synced field actually differs from what's stored.
+
+    The edit form always posts the full payload, so key presence alone would
+    force an Altegio/Google sync even for a description-only edit — and a
+    temporary integration outage would then block saving the description.
+    """
+    if old is None and (new is None or new == "" or new == []):
+        return False
+    try:
+        if field == "date":
+            return str(new)[:10] != str(old or "")[:10]
+        if field == "price":
+            return float(new) != float(old)
+        if field == "spots":
+            return int(new) != int(old)
+        if field == "price_tiers":
+            def norm(tiers):
+                out = []
+                for t in tiers or []:
+                    t = t.model_dump() if hasattr(t, "model_dump") else (t or {})
+                    out.append((float(t.get("price") or 0), str(t.get("until") or "")[:10]))
+                return sorted(out)
+            return norm(new) != norm(old)
+        return (new or "") != (old or "")
+    except (TypeError, ValueError):
+        return True  # unparseable → treat as changed, keep old behaviour
+
+
 @api_router.put("/events/{event_id}", response_model=Event)
 async def update_event(event_id: str, event_data: EventUpdate):
     existing = await db.events.find_one({"id": event_id}, {"_id": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Event not found")
-    
+
     update_dict = {k: v for k, v in event_data.model_dump().items() if v is not None}
     externally_synced_fields = {
         "title", "date", "price", "spots", "start_time", "end_time", "price_tiers"
     }
-    needs_external_sync = bool(externally_synced_fields.intersection(update_dict))
+    # External sync only when a synced field value actually changed — not merely
+    # present in the payload (the edit form always sends the full form).
+    needs_external_sync = any(
+        _sync_field_value_changed(f, update_dict[f], existing.get(f))
+        for f in externally_synced_fields.intersection(update_dict)
+    )
 
     if update_dict.get("cancelled") is True:
         raise HTTPException(status_code=400, detail="Use PATCH /events/{event_id} to cancel events so payment guards and cleanup tasks run.")
@@ -6031,6 +6065,25 @@ class AltegioClient:
             return max((eh * 60 + em - sh * 60 - sm) * 60, 3600)
         except:
             return 3600  # default 1 hour
+
+    @staticmethod
+    def _altegio_comment(title: str, comment: str) -> str:
+        """Build the activity comment within Altegio's 255-char limit.
+
+        Altegio rejects longer comments with a 422 ("The value is too long"),
+        which previously surfaced as a 502 and blocked the whole event save.
+        The full description always stays in the local DB; only the Altegio
+        copy is trimmed.
+        """
+        prefix = (title or "").strip()
+        body = (comment or "").strip()
+        full = f"{prefix}. {body}".strip(". ")
+        if len(full) <= 255:
+            return full
+        room = 255 - len(prefix) - 2  # ". " separator
+        if room >= 10 and body:
+            return f"{prefix}. {body[:room - 1].rstrip()}…"
+        return full[:254].rstrip() + "…"
     
     async def create_activity(self, title: str, date: str, start_time: str = "14:00",
                                end_time: str = "16:00", capacity: int = 10, comment: str = "",
@@ -6071,7 +6124,7 @@ class AltegioClient:
             "date": f"{date} {start_time}:00",
             "length": length,
             "capacity": capacity,
-            "comment": f"{title}. {comment}".strip(". "),
+            "comment": self._altegio_comment(title, comment),
             "force": True
         }
         
@@ -6128,7 +6181,7 @@ class AltegioClient:
             "date": f"{date} {start_time}:00",
             "length": length,
             "capacity": capacity,
-            "comment": f"{title}. {comment}".strip(". "),
+            "comment": self._altegio_comment(title, comment),
             "force": True
         }
         
