@@ -3590,6 +3590,56 @@ async def _create_cancellation_tasks(event: dict, series_count: int = 0) -> int:
     return created
 
 
+def _external_leftovers(event: dict, clear: dict) -> List[str]:
+    """Which external systems still hold records after a cleanup attempt.
+
+    `_delete_event_external_links` writes the `*_id = None` markers only when
+    the remote record is actually gone, so a missing marker means that system's
+    record survived and needs manual attention.
+    """
+    leftovers: List[str] = []
+    if (event.get("altegio_activity_id") or event.get("altegio_id")) and "altegio_id" not in clear:
+        leftovers.append("Altegio")
+    if _google_calendar_event_id(event) and "google_calendar_event_id" not in clear:
+        leftovers.append("Google Calendar")
+    return leftovers
+
+
+async def _create_manual_cleanup_task(event: dict, systems: List[str]) -> None:
+    """Leave a human follow-up when a manager-confirmed cancellation/delete
+    could not remove the external records automatically.
+
+    The manager confirmation is the escape hatch: the local change must go
+    through, and any surviving Altegio/Google Calendar records become an
+    explicit task instead of silently blocking the whole flow.
+    """
+    if not systems:
+        return
+    title = event.get("title") or "подія"
+    event_id = event.get("id") or "event"
+    systems_text = " і ".join(systems)
+    task = StandaloneTask(
+        id=f"cancel-{event_id}-external-cleanup",
+        title=f"закрити «{title}» вручну в {systems_text} — автоматично не вдалося",
+        date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        icon="bell",
+        type="regular",
+        color="manager",
+        assignee="manager",
+        event_id=event_id,
+    )
+    result = await db.standalone_tasks.update_one(
+        {"id": task.id},
+        {"$setOnInsert": task.model_dump()},
+        upsert=True,
+    )
+    if result.upserted_id:
+        enqueue_telegram(
+            "manager",
+            f"не вдалося автоматично закрити {_event_line(event)} в {systems_text} — потрібне ручне закриття\n{_poriadok_link()}",
+        )
+
+
 async def _delete_event_external_links(
     event: dict,
     *,
@@ -3700,25 +3750,34 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
             )
             raise HTTPException(status_code=409, detail=_cancellation_guard_detail(existing, "cancel"))
 
+        manager_confirmed = _event_cancellation_confirmed(event_data, request)
         update_dict["cancelled"] = True
         update_dict["cancellation_pending"] = False
-        update_dict["cancellation_manager_confirmed"] = _event_cancellation_confirmed(event_data, request)
-        if update_dict["cancellation_manager_confirmed"]:
+        update_dict["cancellation_manager_confirmed"] = manager_confirmed
+        if manager_confirmed:
             update_dict["cancellation_confirmed_at"] = datetime.now(timezone.utc).isoformat()
         # Clear all reminders and tasks when cancelling
         update_dict["reminders"] = {}
         update_dict["smm_tasks"] = {}
 
+        # A manager-confirmed cancellation must never deadlock: if external
+        # cleanup fails, cancel locally anyway and leave a manual follow-up task.
         try:
             update_dict.update(await _delete_event_external_links(
                 existing,
                 action="скасування",
                 local_guard_detail="подію не скасовано локально",
-                strict=True,
+                strict=not manager_confirmed,
             ))
         except Exception as e:
             logging.error(f"External cleanup failed; cancellation blocked for {event_id}: {e}")
             raise
+
+        if manager_confirmed:
+            try:
+                await _create_manual_cleanup_task(existing, _external_leftovers(existing, update_dict))
+            except Exception as e:
+                logging.error(f"Failed to create manual cleanup task for {event_id}: {e}")
 
         try:
             await _create_cancellation_tasks(existing)
@@ -3847,11 +3906,20 @@ async def cancel_event_series(event_id: str, request: Request):
                 action="скасування серії",
                 local_guard_detail="серію не скасовано локально",
                 object_label="подію серії",
-                strict=True,
+                strict=not manager_confirmed,
             )
         except Exception as e:
             logging.error(f"External cleanup failed; series cancellation blocked for {tid}: {e}")
             raise
+
+    # Manager-confirmed series cancel never deadlocks: surviving external
+    # records become manual follow-up tasks instead of blocking the flow.
+    if manager_confirmed:
+        for t in targets:
+            try:
+                await _create_manual_cleanup_task(t, _external_leftovers(t, external_clear_by_id.get(t["id"], {})))
+            except Exception as e:
+                logging.error(f"Failed to create manual cleanup task for {t['id']}: {e}")
 
     cancelled_ids: List[str] = []
     for t in targets:
@@ -3921,19 +3989,32 @@ async def delete_event_series(event_id: str, request: Request):
         raise HTTPException(status_code=409, detail=_cancellation_guard_detail(anchor, "delete-series"))
 
     external_cleanup_errors: List[str] = []
+    external_clear_by_id: Dict[str, dict] = {}
     for t in targets:
         tid = t["id"]
         try:
-            await _delete_event_external_links(
+            external_clear_by_id[tid] = await _delete_event_external_links(
                 t,
                 action="видалення серії",
                 local_guard_detail="локальні події серії залишено",
                 object_label="подію серії",
-                strict=True,
+                strict=not manager_confirmed,
             )
         except Exception as e:
             logging.error(f"External cleanup failed; series hard delete blocked for {tid}: {e}")
             raise
+
+    # Manager-confirmed hard delete never deadlocks: surviving external
+    # records become manual follow-up tasks instead of blocking the flow.
+    if manager_confirmed:
+        for t in targets:
+            leftovers = _external_leftovers(t, external_clear_by_id.get(t["id"], {}))
+            if leftovers:
+                external_cleanup_errors.append(t["id"])
+            try:
+                await _create_manual_cleanup_task(t, leftovers)
+            except Exception as e:
+                logging.error(f"Failed to create manual cleanup task for deleted {t['id']}: {e}")
 
     target_ids = [t["id"] for t in targets]
     result = await db.events.delete_many({"id": {"$in": target_ids}})
@@ -4025,12 +4106,13 @@ async def delete_event(event_id: str, request: Request):
     if not existing:
         raise HTTPException(status_code=404, detail="Event not found")
 
+    external_clear: dict = {}
     try:
-        await _delete_event_external_links(
+        external_clear = await _delete_event_external_links(
             existing,
             action="видалення",
             local_guard_detail="локальну подію залишено",
-            strict=True,
+            strict=not manager_confirmed,
         )
     except Exception as e:
         logging.error(f"External cleanup failed; hard delete blocked for {event_id}: {e}")
@@ -4048,6 +4130,13 @@ async def delete_event(event_id: str, request: Request):
             await _create_cancellation_tasks(existing)
         except Exception as e:
             logging.error(f"Failed to create cancellation tasks for deleted {event_id}: {e}")
+        # Manager-confirmed hard delete never deadlocks: surviving external
+        # records become a manual follow-up task instead of blocking the flow.
+        if manager_confirmed:
+            try:
+                await _create_manual_cleanup_task(existing, _external_leftovers(existing, external_clear))
+            except Exception as e:
+                logging.error(f"Failed to create manual cleanup task for deleted {event_id}: {e}")
         actor = _actor_from_request(request)
         _notify_team(actor, f"видалено подію: {_event_line(existing)}\n{_poriadok_link()}")
 

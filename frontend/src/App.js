@@ -402,7 +402,7 @@ const confirmCancellationGuard = (error) => {
 
 const showCancellationGuardOrError = (error, fallback = "помилка") => {
   const detail = getCancellationGuardDetail(error);
-  toast.error(detail?.message || fallback);
+  toast.error(detail?.message || getApiErrorMessage(error, fallback));
 };
 
 const getApiErrorMessage = (error, fallback = "помилка") => {
