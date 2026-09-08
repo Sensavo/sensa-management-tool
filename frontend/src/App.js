@@ -4265,6 +4265,53 @@ const ContentPage = () => {
 };
 
 
+// Two-step delete for an auto-task definition: first click arms the button,
+// second click deletes. Lives inside the edit dialog on purpose — the old flow
+// closed the edit dialog and opened a separate confirm dialog in the same tick,
+// which left the confirm unreachable. Deletion is undoable (⌘Z / undo action):
+// hardcoded tasks are restored via revert, custom tasks are re-created.
+const DeleteTaskDefButton = ({ task, afterChange, onDeleted }) => {
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const { pushUndo } = useUndo();
+  useEffect(() => { setArmed(false); }, [task?.id]);
+  if (!task) return null;
+  const handleClick = async () => {
+    if (!armed) { setArmed(true); return; }
+    setBusy(true);
+    const snapshot = { ...task };
+    try {
+      await api.deleteTaskDef(snapshot.id);
+      pushUndo({ label: "видалення таска", run: async () => {
+        if (snapshot.is_custom) {
+          await api.createTaskDef({
+            id: snapshot.id, name: snapshot.name, days_before: snapshot.days_before || 0,
+            column: snapshot.column, frequency: snapshot.frequency || "event",
+            condition: snapshot.condition || null, is_announcement: !!snapshot.is_announcement,
+            is_teamwork: !!snapshot.is_teamwork, series_master_only: !!snapshot.series_master_only,
+            weight: snapshot.weight, shift_kind: snapshot.shift_kind,
+          });
+        } else {
+          await api.revertTaskDef(snapshot.id);
+        }
+        afterChange?.();
+      } });
+      toast.success("видалено!");
+      afterChange?.();
+      onDeleted?.();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "не вдалося видалити");
+      setArmed(false);
+    } finally { setBusy(false); }
+  };
+  return (
+    <button type="button" disabled={busy} data-testid="task-def-delete" onClick={handleClick}
+      className={`flex-1 h-11 rounded-full border transition-colors flex items-center justify-center gap-1.5 text-sm font-medium ${armed ? "bg-red-600 border-red-600 text-white hover:bg-red-700" : "border-red-200 text-red-600 hover:bg-red-50"}`}>
+      <Trash2 className="w-4 h-4" />{armed ? "точно видалити?" : "видалити"}
+    </button>
+  );
+};
+
 // Reusable editor block for a task definition.
 // Two task types: "event" (tied to event date) and "regular" (monthly/daily).
 const TaskDefEditor = ({ draft, setDraft }) => {
@@ -4416,8 +4463,6 @@ const SettingsPage = () => {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingReminder, setEditingReminder] = useState(null);
   const [newReminder, setNewReminder] = useState({ name: "", days_before: 7, icon: "bell" });
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [reminderToDelete, setReminderToDelete] = useState(null);
   // SMM editing state
   const [editingSMM, setEditingSMM] = useState(null);
   const [showEditSMMDialog, setShowEditSMMDialog] = useState(false);
@@ -4450,10 +4495,7 @@ const SettingsPage = () => {
     try { await api.editTaskDef(editingReminder.id, payload); toast.success("збережено!"); refreshSMMTasksDefinition(); refreshEvents(); setShowEditDialog(false); }
     catch { toast.error("помилка"); }
   };
-  const handleDeleteReminder = async () => {
-    try { await api.deleteTaskDef(reminderToDelete.id); toast.success("видалено!"); refreshSMMTasksDefinition(); refreshEvents(); setDeleteDialogOpen(false); }
-    catch { toast.error("помилка"); }
-  };
+  const afterTaskDefChange = () => { refreshSMMTasksDefinition(); refreshEvents(); };
 
   const iconOptions = TASK_ICONS;
 
@@ -4676,19 +4718,11 @@ const SettingsPage = () => {
             />
           )}
           <DialogFooter className="mt-6 flex gap-2">
-            <button className="flex-1 h-11 rounded-full border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5 text-sm font-medium" onClick={() => { setReminderToDelete(editingReminder); setShowEditDialog(false); setDeleteDialogOpen(true); }}>
-              <Trash2 className="w-4 h-4" />видалити
-            </button>
+            <DeleteTaskDefButton task={editingReminder} afterChange={afterTaskDefChange} onDeleted={() => setShowEditDialog(false)} />
             <button className="btn-dark flex-1 h-11" onClick={handleSaveTaskDef}>зберегти</button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent className="dialog-content"><AlertDialogHeader><AlertDialogTitle>видалити?</AlertDialogTitle></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>скасувати</AlertDialogCancel><AlertDialogAction onClick={handleDeleteReminder} variant="danger">видалити</AlertDialogAction></AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* SMM/Marketing Edit Dialog — full editor */}
       <Dialog open={showEditSMMDialog} onOpenChange={setShowEditSMMDialog}>
@@ -4704,13 +4738,7 @@ const SettingsPage = () => {
             />
           )}
           <DialogFooter className="mt-6 flex gap-2">
-            <button className="flex-1 h-11 rounded-full border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5 text-sm font-medium" onClick={async () => {
-              if (!editingSMM) return;
-              try { await api.deleteTaskDef(editingSMM.id); toast.success("видалено!"); refreshSMMTasksDefinition(); refreshEvents(); setShowEditSMMDialog(false); }
-              catch { toast.error("помилка"); }
-            }}>
-              <Trash2 className="w-4 h-4" />видалити
-            </button>
+            <DeleteTaskDefButton task={editingSMM} afterChange={afterTaskDefChange} onDeleted={() => setShowEditSMMDialog(false)} />
             <button className="btn-dark flex-1 h-11" onClick={async () => {
               if (!editingSMM) return;
               const freq = editingSMM.frequency || "event";
@@ -7481,16 +7509,7 @@ const SettingsContent = () => {
     } catch { toast.error("помилка"); }
   };
 
-  const handleDeleteTask = async () => {
-    if (!editTask) return;
-    try {
-      await api.deleteTaskDef(editTask.id);
-      toast.success("видалено!");
-      refreshSMMTasksDefinition();
-      refreshEvents();
-      setEditTask(null);
-    } catch { toast.error("помилка"); }
-  };
+  const afterTaskDefChange = () => { refreshSMMTasksDefinition(); refreshEvents(); };
 
   const handleAddTask = async () => {
     if (!newTaskDraft?.name?.trim()) return;
@@ -7708,9 +7727,7 @@ const SettingsContent = () => {
           </DialogHeader>
           <TaskDefEditor draft={editTask} setDraft={setEditTask} />
           <DialogFooter className="mt-6 flex gap-2">
-            <button className="flex-1 h-11 rounded-full border border-red-200 text-red-600 hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5 text-sm font-medium" onClick={handleDeleteTask}>
-              <Trash2 className="w-4 h-4" />видалити
-            </button>
+            <DeleteTaskDefButton task={editTask} afterChange={afterTaskDefChange} onDeleted={() => setEditTask(null)} />
             <button className="btn-dark flex-1 h-11" onClick={handleSaveTask}>зберегти</button>
           </DialogFooter>
         </DialogContent>

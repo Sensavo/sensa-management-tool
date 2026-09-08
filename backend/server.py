@@ -443,7 +443,7 @@ async def lifespan(app: FastAPI):
 
         async def run_daily_generation():
             column_to_assignee = {"management": "manager", "smm": "smm", "marketing": "marketer"}
-            for task in DAILY_TASKS:
+            for task in get_tasks_for_column("daily"):
                 task_id = f"daily-{today_str}-{task['id']}"
                 existing = await db.standalone_tasks.find_one({"id": task_id})
                 if not existing:
@@ -451,15 +451,15 @@ async def lifespan(app: FastAPI):
                         "id": task_id,
                         "title": task["name"],
                         "date": today_str,
-                        "icon": "coffee" if task["column"] == "management" else "hash",
+                        "icon": "coffee" if task.get("column") == "management" else "hash",
                         "type": "daily",
                         "color": "standard",
-                        "assignee": column_to_assignee.get(task["column"], "manager"),
+                        "assignee": column_to_assignee.get(task.get("column"), "manager"),
                         "completed": False,
                         "completed_at": None,
                         "created_at": now.isoformat(),
                         "daily_source": task["id"],
-                        "column": task["column"],
+                        "column": task.get("column", "management"),
                     }
                     await db.standalone_tasks.insert_one(standalone)
                     logging.info(f"Auto-generated daily task: {task_id}")
@@ -955,52 +955,70 @@ async def _refresh_task_overrides_cache():
     docs = await db.task_definition_overrides.find({}, {"_id": 0}).to_list(2000)
     _task_overrides = {d["task_id"]: d for d in docs if d.get("task_id")}
 
-def _apply_overrides_to_list(target: str, base_list: list) -> list:
-    """Merge base hardcoded tasks with per-task overrides + brand-new tasks.
+# Every hardcoded list with the frequency/column it implies. A task's
+# *effective* frequency/column can differ from its list of origin once the
+# user edits it (patch may set `column` or `frequency`), so buckets are built
+# from the effective definitions, not from the list a task was declared in.
+_BASE_BUCKETS = (
+    ("event",   "management", MANAGEMENT_TASKS),
+    ("event",   "smm",        SMM_TASKS),
+    ("event",   "marketing",  MARKETING_TASKS),
+    ("monthly", None,         MONTHLY_TASKS),
+    ("daily",   None,         DAILY_TASKS),
+)
 
-    target = "management" | "smm" | "marketing" → event tasks for that assignee
-             "monthly"  → monthly tasks (all assignees in one bucket)
-             "daily"    → daily tasks
-    """
+def _base_effective(task_id: str):
+    """Effective default (with explicit frequency/column) of a hardcoded task."""
+    for freq, col, lst in _BASE_BUCKETS:
+        for t in lst:
+            if t["id"] == task_id:
+                eff = {"frequency": freq}
+                if col:
+                    eff["column"] = col
+                eff.update(t)
+                return eff
+    return None
+
+def _effective_task_definitions() -> list:
+    """All task definitions the system actually uses = hardcoded defaults with
+    manual overrides applied (edits, soft-deletes, brand-new tasks). Every
+    entry carries explicit `frequency` ("event" | "monthly" | "daily") and
+    `column` (assignee)."""
     result = []
     seen_ids = set()
-    for t in base_list:
-        ov = _task_overrides.get(t["id"])
-        if ov:
-            if ov.get("is_deleted"):
+    for freq, col, lst in _BASE_BUCKETS:
+        for t in lst:
+            seen_ids.add(t["id"])
+            ov = _task_overrides.get(t["id"])
+            if ov and ov.get("is_deleted"):
                 continue
-            patch = ov.get("patch") or {}
-            t = {**t, **patch}
-        result.append(t)
-        seen_ids.add(t["id"])
+            eff = {"frequency": freq}
+            if col:
+                eff["column"] = col
+            eff.update(t)
+            if ov:
+                eff.update(ov.get("patch") or {})
+            result.append(eff)
     # Brand-new tasks created via "+ новий таск"
     for tid, ov in _task_overrides.items():
-        if tid in seen_ids:
-            continue
-        if not ov.get("is_new"):
+        if tid in seen_ids or not ov.get("is_new") or ov.get("is_deleted"):
             continue
         full = ov.get("full_definition") or {}
-        freq = full.get("frequency", "event")
-        col = full.get("column")
-        if target in ("management", "smm", "marketing"):
-            if freq == "event" and col == target:
-                result.append({**full, "id": tid})
-        elif target == "monthly" and freq == "monthly":
-            result.append({**full, "id": tid})
-        elif target == "daily" and freq == "daily":
-            result.append({**full, "id": tid})
+        result.append({"frequency": "event", **full, "id": tid, "is_custom": True})
     return result
 
 def get_tasks_for_column(column: str) -> list:
-    """Get full task list for a column = hardcoded defaults + applied overrides."""
-    if column == "management":
-        return _apply_overrides_to_list(column, MANAGEMENT_TASKS)
-    if column == "smm":
-        return _apply_overrides_to_list(column, SMM_TASKS)
-    if column == "marketing":
-        return _apply_overrides_to_list(column, MARKETING_TASKS)
-    if column == "monthly":
-        return _apply_overrides_to_list(column, MONTHLY_TASKS)
+    """Effective task list for a bucket.
+
+    column = "management" | "smm" | "marketing" → per-event tasks of that assignee
+             "monthly" → monthly tasks (all assignees)
+             "daily"   → daily tasks (all assignees)
+    """
+    defs = _effective_task_definitions()
+    if column in ("management", "smm", "marketing"):
+        return [t for t in defs if t.get("frequency", "event") == "event" and t.get("column") == column]
+    if column in ("monthly", "daily"):
+        return [t for t in defs if t.get("frequency") == column]
     return []
 
 def calculate_event_tasks(event_date_str, column, is_series_child: bool = False, is_series: bool = False):
@@ -1042,8 +1060,8 @@ def calculate_monthly_tasks(year, month):
     """Calculate monthly auto-task dates for a given month."""
     first_of_month = datetime(year, month, 1)
     result = {}
-    for task in MONTHLY_TASKS:
-        task_date = first_of_month - timedelta(days=task["days_before"])
+    for task in get_tasks_for_column("monthly"):
+        task_date = first_of_month - timedelta(days=int(task.get("days_before") or 0))
         if task.get("is_teamwork"):
             task_date = next_studio_day(task_date)
         result[task["id"]] = {
@@ -4585,7 +4603,7 @@ async def get_announcement_overlaps():
     
     for event in events:
         smm_tasks = event.get("smm_tasks", {})
-        for task_def in SMM_TASKS:
+        for task_def in get_tasks_for_column("smm"):
             if task_def.get("is_announcement") and task_def["id"] in smm_tasks:
                 task_date = smm_tasks[task_def["id"]]
                 if task_date not in announcement_dates:
@@ -4738,7 +4756,7 @@ async def get_smm_tasks_definition():
         "smm":        get_tasks_for_column("smm"),
         "marketing":  get_tasks_for_column("marketing"),
         "monthly":    get_tasks_for_column("monthly"),
-        "daily":      DAILY_TASKS,
+        "daily":      get_tasks_for_column("daily"),
     }
 
 
@@ -4749,7 +4767,8 @@ EDITABLE_FIELDS = {"name", "days_before", "column", "is_announcement", "is_teamw
 def _find_base_task(task_id: str):
     """Locate a hardcoded task by id; return (task_dict, column_name) or (None, None)."""
     for col, lst in (("management", MANAGEMENT_TASKS), ("smm", SMM_TASKS),
-                      ("marketing", MARKETING_TASKS), ("monthly", MONTHLY_TASKS)):
+                      ("marketing", MARKETING_TASKS), ("monthly", MONTHLY_TASKS),
+                      ("daily", DAILY_TASKS)):
         for t in lst:
             if t["id"] == task_id:
                 return t, col
@@ -4770,6 +4789,16 @@ async def _adapt_events_to_definition_change(task_id: str, before: dict, after: 
     if was_deleted:
         for fld in fields_by_col.values():
             await db.events.update_many({}, {"$unset": {f"{fld}.{task_id}": ""}})
+        return
+
+    old_freq = (before or {}).get("frequency", "event")
+    new_freq = (after or {}).get("frequency", old_freq)
+    if old_freq == "event" and new_freq != "event":
+        # Per-event task became monthly/daily → it no longer belongs on events
+        for fld in fields_by_col.values():
+            await db.events.update_many({}, {"$unset": {f"{fld}.{task_id}": ""}})
+        return
+    if new_freq != "event":
         return
 
     old_col = (before or {}).get("column")
@@ -4812,6 +4841,41 @@ async def _adapt_events_to_definition_change(task_id: str, before: dict, after: 
             )
 
 
+async def _sync_task_onto_future_events(task_id: str):
+    """After a definition comes back (undelete / revert), put the task onto
+    future events that are missing it, in the assignee field it belongs to.
+    Past events are left untouched."""
+    fields_by_col = {"management": "reminders", "smm": "smm_tasks", "marketing": "marketing_tasks"}
+    task = next((d for d in _effective_task_definitions() if d["id"] == task_id), None)
+    if not task or task.get("frequency", "event") != "event":
+        return
+    field = fields_by_col.get(task.get("column"))
+    if not field:
+        return
+    today_str = datetime.now(timezone.utc).date().isoformat()
+    cursor = db.events.find(
+        {"date": {"$gte": today_str}, "cancelled": {"$ne": True}, "archived": {"$ne": True}},
+        {"_id": 0, "id": 1, "date": 1, "source_event_id": 1, "event_type": 1,
+         "reminders": 1, "smm_tasks": 1, "marketing_tasks": 1},
+    )
+    async for ev in cursor:
+        if task_id in (ev.get(field) or {}):
+            continue
+        is_child = bool(ev.get("source_event_id"))
+        is_series = is_child or ev.get("event_type") == "regular"
+        try:
+            calc = calculate_event_tasks(ev["date"], task["column"], is_series_child=is_child, is_series=is_series)
+        except Exception:
+            continue
+        if task_id not in calc:
+            continue
+        update = {"$set": {f"{field}.{task_id}": calc[task_id]}}
+        stale = {f"{f}.{task_id}": "" for f in fields_by_col.values() if f != field and task_id in (ev.get(f) or {})}
+        if stale:
+            update["$unset"] = stale
+        await db.events.update_one({"id": ev["id"]}, update)
+
+
 @api_router.patch("/task-definitions/{task_id}")
 async def edit_task_definition(task_id: str, payload: dict):
     """Edit a task definition. Stores diff vs hardcoded default. Each call
@@ -4843,9 +4907,10 @@ async def edit_task_definition(task_id: str, payload: dict):
     prior_patch = (existing or {}).get("patch") or {}
     new_patch = {**prior_patch, **fields}
 
-    # Compute before/after for adaptation
-    before_eff = {**base, **prior_patch}
-    after_eff = {**base, **new_patch}
+    # Compute before/after for adaptation (explicit frequency/column)
+    base_eff = _base_effective(task_id) or base
+    before_eff = {**base_eff, **prior_patch}
+    after_eff = {**base_eff, **new_patch}
 
     history = list((existing or {}).get("history") or [])
     history.append({"changed_at": datetime.now(timezone.utc).isoformat(), "previous_patch": prior_patch})
@@ -4966,6 +5031,7 @@ async def revert_task_definition(task_id: str):
         # Nothing to revert to — remove override entirely (back to hardcoded default)
         await db.task_definition_overrides.delete_one({"task_id": task_id})
         await _refresh_task_overrides_cache()
+        await _sync_task_onto_future_events(task_id)
         return {"task_id": task_id, "reverted_to": "hardcoded_default"}
     last = history.pop()
     update = {"history": history, "updated_at": datetime.now(timezone.utc).isoformat()}
@@ -4976,6 +5042,7 @@ async def revert_task_definition(task_id: str):
         update["full_definition"] = last["previous_full"]
     await db.task_definition_overrides.update_one({"task_id": task_id}, {"$set": update})
     await _refresh_task_overrides_cache()
+    await _sync_task_onto_future_events(task_id)
     return {"task_id": task_id, "reverted": True}
 
 
@@ -5109,9 +5176,9 @@ async def get_all_task_types():
             "days_before": t["days_before"],
             "icon": "send",
             "type": "smm",
-            "is_posting": t["is_posting"]
+            "is_posting": bool(t.get("is_announcement", False))
         }
-        for t in SMM_TASKS
+        for t in get_tasks_for_column("smm")
     ]
     
     return {

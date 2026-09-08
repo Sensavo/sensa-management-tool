@@ -8,6 +8,12 @@
       "port": 8000
     },
     {
+      "name": "Backend QA (ізольована база, без Telegram/Altegio)",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd backend && set -a && . ./.env && set +a && export DB_NAME=poriadok_qa PORIADOK_ACCESS_CODE= TELEGRAM_BOT_TOKEN= ALTEGIO_USER_TOKEN= ALTEGIO_PARTNER_TOKEN= ALTEGIO_PUSH_USER_TOKEN= GOOGLE_CLIENT_ID= GOOGLE_CLIENT_SECRET= OPENAI_API_KEY= EMERGENT_LLM_KEY= && exec python3 -m uvicorn server:app --host 127.0.0.1 --port 8001"],
+      "port": 8001
+    },
+    {
       "name": "Frontend (React)",
       "runtimeExecutable": "yarn",
       "runtimeArgs": ["start"],

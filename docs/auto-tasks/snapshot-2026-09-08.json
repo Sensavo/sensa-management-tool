@@ -1,0 +1,688 @@
+{
+  "captured_at": "2026-09-08",
+  "source": "https://sensa-management-tool-production.up.railway.app/api/smm/tasks-definition",
+  "effective_definitions": {
+    "management": [
+      {
+        "id": "mgmt_info_master",
+        "name": "попросити інфу від майстра",
+        "days_before": 35,
+        "condition": null,
+        "series_master_only": true,
+        "weight": 0.15,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "mgmt_info_to_smm",
+        "name": "інфу від майстра в smm",
+        "days_before": 30,
+        "condition": null,
+        "series_master_only": true,
+        "weight": 0.05,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "mgmt_check_announce",
+        "name": "перевірити чи все готово до анонсу",
+        "days_before": 15,
+        "condition": null,
+        "series_master_only": true,
+        "weight": 0.1,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "mgmt_cancel_event",
+        "name": "обговорити з маркетологом скасування",
+        "days_before": 3,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 50
+        },
+        "weight": 0.1,
+        "shift_kind": "fixed"
+      },
+      {
+        "id": "mgmt_remind_participants",
+        "name": "нагадування учасникам",
+        "days_before": 1,
+        "condition": null,
+        "weight": 0.1,
+        "shift_kind": "fixed"
+      },
+      {
+        "id": "mgmt_prepare_studio",
+        "name": "підготовка студії",
+        "days_before": 0,
+        "condition": null,
+        "weight": 0.3,
+        "shift_kind": "fixed"
+      },
+      {
+        "id": "mgmt_clean_studio",
+        "name": "прибирання студії",
+        "days_before": 0,
+        "condition": null,
+        "weight": 0.2,
+        "shift_kind": "fixed"
+      },
+      {
+        "id": "mgmt_expenses",
+        "name": "внесення витрат і оплат",
+        "days_before": 0,
+        "condition": null,
+        "weight": 0.05,
+        "shift_kind": "fixed"
+      },
+      {
+        "id": "mgmt_pay_master",
+        "name": "оплата майстру",
+        "days_before": 0,
+        "condition": null,
+        "series_master_only": true,
+        "weight": 0.05,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "mgmt_send_feedback",
+        "name": "розіслати запрошення в чат і форму фідбеку",
+        "days_before": -1,
+        "condition": null,
+        "regular_note": "регулярна → тільки новим",
+        "weight": 0.1,
+        "shift_kind": "fixed"
+      },
+      {
+        "id": "mgmt_master_speech",
+        "name": "попросити майстра зняти розмовне сторіс (зі студії або іншого місця)",
+        "days_before": 10,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 60
+        },
+        "series_master_only": true,
+        "weight": 0.1,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "mgmt_lucky_ticket",
+        "name": "щасливий квиточок в групу",
+        "days_before": 2,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 80
+        },
+        "weight": 0.05,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "custom_5469f7aa3d",
+        "name": "тестування",
+        "days_before": 1,
+        "column": "management",
+        "frequency": "event",
+        "condition": null,
+        "is_announcement": false,
+        "is_teamwork": false,
+        "series_master_only": false,
+        "weight": 0.1,
+        "shift_kind": "easy"
+      }
+    ],
+    "smm": [
+      {
+        "id": "smm_select_media",
+        "name": "відбір фото-відео",
+        "days_before": 30,
+        "condition": null,
+        "is_announcement": false,
+        "series_master_only": true,
+        "weight": 0.3,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "smm_design_announce",
+        "name": "монтаж/дизайн анонсу",
+        "days_before": 25,
+        "condition": null,
+        "is_announcement": false,
+        "series_master_only": true,
+        "weight": 0.4,
+        "shift_kind": "chain"
+      },
+      {
+        "id": "smm_text_announce",
+        "name": "текст для анонсу",
+        "days_before": 19,
+        "condition": null,
+        "is_announcement": false,
+        "series_master_only": true,
+        "weight": 0.3,
+        "shift_kind": "chain"
+      },
+      {
+        "id": "smm_video_feedbacks",
+        "name": "шукати і монтувати емоційні моменти і фідбеки",
+        "days_before": 18,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 70
+        },
+        "is_announcement": false,
+        "_skip_for_one_off": true,
+        "series_master_only": true,
+        "weight": 0.5,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "smm_storytelling_prep",
+        "name": "підготовка сторітеллінгу",
+        "days_before": 18,
+        "condition": null,
+        "is_announcement": false,
+        "series_master_only": true,
+        "weight": 0.2,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "smm_post_announce",
+        "name": "пост анонсу",
+        "days_before": 14,
+        "condition": null,
+        "is_announcement": true,
+        "series_master_only": true,
+        "weight": 0.2,
+        "shift_kind": "fixed"
+      },
+      {
+        "id": "smm_share_tg",
+        "name": "шер анонсу в тг",
+        "days_before": 14,
+        "condition": null,
+        "is_announcement": true,
+        "series_master_only": true,
+        "weight": 0.1,
+        "shift_kind": "fixed",
+        "column": "management",
+        "frequency": "event",
+        "is_teamwork": false
+      },
+      {
+        "id": "smm_storytelling",
+        "name": "сторітеллінг",
+        "days_before": 14,
+        "condition": null,
+        "is_announcement": true,
+        "weight": 0.15,
+        "shift_kind": "fixed"
+      },
+      {
+        "id": "smm_threads_warmup",
+        "name": "прогрів теми в threads",
+        "days_before": 14,
+        "condition": null,
+        "is_announcement": true,
+        "series_master_only": true,
+        "weight": 0.15,
+        "shift_kind": "fixed"
+      },
+      {
+        "id": "smm_extra_storytelling",
+        "name": "додатковий сторітеллінг",
+        "days_before": 14,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 80
+        },
+        "is_announcement": true,
+        "_series_only": "child",
+        "weight": 0.15,
+        "shift_kind": "fixed"
+      },
+      {
+        "id": "smm_extra_reel",
+        "name": "новий рілс на тему події",
+        "days_before": 14,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 70
+        },
+        "is_announcement": false,
+        "_series_only": "child",
+        "weight": 0.5,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "smm_past_events_50",
+        "name": "сторіс з минулих подій і фідбеки",
+        "days_before": 10,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 50
+        },
+        "is_announcement": false,
+        "weight": 0.2,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "smm_master_story",
+        "name": "розмовний сторіс майстра",
+        "days_before": 8,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 60
+        },
+        "is_announcement": false,
+        "weight": 0.05,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "smm_storytelling_60",
+        "name": "сторітеллінг",
+        "days_before": 7,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 60
+        },
+        "is_announcement": false,
+        "weight": 0.15,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "smm_past_events_80",
+        "name": "сторіс з минулих подій і фідбеки",
+        "days_before": 5,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 80
+        },
+        "is_announcement": false,
+        "weight": 0.2,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "smm_remind_story",
+        "name": "нагадування в сторіс",
+        "days_before": 1,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 90
+        },
+        "is_announcement": false,
+        "weight": 0.1,
+        "shift_kind": "fixed"
+      },
+      {
+        "id": "smm_shoot_content",
+        "name": "знімати контент",
+        "days_before": 0,
+        "condition": null,
+        "is_announcement": false,
+        "_series_only": "non_child",
+        "weight": 0.2,
+        "shift_kind": "fixed"
+      },
+      {
+        "id": "smm_shoot_content_child",
+        "name": "знімати контент",
+        "days_before": 0,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 70
+        },
+        "is_announcement": false,
+        "_series_only": "child",
+        "weight": 0.2,
+        "shift_kind": "fixed"
+      },
+      {
+        "id": "smm_post_stories",
+        "name": "постити сторі відразу з події",
+        "days_before": 0,
+        "condition": null,
+        "is_announcement": false,
+        "_series_only": "non_child",
+        "weight": 0.15,
+        "shift_kind": "fixed"
+      },
+      {
+        "id": "smm_post_stories_child",
+        "name": "постити сторі відразу з події",
+        "days_before": 0,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 70
+        },
+        "is_announcement": false,
+        "_series_only": "child",
+        "weight": 0.15,
+        "shift_kind": "fixed"
+      },
+      {
+        "id": "smm_upload_google",
+        "name": "оптимізувати фото-відео, видалити невдалі і залити на google photo",
+        "days_before": -1,
+        "condition": null,
+        "is_announcement": false,
+        "weight": 0.2,
+        "shift_kind": "easy"
+      }
+    ],
+    "marketing": [
+      {
+        "id": "mktg_check_announce",
+        "name": "перевірити все перед анонсом",
+        "days_before": 15,
+        "condition": null,
+        "series_master_only": true,
+        "weight": 0.1,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "mktg_start_targeting",
+        "name": "запуск таргетингу",
+        "days_before": 12,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 40
+        },
+        "weight": 0.4,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "mktg_update_target_50",
+        "name": "апдейт таргетингу",
+        "days_before": 10,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 50
+        },
+        "weight": 0.2,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "mktg_update_target_60",
+        "name": "апдейт таргетингу",
+        "days_before": 8,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 60
+        },
+        "weight": 0.2,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "mktg_stop_targeting",
+        "name": "зупинити таргетинг",
+        "days_before": 7,
+        "condition": {
+          "type": "booking_above",
+          "threshold": 80
+        },
+        "weight": 0.1,
+        "shift_kind": "fixed"
+      },
+      {
+        "id": "mktg_update_target_80",
+        "name": "апдейт таргетингу",
+        "days_before": 5,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 80
+        },
+        "weight": 0.2,
+        "shift_kind": "easy"
+      },
+      {
+        "id": "mktg_personal_invites",
+        "name": "особисті запрошення",
+        "days_before": 5,
+        "condition": {
+          "type": "booking_below",
+          "threshold": 70
+        },
+        "weight": 0.4,
+        "shift_kind": "easy"
+      }
+    ],
+    "monthly": [
+      {
+        "id": "monthly_plan_teamwork",
+        "name": "план подій тімворк",
+        "days_before": 50,
+        "column": "management",
+        "is_teamwork": true,
+        "calendar_event": {
+          "title_template": "план подій на {month}",
+          "start_time": "14:00",
+          "end_time": "15:00"
+        }
+      },
+      {
+        "id": "monthly_content_plan_tw",
+        "name": "контент-план тімворк",
+        "days_before": 40,
+        "column": "smm",
+        "is_teamwork": true,
+        "calendar_event": {
+          "title_template": "контент-план на {month}",
+          "start_time": "14:00",
+          "end_time": "16:00"
+        }
+      },
+      {
+        "id": "monthly_mktg_plan_tw",
+        "name": "план подій тімворк",
+        "days_before": 50,
+        "column": "marketing",
+        "is_teamwork": true
+      },
+      {
+        "id": "monthly_mktg_content_tw",
+        "name": "контент-план тімворк",
+        "days_before": 40,
+        "column": "marketing",
+        "is_teamwork": true
+      },
+      {
+        "id": "monthly_mgmt_check_mktg",
+        "name": "перевірити маркетинг план",
+        "days_before": 39,
+        "column": "management"
+      },
+      {
+        "id": "monthly_mgmt_next_month_info",
+        "name": "підготувати інфу для посту «Події наступного місяця»",
+        "days_before": 38,
+        "column": "management"
+      },
+      {
+        "id": "monthly_influencers",
+        "name": "вибрати 10 інфлюенсерів",
+        "days_before": 40,
+        "column": "marketing"
+      },
+      {
+        "id": "monthly_ambassadors",
+        "name": "написати амбасадорам",
+        "days_before": 27,
+        "column": "marketing"
+      },
+      {
+        "id": "monthly_mktg_info_posts",
+        "name": "обговорення інфо-постів",
+        "days_before": 40,
+        "column": "marketing"
+      },
+      {
+        "id": "monthly_mktg_discuss_memes",
+        "name": "обговорити ідеї мемів",
+        "days_before": 7,
+        "column": "marketing"
+      },
+      {
+        "id": "monthly_approve_memes",
+        "name": "затвердити меми",
+        "days_before": 3,
+        "column": "marketing",
+        "calendar_event": {
+          "title_template": "затвердити меми",
+          "start_time": "17:00",
+          "end_time": "18:00"
+        }
+      },
+      {
+        "id": "monthly_smm_info_posts",
+        "name": "обговорення інфо-постів",
+        "days_before": 40,
+        "column": "smm"
+      },
+      {
+        "id": "monthly_smm_next_month_post",
+        "name": "зробити пост «Події наступного місяця»",
+        "days_before": 35,
+        "column": "smm"
+      },
+      {
+        "id": "monthly_smm_next_month_publish",
+        "name": "опублікувати пост «Події наступного місяця»",
+        "days_before": 27,
+        "column": "smm"
+      },
+      {
+        "id": "monthly_smm_influencers",
+        "name": "написати інфлюенсерам",
+        "days_before": 27,
+        "column": "smm"
+      },
+      {
+        "id": "monthly_smm_next_month_remind_14",
+        "name": "нагадування про «Події наступного місяця»",
+        "days_before": 14,
+        "column": "smm"
+      },
+      {
+        "id": "monthly_smm_meme_ideas",
+        "name": "ідеї для мемів",
+        "days_before": 10,
+        "column": "smm"
+      },
+      {
+        "id": "monthly_smm_discuss_memes",
+        "name": "обговорити ідеї мемів",
+        "days_before": 7,
+        "column": "smm"
+      },
+      {
+        "id": "monthly_smm_calendar_memes",
+        "name": "внести в календар меми",
+        "days_before": 7,
+        "column": "smm"
+      },
+      {
+        "id": "monthly_smm_next_month_remind_7",
+        "name": "нагадування про «Події наступного місяця»",
+        "days_before": 7,
+        "column": "smm"
+      },
+      {
+        "id": "monthly_smm_make_meme_5",
+        "name": "робота над мемами",
+        "days_before": 5,
+        "column": "smm"
+      },
+      {
+        "id": "monthly_smm_make_meme_3",
+        "name": "робота над мемами",
+        "days_before": 3,
+        "column": "smm"
+      },
+      {
+        "id": "monthly_smm_next_month_remind_0",
+        "name": "нагадування про «Події наступного місяця»",
+        "days_before": 0,
+        "column": "smm"
+      }
+    ],
+    "daily": [
+      {
+        "id": "daily_direct",
+        "name": "дірект",
+        "column": "management"
+      },
+      {
+        "id": "daily_threads",
+        "name": "двіж в threads",
+        "column": "smm"
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "task_id": "smm_share_tg",
+      "column": "smm",
+      "created_at": "2026-05-04T13:19:29.705821+00:00",
+      "history": [
+        {
+          "changed_at": "2026-05-04T13:19:29.705801+00:00",
+          "previous_patch": {}
+        }
+      ],
+      "id": "160d4ce3-f14a-4645-9d79-dc1450b449b0",
+      "is_deleted": false,
+      "is_new": false,
+      "patch": {
+        "name": "шер анонсу в тг",
+        "days_before": 14,
+        "column": "management",
+        "frequency": "event",
+        "is_teamwork": false,
+        "is_announcement": true,
+        "series_master_only": true,
+        "condition": null
+      },
+      "updated_at": "2026-05-04T13:19:29.705821+00:00"
+    },
+    {
+      "id": "0067f400-2c6e-4926-81c0-c9a5f6b4ced6",
+      "task_id": "custom_5469f7aa3d",
+      "column": "management",
+      "frequency": "event",
+      "patch": {},
+      "is_deleted": false,
+      "is_new": true,
+      "full_definition": {
+        "id": "custom_5469f7aa3d",
+        "name": "тестування",
+        "days_before": 1,
+        "column": "management",
+        "frequency": "event",
+        "condition": null,
+        "is_announcement": false,
+        "is_teamwork": false,
+        "series_master_only": false,
+        "weight": 0.1,
+        "shift_kind": "easy"
+      },
+      "history": [],
+      "created_at": "2026-06-04T05:06:10.713611+00:00",
+      "updated_at": "2026-06-04T05:06:10.713625+00:00"
+    },
+    {
+      "task_id": "smm_collect_materials",
+      "column": "smm",
+      "created_at": "2026-09-08T10:37:26.642932+00:00",
+      "history": [
+        {
+          "changed_at": "2026-09-08T10:37:26.642905+00:00",
+          "previous_patch": {},
+          "previously_deleted": false
+        }
+      ],
+      "id": "537ce9b2-fcf1-4fc8-830a-163b3f0129a7",
+      "is_deleted": true,
+      "is_new": false,
+      "patch": {},
+      "updated_at": "2026-09-08T10:37:26.642932+00:00"
+    }
+  ]
+}
