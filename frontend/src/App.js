@@ -1140,7 +1140,7 @@ const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, 
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onOverlapClick(task); }}
-                className="text-[10px] bg-red-100 text-red-600 hover:bg-red-200 px-1.5 py-0.5 rounded-full whitespace-nowrap transition-colors"
+                className="task-overlap-badge text-[10px] bg-red-100 text-red-600 hover:bg-red-200 px-1.5 py-0.5 rounded-full whitespace-nowrap transition-colors"
                 title="клікни щоб перенести"
               >перетин</button>
             ) : (
@@ -1350,7 +1350,15 @@ const Dashboard = () => {
   const [newTaskData, setNewTaskData] = useState(null);
   const [showNewTaskCalendar, setShowNewTaskCalendar] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [announcementOverlaps, setAnnouncementOverlaps] = useState({});
+  const [overlapResolverTask, setOverlapResolverTask] = useState(null);
   const location = useLocation();
+
+  // Fetch announcement overlaps (same as desktop)
+  const refreshAnnouncementOverlaps = useCallback(() => {
+    axios.get(`${API}/smm/announcement-overlaps`).then(r => setAnnouncementOverlaps(r.data || {})).catch(() => {});
+  }, []);
+  useEffect(() => { refreshAnnouncementOverlaps(); }, [events, refreshAnnouncementOverlaps]);
 
   // Deep links (?event=ID, ?overdue_cleanup=1) — desktop opens popups, mobile goes to pages
   useEffect(() => {
@@ -1395,7 +1403,7 @@ const Dashboard = () => {
     standaloneTasks.filter(t => t.type !== "smm").forEach(task => {
       const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
       const linkedEvent = task.event_id ? events.find(event => event.id === task.event_id) : null;
-      const baseTask = { event_id: task.id, event_title: linkedEvent?.title || "", reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "manager", target_month: task.target_month, _kind: "standalone" };
+      const baseTask = { event_id: task.id, event_title: linkedEvent?.title || "", reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "manager", target_month: task.target_month, type: task.type, event_id_link: task.event_id || "", order: task.order || 0, _kind: "standalone" };
       expandStandaloneTaskForAssignees(task, baseTask, "manager").forEach((t) => {
         if (task.date === todayStr) todayTasks.push(t);
         else if (taskDate < today && !task.completed) overdueTasks.push(t);
@@ -1418,7 +1426,7 @@ const Dashboard = () => {
         const taskInfo = smmTasksMap[taskId]; if (!taskInfo) return;
         const taskDate = new Date(taskDateStr); taskDate.setHours(0, 0, 0, 0);
         const ov = (event.task_overrides || {})[taskId] || {};
-        const task = { event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov.title || taskInfo.name, task_date: taskDateStr, completed: !!(completedDict || {})[taskId], color: ov.color || taskInfo.color || "standard", icon: ov.icon || taskInfo.icon, assignee: normalizeAssignee(ov.assignee, ""), _kind: kind };
+        const task = { event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov.title || taskInfo.name, task_date: taskDateStr, completed: !!(completedDict || {})[taskId], color: ov.color || taskInfo.color || "standard", icon: ov.icon || taskInfo.icon, assignee: normalizeAssignee(ov.assignee, ""), order: ov.order || 0, _kind: kind };
         if (taskDateStr === todayStr) todayTasks.push(task);
         else if (taskDate < today && !task.completed) overdueTasks.push(task);
         else if (taskDate > today && taskDateStr <= twoWeeksStr) soonTasks.push(task);
@@ -1427,7 +1435,7 @@ const Dashboard = () => {
     standaloneTasks.filter(t => t.type === "smm").forEach(task => {
       const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
       const linkedEvent = task.event_id ? events.find(event => event.id === task.event_id) : null;
-      const baseTask = { event_id: task.id, event_title: linkedEvent?.title || "", task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "manager", target_month: task.target_month, _kind: "standalone" };
+      const baseTask = { event_id: task.id, event_title: linkedEvent?.title || "", task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "manager", target_month: task.target_month, type: task.type, event_id_link: task.event_id || "", order: task.order || 0, _kind: "standalone" };
       expandStandaloneTaskForAssignees(task, baseTask, "smm").forEach((t) => {
         if (task.date === todayStr) todayTasks.push(t);
         else if (taskDate < today && !task.completed) overdueTasks.push(t);
@@ -1509,40 +1517,82 @@ const Dashboard = () => {
   const handleEventClick = (eventId) => { navigate(`/event/${eventId}/view`); };
 
   const handleTaskEdit = (task) => {
+    // Placement context for «позиція в дні»: the column/day the task was opened from.
+    const placement = { _key: getTaskDragKey(task), _origAssignee: activeTab, _origDate: getTaskDate(task), _position: null };
     if (task.is_standalone) {
       const fullTask = standaloneTasks.find(t => t.id === task.event_id);
       if (fullTask) {
-        setEditingTask({...fullTask, _isStandalone: true, assignee: fullTask.assignee || task.assignee || 'manager'});
+        setEditingTask({...fullTask, _isStandalone: true, assignee: fullTask.assignee || task.assignee || 'manager', ...placement});
         setShowEditDialog(true);
       }
     } else {
       const currentAssignee = task.assignee || activeTab;
-      setEditingTask({ _isStandalone: false, _eventId: task.event_id, _taskId: task.task_id || task.reminder_id, assignee: currentAssignee, id: task.event_id, title: task.task_name || task.reminder_name, date: task.task_date || task.reminder_date, icon: task.icon || "circle", color: task.color || "manager", type: "smm", completed: task.completed, eventTitle: task.event_title });
+      setEditingTask({ ...placement, _isStandalone: false, _eventId: task.event_id, _taskId: task.task_id || task.reminder_id, assignee: currentAssignee, id: task.event_id, title: task.task_name || task.reminder_name, date: task.task_date || task.reminder_date, icon: task.icon || "circle", color: task.color || "manager", type: "smm", completed: task.completed, eventTitle: task.event_title, order: task.order || 0 });
       setShowEditDialog(true);
     }
   };
+
+  // Tasks of one column on one day, in display order (for «позиція в дні»)
+  const getDayTasks = (assignee, date) => Object.values(tasksByTeam[assignee] || {}).flat()
+    .filter(t => getTaskDate(t) === date)
+    .sort((a, b) => getTaskOrder(a) - getTaskOrder(b));
+  const isSamePlacement = (task) => normalizeAssignee(task.assignee, "manager") === task._origAssignee && task.date === task._origDate;
 
   const handleSaveTask = async () => {
     if (!editingTask?.title?.trim()) return;
     const beforeStandalone = editingTask._isStandalone === false ? null : standaloneTasks.find(t => t.id === editingTask.id);
     const beforeEventTask = editingTask._isStandalone === false ? { ...editingTask } : null;
+    // Reorder the target day like desktop drag&drop: siblings get (index + 1) * 1000
+    let siblings = null, newOrder = null;
+    const pos = editingTask._position;
+    if (pos) {
+      const newAssignee = normalizeAssignee(editingTask.assignee, "manager");
+      const dayTasks = getDayTasks(newAssignee, editingTask.date).map(t => ({ ...t, task_id: t.task_id || t.reminder_id }));
+      const currentIndex = isSamePlacement(editingTask) ? dayTasks.findIndex(t => getTaskDragKey(t) === editingTask._key) : -1;
+      siblings = dayTasks.filter(t => getTaskDragKey(t) !== editingTask._key);
+      const cur = currentIndex >= 0 ? currentIndex : siblings.length;
+      const insertAt = pos === 'top' ? 0 : pos === 'bottom' ? siblings.length : pos === 'up' ? Math.max(0, cur - 1) : Math.min(siblings.length, cur + 1);
+      newOrder = (insertAt + 1) * 1000;
+      siblings = siblings.map((t, i) => ({ task: t, order: (i < insertAt ? i + 1 : i + 2) * 1000 }));
+    }
     try {
       if (editingTask._isStandalone === false) {
-        await axios.patch(`${API}/events/${editingTask._eventId}/tasks/${editingTask._taskId}`, { color: editingTask.color, icon: editingTask.icon, title: editingTask.title, assignee: editingTask.assignee, date: editingTask.date });
+        await axios.patch(`${API}/events/${editingTask._eventId}/tasks/${editingTask._taskId}`, { color: editingTask.color, icon: editingTask.icon, title: editingTask.title, assignee: editingTask.assignee, date: editingTask.date, ...(newOrder != null ? { order: newOrder } : {}) });
         pushUndo({ label: "редагування таска", run: async () => { await api.updateEventTask(beforeEventTask._eventId, beforeEventTask._taskId, { color: beforeEventTask.color, icon: beforeEventTask.icon, title: beforeEventTask.title, assignee: beforeEventTask.assignee, date: beforeEventTask.date, order: beforeEventTask.order || 0 }); refreshEvents(); } });
-        toast.success("збережено!"); refreshEvents();
       } else {
-        await api.updateStandaloneTaskFull(editingTask.id, getStandaloneTaskPayload(editingTask));
+        await api.updateStandaloneTaskFull(editingTask.id, getStandaloneTaskPayload(editingTask, newOrder != null ? { order: newOrder } : {}));
         if (beforeStandalone) pushUndo({ label: "редагування таска", run: async () => { await api.updateStandaloneTaskFull(beforeStandalone.id, getStandaloneTaskPayload(beforeStandalone)); refreshStandaloneTasks(); } });
-        toast.success("збережено!"); refreshStandaloneTasks();
       }
+      if (siblings) await Promise.all(siblings.map(({ task, order }) => persistTaskPlacementIn(standaloneTasks, task, normalizeAssignee(editingTask.assignee, "manager"), editingTask.date, order)));
+      toast.success(siblings ? "порядок оновлено" : "збережено!");
+      if (editingTask._isStandalone === false || siblings) refreshEvents();
+      if (editingTask._isStandalone !== false || siblings) refreshStandaloneTasks();
+      setShowEditDialog(false); setEditingTask(null);
+    } catch { toast.error("помилка"); }
+  };
+
+  // Same as desktop handleDeleteEditingTask — event tasks and standalone, undo instead of confirm
+  const handleDeleteTask = async () => {
+    if (!editingTask) return;
+    const before = { ...editingTask };
+    try {
+      if (editingTask._isStandalone === false) {
+        await api.deleteEventTask(editingTask._eventId, editingTask._taskId);
+        pushUndo({ label: "видалення таска", run: async () => { await api.updateEventTask(before._eventId, before._taskId, { color: before.color, icon: before.icon, title: before.title, assignee: before.assignee, date: before.date, order: before.order || 0, deleted: false }); refreshEvents(); } });
+        refreshEvents();
+      } else {
+        await api.deleteStandaloneTask(editingTask.id);
+        pushUndo({ label: "видалення таска", run: async () => { await api.createStandaloneTask(getStandaloneTaskPayload(before)); refreshStandaloneTasks(); } });
+        refreshStandaloneTasks();
+      }
+      toast.success("видалено!");
       setShowEditDialog(false); setEditingTask(null);
     } catch { toast.error("помилка"); }
   };
 
   const handleNewTaskOpen = () => {
     const isSMM = activeTab === 'smm' || activeTab === 'marketer';
-    setNewTaskData({ title: '', date: todayStr, icon: isSMM ? 'instagram' : 'coffee', color: 'manager', assignee: activeTab, type: isSMM ? 'smm' : 'regular', teamwork: false, team_members: [] });
+    setNewTaskData({ title: '', date: todayStr, icon: isSMM ? 'instagram' : 'coffee', color: 'manager', assignee: activeTab, type: isSMM ? 'smm' : 'regular', event_id: '', teamwork: false, team_members: [] });
     setShowNewTaskCalendar(false);
     setShowNewTask(true);
   };
@@ -1560,7 +1610,7 @@ const Dashboard = () => {
   // Render a task section (overdue/today/soon)
   const MobileTaskSection = ({ tasks: sectionTasks, title, isOverdue, isCollapsible, expanded, setExpanded }) => {
     if (isCollapsible && sectionTasks.length === 0) return null;
-    const normalizeTask = (t) => ({ ...t, task_id: t.task_id || t.reminder_id, task_name: t.task_name || t.reminder_name, task_date: t.task_date || t.reminder_date, assignee: t.assignee || activeTab });
+    const normalizeTask = (t) => { const d = t.task_date || t.reminder_date; return { ...t, task_id: t.task_id || t.reminder_id, task_name: t.task_name || t.reminder_name, task_date: d, assignee: t.assignee || activeTab, isOverlapping: activeTab === 'smm' && !!(d && announcementOverlaps[d]) }; };
     return (
       <section className="mobile-section">
         {isCollapsible ? (
@@ -1575,9 +1625,9 @@ const Dashboard = () => {
         {(!isCollapsible || expanded) && (
           sectionTasks.length > 0 ? (
             <div className="pt-3 space-y-1">
-              {[...sectionTasks].sort((a, b) => (a.completed ? 1 : 0) - (b.completed ? 1 : 0)).map((t, i) => {
+              {[...sectionTasks].sort((a, b) => (getTaskDate(a) < getTaskDate(b) ? -1 : getTaskDate(a) > getTaskDate(b) ? 1 : 0) || getTaskOrder(a) - getTaskOrder(b) || (a.completed ? 1 : 0) - (b.completed ? 1 : 0)).map((t, i) => {
                 const nt = normalizeTask(t);
-                return <SMMTaskItem key={`${nt.event_id}-${nt.task_id}-${i}`} task={nt} onToggle={handleToggleByKind(activeTab === 'manager' ? handleToggleTask : handleToggleSMMTask)} onEventClick={handleEventClick} onTaskEdit={handleTaskEdit} smmTasksDefinition={smmTasksDefinition} showDate={isOverdue || title === 'незабаром'} />;
+                return <SMMTaskItem key={`${nt.event_id}-${nt.task_id}-${i}`} task={nt} onToggle={handleToggleByKind(activeTab === 'manager' ? handleToggleTask : handleToggleSMMTask)} onEventClick={handleEventClick} onTaskEdit={handleTaskEdit} onOverlapClick={activeTab === 'smm' ? setOverlapResolverTask : undefined} smmTasksDefinition={smmTasksDefinition} showDate={isOverdue || title === 'незабаром'} />;
               })}
             </div>
           ) : <p className="text-secondary py-4 text-center text-sm">все зроблено!</p>
@@ -1692,6 +1742,25 @@ const Dashboard = () => {
               </div>
               <button type="button" className="mobile-date-wide" onClick={() => setShowEditCalendar(!showEditCalendar)}><CalendarIcon className="w-4 h-4" />{formatDateUkrainian(editingTask.date)}</button>
               {showEditCalendar && <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(editingTask.date)} onSelect={(d) => { if (d) { setEditingTask({...editingTask, date: formatDateLocal(d)}); } setShowEditCalendar(false); }} className="w-full" />}
+              {(() => {
+                const samePlacement = isSamePlacement(editingTask);
+                const positionChips = [
+                  { value: 'top', label: 'на початок' },
+                  { value: 'up', label: 'вище', disabled: !samePlacement },
+                  { value: 'down', label: 'нижче', disabled: !samePlacement },
+                  { value: 'bottom', label: 'в кінець' },
+                ];
+                return (
+                  <div className="space-y-1.5" data-testid="mobile-edit-position">
+                    <span className="block text-[11px] uppercase tracking-wide text-secondary font-semibold px-1">позиція в дні</span>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {positionChips.map(chip => (
+                        <button key={chip.value} type="button" disabled={chip.disabled} style={{ height: 44 }} className={`mobile-date-chip ${editingTask._position === chip.value ? 'selected' : ''} ${chip.disabled ? 'opacity-40' : ''}`} onClick={() => setEditingTask({...editingTask, _position: editingTask._position === chip.value ? null : chip.value})}>{chip.label}</button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
               <div className="flex items-center justify-between gap-2 rounded-2xl bg-[#E8E5DC]/45 px-3 py-2">
                 <span className="text-[11px] uppercase tracking-wide text-secondary font-semibold">колір</span>
                 <div className="flex gap-2">
@@ -1706,10 +1775,8 @@ const Dashboard = () => {
                 ); })}
               </div>
               <div className="grid grid-cols-2 gap-2 pt-1">
-                {editingTask._isStandalone && (
-                  <button className="h-11 text-sm rounded-full border border-red-200 text-red-600" onClick={async () => { const before = { ...editingTask }; try { await api.deleteStandaloneTask(editingTask.id); pushUndo({ label: "видалення таска", run: async () => { await api.createStandaloneTask(getStandaloneTaskPayload(before)); refreshStandaloneTasks(); } }); toast.success("видалено!"); refreshStandaloneTasks(); setShowEditDialog(false); } catch { toast.error("помилка"); } }} data-testid="mobile-edit-delete"><Trash2 className="w-4 h-4 inline mr-1" />видалити</button>
-                )}
-                <button className={`btn-dark h-11 text-sm ${editingTask._isStandalone ? '' : 'col-span-2'}`} onClick={handleSaveTask} data-testid="mobile-edit-save">зберегти</button>
+                <button className="h-11 text-sm rounded-full border border-red-200 text-red-600" onClick={handleDeleteTask} data-testid="mobile-edit-delete"><Trash2 className="w-4 h-4 inline mr-1" />видалити</button>
+                <button className="btn-dark h-11 text-sm" onClick={handleSaveTask} data-testid="mobile-edit-save">зберегти</button>
               </div>
               {hasLinkedEvent && (
                 <button type="button" className="w-full h-10 text-sm text-secondary lowercase" onClick={() => { setShowEditDialog(false); navigate(`/event/${linkedEventId}/view`); }} data-testid="mobile-edit-open-event">відкрити подію →</button>
@@ -1752,6 +1819,19 @@ const Dashboard = () => {
               </div>
               <button type="button" className="mobile-date-wide" onClick={() => setShowNewTaskCalendar(!showNewTaskCalendar)}><CalendarIcon className="w-4 h-4" />{formatDateUkrainian(newTaskData.date)}</button>
               {showNewTaskCalendar && <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(newTaskData.date)} onSelect={(d) => { if (d) { setNewTaskData({...newTaskData, date: formatDateLocal(d)}); } setShowNewTaskCalendar(false); }} className="w-full" />}
+              <div className="relative">
+                <select value={newTaskData.event_id || ""} onChange={(e) => setNewTaskData({...newTaskData, event_id: e.target.value})} className="mobile-date-wide appearance-none outline-none px-10 truncate" style={{ fontSize: 16, textAlignLast: 'center' }} aria-label="подія" data-testid="mobile-new-event">
+                  <option value="">— без події</option>
+                  {[...events]
+                    .filter(e => !e.cancelled)
+                    .sort((a, b) => new Date(a.date) - new Date(b.date))
+                    .map(ev => {
+                      const d = new Date(ev.date);
+                      return <option key={ev.id} value={ev.id}>{`${d.getDate()} ${UK_MONTHS_NOMINATIVE[d.getMonth()]} — ${ev.title}`}</option>;
+                    })}
+                </select>
+                <ChevronDown className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-secondary" />
+              </div>
               <div className="flex items-center justify-between gap-2 rounded-2xl bg-[#E8E5DC]/45 px-3 py-2">
                 <span className="text-[11px] uppercase tracking-wide text-secondary font-semibold">колір</span>
                 <div className="flex gap-2">
@@ -1772,6 +1852,13 @@ const Dashboard = () => {
         </Dialog>
         );
       })()}
+
+      <OverlapResolverDialog
+        task={overlapResolverTask}
+        open={!!overlapResolverTask}
+        onClose={() => setOverlapResolverTask(null)}
+        onResolved={() => { refreshEvents(); refreshStandaloneTasks(); refreshAnnouncementOverlaps(); }}
+      />
 
       <BottomNav />
     </div>
@@ -5295,6 +5382,26 @@ const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, sta
 const getTaskDragKey = (task) => `${task.event_id}::${task.task_id || task.reminder_id}`;
 const getTaskDate = (task) => task.task_date || task.reminder_date || task.date || "";
 const getTaskOrder = (task) => Number(task.order || 0);
+// Persist task assignee + date + order (desktop drag&drop and mobile «позиція в дні»).
+const persistTaskPlacementIn = async (standaloneTasks, task, assignee, date, order) => {
+  if (task.is_standalone) {
+    const full = standaloneTasks.find(t => t.id === task.event_id);
+    if (!full) return;
+    await api.updateStandaloneTaskFull(full.id, getStandaloneTaskPayload(full, {
+      date,
+      icon: full.icon || task.icon || "coffee",
+      type: full.type || task.type || "regular",
+      color: full.color || task.color || "standard",
+      assignee,
+      event_id: full.event_id || task.event_id_link || "",
+      order,
+    }));
+    return;
+  }
+  const taskId = task.task_id || task.reminder_id;
+  if (!taskId || taskId === "standalone") return;
+  await api.updateEventTask(task.event_id, taskId, { date, assignee, order });
+};
 
 // Wraps a task render in a draggable handle.
 const DraggableTask = ({ task, children, onDragStart, onDragMove, onDragEnd, onDropAtPointer }) => {
@@ -6116,25 +6223,7 @@ const DesktopDashboard = () => {
     setDragOver(over || null);
   };
 
-  const persistTaskPlacement = async (task, assignee, date, order) => {
-    if (task.is_standalone) {
-      const full = standaloneTasks.find(t => t.id === task.event_id);
-      if (!full) return;
-      await api.updateStandaloneTaskFull(full.id, getStandaloneTaskPayload(full, {
-        date,
-        icon: full.icon || task.icon || "coffee",
-        type: full.type || task.type || "regular",
-        color: full.color || task.color || "standard",
-        assignee,
-        event_id: full.event_id || task.event_id_link || "",
-        order,
-      }));
-      return;
-    }
-    const taskId = task.task_id || task.reminder_id;
-    if (!taskId || taskId === "standalone") return;
-    await api.updateEventTask(task.event_id, taskId, { date, assignee, order });
-  };
+  const persistTaskPlacement = (task, assignee, date, order) => persistTaskPlacementIn(standaloneTasks, task, assignee, date, order);
 
   const handleTaskDrop = async (overData, draggedTask = null) => {
     const task = draggedTask || activeDragTask;
