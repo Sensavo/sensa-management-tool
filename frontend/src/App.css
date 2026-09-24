@@ -567,6 +567,9 @@
   width: 24px !important;
   height: 24px !important;
 }
+/* Mobile: «перетин» badge stays small visually but gets a ≥44px tap area */
+.mobile-section .task-overlap-badge { position: relative; }
+.mobile-section .task-overlap-badge::after { content: ""; position: absolute; inset: -14px -8px; }
 @media (max-width: 640px) {
   .mobile-task-dialog {
     width: calc(100vw - 24px) !important;
