@@ -1350,6 +1350,8 @@ const Dashboard = () => {
   const [newTaskData, setNewTaskData] = useState(null);
   const [showNewTaskCalendar, setShowNewTaskCalendar] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [showOverdueCleanup, setShowOverdueCleanup] = useState(false);
+  const [showDayOffDialog, setShowDayOffDialog] = useState(false);
   const location = useLocation();
 
   // Deep links (?event=ID, ?overdue_cleanup=1) — desktop opens popups, mobile goes to pages
@@ -1360,6 +1362,7 @@ const Dashboard = () => {
     if (params.get("overdue_cleanup") === "1") {
       setActiveTab(normalizeAssignee(getActorUser(), "manager"));
       setOverdueExpanded(true);
+      setShowOverdueCleanup(true);
       navigate(location.pathname, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1558,12 +1561,23 @@ const Dashboard = () => {
   const loadArchive = async () => { try { const r = await api.getTaskArchive(); setArchive(r.data); setShowArchive(true); } catch { toast.error("помилка"); } };
 
   // Render a task section (overdue/today/soon)
-  const MobileTaskSection = ({ tasks: sectionTasks, title, isOverdue, isCollapsible, expanded, setExpanded }) => {
+  const MobileTaskSection = ({ tasks: sectionTasks, title, isOverdue, isCollapsible, expanded, setExpanded, onCleanupClick }) => {
     if (isCollapsible && sectionTasks.length === 0) return null;
     const normalizeTask = (t) => ({ ...t, task_id: t.task_id || t.reminder_id, task_name: t.task_name || t.reminder_name, task_date: t.task_date || t.reminder_date, assignee: t.assignee || activeTab });
     return (
       <section className="mobile-section">
-        {isCollapsible ? (
+        {isCollapsible && onCleanupClick ? (
+          <div className={`mobile-section-header ${isOverdue ? 'overdue' : ''}`}>
+            <button type="button" className="flex flex-1 min-w-0 items-center gap-2 text-left min-h-[44px]" onClick={() => setExpanded(!expanded)}>
+              <span>{title}</span>
+              <span className="mobile-section-count">({sectionTasks.length})</span>
+            </button>
+            <button type="button" className="mobile-cleanup-btn" onClick={onCleanupClick} data-testid="mobile-overdue-cleanup-btn"><Sparkles className="w-3.5 h-3.5" />розчистити</button>
+            <button type="button" className="min-h-[44px] min-w-[32px] flex items-center justify-end" onClick={() => setExpanded(!expanded)} aria-label="розгорнути протерміновані">
+              <ChevronDown className={`w-5 h-5 transition-transform ${expanded ? "rotate-180" : ""}`} style={isOverdue ? { color: "#FF8370" } : {}} />
+            </button>
+          </div>
+        ) : isCollapsible ? (
           <button className={`mobile-section-header ${isOverdue ? 'overdue' : ''} w-full text-left`} onClick={() => setExpanded(!expanded)}>
             <span>{title}</span>
             <span className="mobile-section-count">({sectionTasks.length})</span>
@@ -1600,6 +1614,7 @@ const Dashboard = () => {
         <div className="flex items-center gap-3 mb-4">
           <h1 className="logo text-xl" style={{ textTransform: 'none' }}>Poriadok</h1>
           <p className="text-sm text-secondary lowercase">{todayFormatted.weekday} • {todayFormatted.day} {todayFormatted.month}</p>
+          <button type="button" className="ml-auto -mr-2 w-11 h-11 rounded-full flex items-center justify-center text-[#1A1717] hover:bg-black/5" onClick={() => setShowDayOffDialog(true)} title="вихідний" aria-label="додати вихідний" data-testid="mobile-dayoff-btn"><Coffee className="w-5 h-5" /></button>
         </div>
         <div className="flex gap-1.5 justify-end pb-1" data-testid="mobile-tabs">
           {tabs.map(tab => (
@@ -1643,12 +1658,20 @@ const Dashboard = () => {
           </>
         ) : (
           <>
-            <MobileTaskSection tasks={currentTasks.overdue} title="протерміновано" isOverdue isCollapsible expanded={overdueExpanded} setExpanded={setOverdueExpanded} />
+            <MobileTaskSection tasks={currentTasks.overdue} title="протерміновано" isOverdue isCollapsible expanded={overdueExpanded} setExpanded={setOverdueExpanded} onCleanupClick={() => setShowOverdueCleanup(true)} />
             <MobileTaskSection tasks={currentTasks.today} title="сьогодні" />
             <MobileTaskSection tasks={currentTasks.soon} title="незабаром" isCollapsible expanded={soonExpanded} setExpanded={setSoonExpanded} />
           </>
         )}
       </div>
+
+      {/* Overdue cleanup (full-screen) + day-off flow — same components as desktop */}
+      <Dialog open={showOverdueCleanup} onOpenChange={setShowOverdueCleanup}>
+        <DialogContent className="overdue-cleanup-dialog overdue-cleanup-mobile" onOpenAutoFocus={(e) => e.preventDefault()}>
+          <OverdueCleanupBoard tasksByTeam={tasksByTeam} assignee={activeTab === 'events' ? normalizeAssignee(getActorUser(), "manager") : activeTab} todayStr={todayStr} onOpenTask={handleTaskEdit} mobile />
+        </DialogContent>
+      </Dialog>
+      <DayOffDialog open={showDayOffDialog} onOpenChange={setShowDayOffDialog} mobile />
 
       <button className="fab" onClick={activeTab === 'events' ? () => navigate('/event/new') : handleNewTaskOpen} aria-label={activeTab === 'events' ? 'нова подія' : 'нове завдання'} data-testid="mobile-fab">
         <Plus className="w-6 h-6" />
@@ -5502,81 +5525,156 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
   );
 };
 
-const DesktopDashboard = () => {
-  const { events, settings, standaloneTasks, smmTasksDefinition, allTaskDefs, refreshEvents, refreshStandaloneTasks } = useApp();
-  const { pushUndo } = useUndo();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [showSettings, setShowSettings] = useState(false);
-  const [showStats, setShowStats] = useState(false);
-  const [showArchive, setShowArchive] = useState(false);
-  const [archive, setArchive] = useState([]);
-  const [overdueExpanded, setOverdueExpanded] = useState(false);
-  const [soonExpanded, setSoonExpanded] = useState(false);
-  const [smmOverdueExpanded, setSmmOverdueExpanded] = useState(false);
-  const [smmSoonExpanded, setSmmSoonExpanded] = useState(false);
-  const [selectedEvent, setSelectedEvent] = useState(null);
-  const [showEventDetail, setShowEventDetail] = useState(false);
-  const [cancelSeriesDialogFor, setCancelSeriesDialogFor] = useState(null); // event when series-cancel choice is needed
-  // Series instances list — populated when an event detail opens that's part of a regular series
-  const [seriesData, setSeriesData] = useState(null);
-  const [seriesPickerOpen, setSeriesPickerOpen] = useState(false);
-  // Day-off creation flow
-  const [showDayOffDialog, setShowDayOffDialog] = useState(false);
-  const [dayOffForm, setDayOffForm] = useState({ assignee: "manager", date: formatDateLocal(new Date()) });
-  const [dayOffPlan, setDayOffPlan] = useState(null); // {day_off, auto_shifts, needs_review}
-  const [reviewChoices, setReviewChoices] = useState({}); // task_id -> chosen new_date or null=skip
-  const [dayOffSubmitting, setDayOffSubmitting] = useState(false);
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [showTaskDialog, setShowTaskDialog] = useState(false);
-  const [showSMMTaskDialog, setShowSMMTaskDialog] = useState(false);
-  const [dialogColumnName, setDialogColumnName] = useState("");
-  const [showTaskCalendar, setShowTaskCalendar] = useState(false);
-  const [showSMMCalendar, setShowSMMCalendar] = useState(false);
-  const [newTask, setNewTask] = useState(() => ({ title: "", date: formatDateLocal(new Date()), icon: "coffee", color: "manager" }));
-  const [newSMMTask, setNewSMMTask] = useState(() => ({ title: "", date: formatDateLocal(new Date()), icon: "instagram", color: "manager" }));
-  const [selectedStandaloneTask, setSelectedStandaloneTask] = useState(null);
-  const [showStandaloneTaskPopup, setShowStandaloneTaskPopup] = useState(false);
-  const [editingStandaloneTask, setEditingStandaloneTask] = useState(null);
-  const [showEditStandaloneDialog, setShowEditStandaloneDialog] = useState(false);
-  const [showEditCalendar, setShowEditCalendar] = useState(false);
-  const [reschedulingTaskDate, setReschedulingTaskDate] = useState(null);
-  const [activeTab, setActiveTab] = useState('team'); // 'team' or 'events'
-  const [announcementOverlaps, setAnnouncementOverlaps] = useState({});
-  const [overlapResolverTask, setOverlapResolverTask] = useState(null);
-  const [showOverdueCleanup, setShowOverdueCleanup] = useState(false);
-  const [cleanupAssignee, setCleanupAssignee] = useState(() => normalizeAssignee(getActorUser(), "manager"));
-  const [cleanupDragTask, setCleanupDragTask] = useState(null);
+// Persist task date/assignee/order — shared by desktop drag-n-drop and the overdue cleanup board
+const persistTaskPlacementWith = async (standaloneTasks, task, assignee, date, order) => {
+  if (task.is_standalone) {
+    const full = standaloneTasks.find(t => t.id === task.event_id);
+    if (!full) return;
+    await api.updateStandaloneTaskFull(full.id, getStandaloneTaskPayload(full, {
+      date,
+      icon: full.icon || task.icon || "coffee",
+      type: full.type || task.type || "regular",
+      color: full.color || task.color || "standard",
+      assignee,
+      event_id: full.event_id || task.event_id_link || "",
+      order,
+    }));
+    return;
+  }
+  const taskId = task.task_id || task.reminder_id;
+  if (!taskId || taskId === "standalone") return;
+  await api.updateEventTask(task.event_id, taskId, { date, assignee, order });
+};
 
-  const getCleanupQuickActions = (task) => {
-    const date = getTaskDate(task);
-    const tomorrow = shiftDateLocal(todayStr, 1);
-    const plusTwo = shiftDateLocal(todayStr, 2);
-    if (date === todayStr) {
-      return [
-        { label: "завтра", date: tomorrow },
-        { label: "+2д", date: plusTwo },
-      ];
-    }
-    if (date === tomorrow) {
-      return [
-        { label: "сьогодні", date: todayStr },
-        { label: "+2д", date: plusTwo },
-      ];
-    }
+const getCleanupQuickActions = (task, todayStr) => {
+  const date = getTaskDate(task);
+  const tomorrow = shiftDateLocal(todayStr, 1);
+  const plusTwo = shiftDateLocal(todayStr, 2);
+  if (date === todayStr) {
+    return [
+      { label: "завтра", date: tomorrow },
+      { label: "+2д", date: plusTwo },
+    ];
+  }
+  if (date === tomorrow) {
     return [
       { label: "сьогодні", date: todayStr },
-      { label: "завтра", date: tomorrow },
+      { label: "+2д", date: plusTwo },
     ];
+  }
+  return [
+    { label: "сьогодні", date: todayStr },
+    { label: "завтра", date: tomorrow },
+  ];
+};
+
+// Overdue cleanup board («навести порядок в тасках») — shared by desktop dialog and mobile full-screen view
+const OverdueCleanupBoard = ({ tasksByTeam, assignee, todayStr, onOpenTask, mobile = false }) => {
+  const { standaloneTasks, refreshEvents, refreshStandaloneTasks } = useApp();
+  const { pushUndo } = useUndo();
+  const [cleanupDragTask, setCleanupDragTask] = useState(null);
+
+  const cleanupColumns = useMemo(() => {
+    const normalizeTask = (task, fallbackAssignee) => ({
+      ...task,
+      assignee: task.assignee || fallbackAssignee,
+      task_id: task.task_id || task.reminder_id,
+      task_name: task.task_name || task.reminder_name || task.title || "таск",
+      task_date: getTaskDate(task),
+      reminder_date: getTaskDate(task),
+    });
+    const activeGroups = tasksByTeam[assignee] || { overdue: [], today: [], soon: [] };
+    const allTasks = [activeGroups.overdue, activeGroups.today, activeGroups.soon]
+      .flat()
+      .map(task => normalizeTask(task, assignee));
+    const unique = new Map();
+    allTasks.forEach(task => {
+      const key = getTaskDragKey(task);
+      if (!unique.has(key)) unique.set(key, task);
+    });
+    const dates = {
+      backlog: [],
+      yesterday: [],
+      today: [],
+      tomorrow: [],
+    };
+    const yesterday = shiftDateLocal(todayStr, -1);
+    const tomorrow = shiftDateLocal(todayStr, 1);
+    unique.forEach(task => {
+      const date = getTaskDate(task);
+      if (!date) return;
+      if (date < yesterday) dates.backlog.push(task);
+      else if (date === yesterday) dates.yesterday.push(task);
+      else if (date === todayStr) dates.today.push(task);
+      else if (date === tomorrow) dates.tomorrow.push(task);
+    });
+    const sortTasks = (items) => items.sort((a, b) => {
+      const orderDiff = getTaskOrder(a) - getTaskOrder(b);
+      if (orderDiff !== 0) return orderDiff;
+      return (a.task_name || "").localeCompare(b.task_name || "");
+    });
+    return [
+      { id: "backlog", label: "позавчора+", date: yesterday, items: sortTasks(dates.backlog), accent: "danger" },
+      { id: "yesterday", label: "вчора", date: yesterday, items: sortTasks(dates.yesterday), accent: "warn" },
+      { id: "today", label: "сьогодні", date: todayStr, items: sortTasks(dates.today), accent: "neutral" },
+      { id: "tomorrow", label: "завтра", date: tomorrow, items: sortTasks(dates.tomorrow), accent: "neutral" },
+    ];
+  }, [assignee, tasksByTeam, todayStr]);
+
+  const cleanupTotal = cleanupColumns.reduce((sum, col) => sum + col.items.length, 0);
+
+  const handleCleanupReschedule = async (task, date) => {
+    if (!task || !date) return;
+    const previousDate = getTaskDate(task);
+    const previousOrder = getTaskOrder(task);
+    try {
+      await persistTaskPlacementWith(standaloneTasks, task, task.assignee || "manager", date, previousOrder || 1000);
+      pushUndo({ label: "перенесення таска", run: async () => { await persistTaskPlacementWith(standaloneTasks, task, task.assignee || "manager", previousDate, previousOrder); refreshStandaloneTasks(); refreshEvents(); } });
+      toast.success("перенесено");
+      refreshStandaloneTasks();
+      refreshEvents();
+    } catch {
+      toast.error("не вдалось перенести");
+    }
   };
 
-  const OverdueCleanupBoard = () => (
+  const handleCleanupDelete = async (task) => {
+    if (!task) return;
+    try {
+      if (task.is_standalone) {
+        const full = standaloneTasks.find(t => t.id === task.event_id);
+        if (!full) return;
+        await api.deleteStandaloneTask(full.id);
+        pushUndo({ label: "видалення таска", run: async () => { await api.createStandaloneTask(getStandaloneTaskPayload(full)); refreshStandaloneTasks(); } });
+        refreshStandaloneTasks();
+      } else {
+        const taskId = task.task_id || task.reminder_id;
+        if (!task.event_id || !taskId || taskId === "standalone") return;
+        await api.deleteEventTask(task.event_id, taskId);
+        pushUndo({ label: "видалення таска", run: async () => { await api.updateEventTask(task.event_id, taskId, { color: task.color, icon: task.icon, title: task.task_name, assignee: task.assignee, date: getTaskDate(task), order: getTaskOrder(task), deleted: false }); refreshEvents(); } });
+        refreshEvents();
+      }
+      toast.success("видалено");
+    } catch {
+      toast.error("не вдалось видалити");
+    }
+  };
+
+  const handleCleanupDrop = async (column, event) => {
+    event.preventDefault();
+    const key = event.dataTransfer.getData("text/plain");
+    const task = cleanupDragTask || cleanupColumns.flatMap(col => col.items).find(item => getTaskDragKey(item) === key);
+    setCleanupDragTask(null);
+    if (!task) return;
+    await handleCleanupReschedule(task, column.date);
+  };
+
+  return (
     <div className="overdue-cleanup-page">
       <div className="overdue-cleanup-header">
         <div>
           <h2>навести порядок в тасках</h2>
-          <p>перетягни картки між днями або кинь швидко на сьогодні / завтра</p>
+          <p>{mobile ? "кинь картки швидко на сьогодні / завтра або видали зайве" : "перетягни картки між днями або кинь швидко на сьогодні / завтра"}</p>
         </div>
         <div className={`overdue-cleanup-total ${cleanupTotal > 12 ? 'danger' : cleanupTotal > 7 ? 'warn' : ''}`}>
           {cleanupTotal > 12 ? 'багацько тасків' : `${cleanupTotal} тасків`}
@@ -5608,19 +5706,19 @@ const DesktopDashboard = () => {
                     <div
                       key={getTaskDragKey(task)}
                       className="overdue-cleanup-card-shell"
-                      draggable
+                      draggable={!mobile}
                       onDragStart={(e) => { setCleanupDragTask(task); e.dataTransfer.setData('text/plain', getTaskDragKey(task)); }}
                       onDragEnd={() => setCleanupDragTask(null)}
                     >
                       <div className="overdue-cleanup-card">
                         <div className="overdue-cleanup-card-main">
                           <div className={`task-icon ${task.color || 'manager'}`}><IconComponent /></div>
-                          <button type="button" onClick={() => openCleanupTask(task)}>{task.task_name}</button>
+                          <button type="button" onClick={() => onOpenTask(task)}>{task.task_name}</button>
                         </div>
                         {task.event_title && <p className="overdue-cleanup-card-event">{task.event_title}</p>}
                       </div>
                       <div className="overdue-cleanup-actions">
-                        {getCleanupQuickActions(task).map(action => (
+                        {getCleanupQuickActions(task, todayStr).map(action => (
                           <button key={action.label} type="button" onClick={() => handleCleanupReschedule(task, action.date)}><ArrowRight className="w-3.5 h-3.5" />{action.label}</button>
                         ))}
                         <button type="button" className="danger" onClick={() => handleCleanupDelete(task)} title="видалити таск" aria-label="видалити таск"><Trash2 className="w-3.5 h-3.5" /></button>
@@ -5635,6 +5733,221 @@ const DesktopDashboard = () => {
       </div>
     </div>
   );
+};
+
+// Day-off creation flow (shared by desktop header and mobile dashboard header)
+const DayOffDialog = ({ open, onOpenChange, mobile = false }) => {
+  const { refreshEvents } = useApp();
+  const [dayOffForm, setDayOffForm] = useState({ assignee: "manager", date: formatDateLocal(new Date()) });
+  const [dayOffPlan, setDayOffPlan] = useState(null); // {day_off, auto_shifts, needs_review}
+  const [reviewChoices, setReviewChoices] = useState({}); // task_id -> chosen new_date or null=skip
+  const [dayOffSubmitting, setDayOffSubmitting] = useState(false);
+  const chipSize = mobile ? "text-sm px-3.5 min-h-[44px]" : "text-xs px-2.5 py-1";
+  return (
+    <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) { setDayOffPlan(null); setReviewChoices({}); } }}>
+      <DialogContent className={mobile ? "max-w-[calc(100vw-24px)] !p-5" : "sm:max-w-md"} onOpenAutoFocus={mobile ? (e) => e.preventDefault() : undefined}>
+        {!dayOffPlan ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>додати вихідний</DialogTitle>
+              <DialogDescription>система запропонує перерозподіл задач цього дня</DialogDescription>
+            </DialogHeader>
+            <div className="mt-6 space-y-5">
+              <div>
+                <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-2">хто</div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[{v:'manager',l:'Manager'},{v:'smm',l:'SMM'},{v:'marketer',l:'Marketer'}].map(opt => (
+                    <button
+                      key={opt.v}
+                      type="button"
+                      onClick={() => setDayOffForm({...dayOffForm, assignee: opt.v})}
+                      className={`h-11 rounded-full text-sm font-medium transition-colors ${dayOffForm.assignee === opt.v ? 'bg-[#1A1717] text-[#F6F5F1]' : 'bg-[#F1EEE7] ring-1 ring-black/8 hover:bg-black/5'}`}
+                    >{opt.l}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-2">коли</div>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button type="button" className="w-full h-12 px-4 rounded-xl bg-[#F1EEE7] border border-black/10 hover:border-[#1A1717]/30 transition-colors flex items-center gap-3 text-left">
+                      <CalendarIcon className="w-4 h-4 text-[#1A1717]/60" />
+                      <span className="text-sm">{formatDateUkrainian(dayOffForm.date)}</span>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-2 z-[200]" align="start">
+                    <Calendar mode="single" locale={uk} weekStartsOn={1}
+                      selected={new Date(dayOffForm.date)}
+                      onSelect={(d) => { if (d) setDayOffForm({...dayOffForm, date: formatDateLocal(d)}); }}
+                      className="calendar-minimal" />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                setDayOffSubmitting(true);
+                try {
+                  const r = await api.createDayOff(dayOffForm);
+                  setDayOffPlan(r.data);
+                  // Pre-fill review choices with first suggested date for each chain item
+                  const choices = {};
+                  (r.data.needs_review || []).forEach(item => {
+                    choices[`${item.event_id}::${item.task_id}`] = item.suggested_dates?.[0] || null;
+                  });
+                  setReviewChoices(choices);
+                } catch { toast.error("помилка створення вихідного"); }
+                finally { setDayOffSubmitting(false); }
+              }}
+              disabled={dayOffSubmitting}
+              className="mt-7 w-full h-12 rounded-full bg-[#1A1717] text-[#F6F5F1] font-medium text-sm hover:bg-[#333333] disabled:opacity-50 transition-colors inline-flex items-center justify-center gap-2"
+            >
+              {dayOffSubmitting ? "рахуємо..." : "далі — побачити перерозподіл"}
+            </button>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>перерозподіл задач</DialogTitle>
+              <DialogDescription>
+                вихідний {formatDateUkrainian(dayOffPlan.day_off.date)} • {dayOffPlan.day_off.assignee === "manager" ? "Manager" : dayOffPlan.day_off.assignee === "smm" ? "SMM" : "Marketer"}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="mt-5 space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+              {/* Auto-shifts (collapsed) */}
+              {dayOffPlan.auto_shifts && dayOffPlan.auto_shifts.length > 0 && (
+                <details className="rounded-xl bg-emerald-50 ring-1 ring-emerald-200 p-3">
+                  <summary className="cursor-pointer text-sm font-medium text-emerald-900 select-none">
+                    ✓ автоматично перенесено {dayOffPlan.auto_shifts.length} {dayOffPlan.auto_shifts.length === 1 ? "задачу" : "задач"}
+                  </summary>
+                  <div className="mt-3 space-y-1.5">
+                    {dayOffPlan.auto_shifts.map(s => (
+                      <div key={`${s.event_id}::${s.task_id}`} className="text-xs text-emerald-900/80 flex items-center gap-2">
+                        <span>•</span>
+                        <span className="flex-1 truncate"><b>{s.name}</b> — {s.event_title}</span>
+                        <span className="tabular-nums opacity-70">→ {formatDateUkrainian(s.new_date)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+              {/* Needs review (expanded, highlighted) */}
+              {dayOffPlan.needs_review && dayOffPlan.needs_review.length > 0 && (
+                <div className="rounded-xl bg-amber-50 ring-1 ring-amber-300 p-4">
+                  <div className="text-sm font-semibold text-amber-900 mb-3">⚠ потребують твого рішення ({dayOffPlan.needs_review.length})</div>
+                  <div className="space-y-3">
+                    {dayOffPlan.needs_review.map(item => {
+                      const key = `${item.event_id}::${item.task_id}`;
+                      const choice = reviewChoices[key];
+                      return (
+                        <div key={key} className="p-3 rounded-lg bg-[#F1EEE7]">
+                          <div className="text-sm font-medium">{item.name}</div>
+                          <div className="text-xs text-secondary mt-0.5">{item.event_title}</div>
+                          <div className="text-xs text-amber-900/80 mt-1.5 italic">{item.reason}</div>
+                          {item.kind === "fixed" ? (
+                            <div className="mt-2 text-xs text-secondary">залишається на {formatDateUkrainian(item.original_date)} — делегувати або зробити вручну.</div>
+                          ) : (
+                            <div className="mt-2.5 flex flex-wrap gap-1.5">
+                              {item.suggested_dates.map(d => (
+                                <button key={d} type="button"
+                                  onClick={() => setReviewChoices({...reviewChoices, [key]: d})}
+                                  className={`${chipSize} rounded-full font-medium transition-colors ${choice === d ? 'bg-[#1A1717] text-[#F6F5F1]' : 'bg-black/5 hover:bg-black/10'}`}
+                                >{formatDateUkrainian(d)}</button>
+                              ))}
+                              <button type="button"
+                                onClick={() => setReviewChoices({...reviewChoices, [key]: null})}
+                                className={`${chipSize} rounded-full font-medium transition-colors ${choice === null ? 'bg-[#1A1717] text-[#F6F5F1]' : 'bg-black/5 hover:bg-black/10'}`}
+                              >не зміщати</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {(!dayOffPlan.auto_shifts || dayOffPlan.auto_shifts.length === 0) &&
+               (!dayOffPlan.needs_review || dayOffPlan.needs_review.length === 0) && (
+                <div className="text-sm text-secondary text-center py-6">на цей день не було активних задач — зміщувати нічого</div>
+              )}
+            </div>
+            <button
+              onClick={async () => {
+                setDayOffSubmitting(true);
+                try {
+                  const shifts = [
+                    ...((dayOffPlan.auto_shifts || []).map(s => ({event_id: s.event_id, task_id: s.task_id, new_date: s.new_date, column: s.column}))),
+                    ...((dayOffPlan.needs_review || [])
+                      .filter(item => item.kind !== "fixed")
+                      .map(item => {
+                        const key = `${item.event_id}::${item.task_id}`;
+                        const chosen = reviewChoices[key];
+                        if (!chosen) return null;
+                        return {event_id: item.event_id, task_id: item.task_id, new_date: chosen, column: item.column};
+                      }).filter(Boolean)),
+                  ];
+                  const r = await api.applyDayOffShifts(dayOffPlan.day_off.id, {shifts});
+                  toast.success(`перенесено ${r.data.count} задач`);
+                  onOpenChange(false);
+                  setDayOffPlan(null);
+                  setReviewChoices({});
+                  refreshEvents();
+                } catch { toast.error("помилка"); }
+                finally { setDayOffSubmitting(false); }
+              }}
+              disabled={dayOffSubmitting}
+              className="mt-6 w-full h-12 rounded-full bg-[#1A1717] text-[#F6F5F1] font-medium text-sm hover:bg-[#333333] disabled:opacity-50 transition-colors"
+            >
+              {dayOffSubmitting ? "застосовуємо..." : "застосувати перерозподіл"}
+            </button>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const DesktopDashboard = () => {
+  const { events, settings, standaloneTasks, smmTasksDefinition, allTaskDefs, refreshEvents, refreshStandaloneTasks } = useApp();
+  const { pushUndo } = useUndo();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [showSettings, setShowSettings] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
+  const [archive, setArchive] = useState([]);
+  const [overdueExpanded, setOverdueExpanded] = useState(false);
+  const [soonExpanded, setSoonExpanded] = useState(false);
+  const [smmOverdueExpanded, setSmmOverdueExpanded] = useState(false);
+  const [smmSoonExpanded, setSmmSoonExpanded] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [showEventDetail, setShowEventDetail] = useState(false);
+  const [cancelSeriesDialogFor, setCancelSeriesDialogFor] = useState(null); // event when series-cancel choice is needed
+  // Series instances list — populated when an event detail opens that's part of a regular series
+  const [seriesData, setSeriesData] = useState(null);
+  const [seriesPickerOpen, setSeriesPickerOpen] = useState(false);
+  // Day-off creation flow
+  const [showDayOffDialog, setShowDayOffDialog] = useState(false);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [showTaskDialog, setShowTaskDialog] = useState(false);
+  const [showSMMTaskDialog, setShowSMMTaskDialog] = useState(false);
+  const [dialogColumnName, setDialogColumnName] = useState("");
+  const [showTaskCalendar, setShowTaskCalendar] = useState(false);
+  const [showSMMCalendar, setShowSMMCalendar] = useState(false);
+  const [newTask, setNewTask] = useState(() => ({ title: "", date: formatDateLocal(new Date()), icon: "coffee", color: "manager" }));
+  const [newSMMTask, setNewSMMTask] = useState(() => ({ title: "", date: formatDateLocal(new Date()), icon: "instagram", color: "manager" }));
+  const [selectedStandaloneTask, setSelectedStandaloneTask] = useState(null);
+  const [showStandaloneTaskPopup, setShowStandaloneTaskPopup] = useState(false);
+  const [editingStandaloneTask, setEditingStandaloneTask] = useState(null);
+  const [showEditStandaloneDialog, setShowEditStandaloneDialog] = useState(false);
+  const [showEditCalendar, setShowEditCalendar] = useState(false);
+  const [reschedulingTaskDate, setReschedulingTaskDate] = useState(null);
+  const [activeTab, setActiveTab] = useState('team'); // 'team' or 'events'
+  const [announcementOverlaps, setAnnouncementOverlaps] = useState({});
+  const [overlapResolverTask, setOverlapResolverTask] = useState(null);
+  const [showOverdueCleanup, setShowOverdueCleanup] = useState(false);
+  const [cleanupAssignee, setCleanupAssignee] = useState(() => normalizeAssignee(getActorUser(), "manager"));
 
   useEffect(() => {
     const params = new URLSearchParams(location.search || "");
@@ -5847,105 +6160,6 @@ const DesktopDashboard = () => {
 
   const allEvents = getVisibleEventsForMonth(events, currentMonth, today);
 
-  const cleanupColumns = useMemo(() => {
-    const normalizeTask = (task, assignee) => ({
-      ...task,
-      assignee: task.assignee || assignee,
-      task_id: task.task_id || task.reminder_id,
-      task_name: task.task_name || task.reminder_name || task.title || "таск",
-      task_date: getTaskDate(task),
-      reminder_date: getTaskDate(task),
-    });
-    const activeGroups = tasksByTeam[cleanupAssignee] || { overdue: [], today: [], soon: [] };
-    const allTasks = [activeGroups.overdue, activeGroups.today, activeGroups.soon]
-      .flat()
-      .map(task => normalizeTask(task, cleanupAssignee));
-    const unique = new Map();
-    allTasks.forEach(task => {
-      const key = getTaskDragKey(task);
-      if (!unique.has(key)) unique.set(key, task);
-    });
-    const dates = {
-      backlog: [],
-      yesterday: [],
-      today: [],
-      tomorrow: [],
-    };
-    const yesterday = shiftDateLocal(todayStr, -1);
-    const tomorrow = shiftDateLocal(todayStr, 1);
-    unique.forEach(task => {
-      const date = getTaskDate(task);
-      if (!date) return;
-      if (date < yesterday) dates.backlog.push(task);
-      else if (date === yesterday) dates.yesterday.push(task);
-      else if (date === todayStr) dates.today.push(task);
-      else if (date === tomorrow) dates.tomorrow.push(task);
-    });
-    const sortTasks = (items) => items.sort((a, b) => {
-      const orderDiff = getTaskOrder(a) - getTaskOrder(b);
-      if (orderDiff !== 0) return orderDiff;
-      return (a.task_name || "").localeCompare(b.task_name || "");
-    });
-    return [
-      { id: "backlog", label: "позавчора+", date: yesterday, items: sortTasks(dates.backlog), accent: "danger" },
-      { id: "yesterday", label: "вчора", date: yesterday, items: sortTasks(dates.yesterday), accent: "warn" },
-      { id: "today", label: "сьогодні", date: todayStr, items: sortTasks(dates.today), accent: "neutral" },
-      { id: "tomorrow", label: "завтра", date: tomorrow, items: sortTasks(dates.tomorrow), accent: "neutral" },
-    ];
-  }, [cleanupAssignee, tasksByTeam, todayStr]);
-
-  const cleanupTotal = cleanupColumns.reduce((sum, col) => sum + col.items.length, 0);
-
-  const handleCleanupReschedule = async (task, date) => {
-    if (!task || !date) return;
-    const previousDate = getTaskDate(task);
-    const previousOrder = getTaskOrder(task);
-    try {
-      await persistTaskPlacement(task, task.assignee || "manager", date, previousOrder || 1000);
-      pushUndo({ label: "перенесення таска", run: async () => { await persistTaskPlacement(task, task.assignee || "manager", previousDate, previousOrder); refreshStandaloneTasks(); refreshEvents(); } });
-      toast.success("перенесено");
-      refreshStandaloneTasks();
-      refreshEvents();
-    } catch {
-      toast.error("не вдалось перенести");
-    }
-  };
-
-  const handleCleanupDelete = async (task) => {
-    if (!task) return;
-    try {
-      if (task.is_standalone) {
-        const full = standaloneTasks.find(t => t.id === task.event_id);
-        if (!full) return;
-        await api.deleteStandaloneTask(full.id);
-        pushUndo({ label: "видалення таска", run: async () => { await api.createStandaloneTask(getStandaloneTaskPayload(full)); refreshStandaloneTasks(); } });
-        refreshStandaloneTasks();
-      } else {
-        const taskId = task.task_id || task.reminder_id;
-        if (!task.event_id || !taskId || taskId === "standalone") return;
-        await api.deleteEventTask(task.event_id, taskId);
-        pushUndo({ label: "видалення таска", run: async () => { await api.updateEventTask(task.event_id, taskId, { color: task.color, icon: task.icon, title: task.task_name, assignee: task.assignee, date: getTaskDate(task), order: getTaskOrder(task), deleted: false }); refreshEvents(); } });
-        refreshEvents();
-      }
-      toast.success("видалено");
-    } catch {
-      toast.error("не вдалось видалити");
-    }
-  };
-
-  const handleCleanupDrop = async (column, event) => {
-    event.preventDefault();
-    const key = event.dataTransfer.getData("text/plain");
-    const task = cleanupDragTask || cleanupColumns.flatMap(col => col.items).find(item => getTaskDragKey(item) === key);
-    setCleanupDragTask(null);
-    if (!task) return;
-    await handleCleanupReschedule(task, column.date);
-  };
-
-  const openCleanupTask = (task) => {
-    handleTaskEdit(task);
-  };
-
   const handleToggleTask = async (eventId, reminderId, completed, isStandalone) => {
     try {
       if (isStandalone) {
@@ -6116,25 +6330,7 @@ const DesktopDashboard = () => {
     setDragOver(over || null);
   };
 
-  const persistTaskPlacement = async (task, assignee, date, order) => {
-    if (task.is_standalone) {
-      const full = standaloneTasks.find(t => t.id === task.event_id);
-      if (!full) return;
-      await api.updateStandaloneTaskFull(full.id, getStandaloneTaskPayload(full, {
-        date,
-        icon: full.icon || task.icon || "coffee",
-        type: full.type || task.type || "regular",
-        color: full.color || task.color || "standard",
-        assignee,
-        event_id: full.event_id || task.event_id_link || "",
-        order,
-      }));
-      return;
-    }
-    const taskId = task.task_id || task.reminder_id;
-    if (!taskId || taskId === "standalone") return;
-    await api.updateEventTask(task.event_id, taskId, { date, assignee, order });
-  };
+  const persistTaskPlacement = (task, assignee, date, order) => persistTaskPlacementWith(standaloneTasks, task, assignee, date, order);
 
   const handleTaskDrop = async (overData, draggedTask = null) => {
     const task = draggedTask || activeDragTask;
@@ -6705,7 +6901,7 @@ const DesktopDashboard = () => {
 
       <Dialog open={showOverdueCleanup} onOpenChange={setShowOverdueCleanup}>
         <DialogContent className="overdue-cleanup-dialog" onOpenAutoFocus={(e) => e.preventDefault()}>
-          <OverdueCleanupBoard />
+          <OverdueCleanupBoard tasksByTeam={tasksByTeam} assignee={cleanupAssignee} todayStr={todayStr} onOpenTask={handleTaskEdit} />
         </DialogContent>
       </Dialog>
 
@@ -7551,166 +7747,7 @@ const DesktopDashboard = () => {
       </Dialog>
 
       {/* Day-off creation dialog */}
-      <Dialog open={showDayOffDialog} onOpenChange={(o) => { setShowDayOffDialog(o); if (!o) { setDayOffPlan(null); setReviewChoices({}); } }}>
-        <DialogContent className="sm:max-w-md">
-          {!dayOffPlan ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>додати вихідний</DialogTitle>
-                <DialogDescription>система запропонує перерозподіл задач цього дня</DialogDescription>
-              </DialogHeader>
-              <div className="mt-6 space-y-5">
-                <div>
-                  <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-2">хто</div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[{v:'manager',l:'Manager'},{v:'smm',l:'SMM'},{v:'marketer',l:'Marketer'}].map(opt => (
-                      <button
-                        key={opt.v}
-                        type="button"
-                        onClick={() => setDayOffForm({...dayOffForm, assignee: opt.v})}
-                        className={`h-11 rounded-full text-sm font-medium transition-colors ${dayOffForm.assignee === opt.v ? 'bg-[#1A1717] text-[#F6F5F1]' : 'bg-[#F1EEE7] ring-1 ring-black/8 hover:bg-black/5'}`}
-                      >{opt.l}</button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-2">коли</div>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button type="button" className="w-full h-12 px-4 rounded-xl bg-[#F1EEE7] border border-black/10 hover:border-[#1A1717]/30 transition-colors flex items-center gap-3 text-left">
-                        <CalendarIcon className="w-4 h-4 text-[#1A1717]/60" />
-                        <span className="text-sm">{formatDateUkrainian(dayOffForm.date)}</span>
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-2 z-[200]" align="start">
-                      <Calendar mode="single" locale={uk} weekStartsOn={1}
-                        selected={new Date(dayOffForm.date)}
-                        onSelect={(d) => { if (d) setDayOffForm({...dayOffForm, date: formatDateLocal(d)}); }}
-                        className="calendar-minimal" />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </div>
-              <button
-                onClick={async () => {
-                  setDayOffSubmitting(true);
-                  try {
-                    const r = await api.createDayOff(dayOffForm);
-                    setDayOffPlan(r.data);
-                    // Pre-fill review choices with first suggested date for each chain item
-                    const choices = {};
-                    (r.data.needs_review || []).forEach(item => {
-                      choices[`${item.event_id}::${item.task_id}`] = item.suggested_dates?.[0] || null;
-                    });
-                    setReviewChoices(choices);
-                  } catch { toast.error("помилка створення вихідного"); }
-                  finally { setDayOffSubmitting(false); }
-                }}
-                disabled={dayOffSubmitting}
-                className="mt-7 w-full h-12 rounded-full bg-[#1A1717] text-[#F6F5F1] font-medium text-sm hover:bg-[#333333] disabled:opacity-50 transition-colors inline-flex items-center justify-center gap-2"
-              >
-                {dayOffSubmitting ? "рахуємо..." : "далі — побачити перерозподіл"}
-              </button>
-            </>
-          ) : (
-            <>
-              <DialogHeader>
-                <DialogTitle>перерозподіл задач</DialogTitle>
-                <DialogDescription>
-                  вихідний {formatDateUkrainian(dayOffPlan.day_off.date)} • {dayOffPlan.day_off.assignee === "manager" ? "Manager" : dayOffPlan.day_off.assignee === "smm" ? "SMM" : "Marketer"}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="mt-5 space-y-4 max-h-[60vh] overflow-y-auto pr-1">
-                {/* Auto-shifts (collapsed) */}
-                {dayOffPlan.auto_shifts && dayOffPlan.auto_shifts.length > 0 && (
-                  <details className="rounded-xl bg-emerald-50 ring-1 ring-emerald-200 p-3">
-                    <summary className="cursor-pointer text-sm font-medium text-emerald-900 select-none">
-                      ✓ автоматично перенесено {dayOffPlan.auto_shifts.length} {dayOffPlan.auto_shifts.length === 1 ? "задачу" : "задач"}
-                    </summary>
-                    <div className="mt-3 space-y-1.5">
-                      {dayOffPlan.auto_shifts.map(s => (
-                        <div key={`${s.event_id}::${s.task_id}`} className="text-xs text-emerald-900/80 flex items-center gap-2">
-                          <span>•</span>
-                          <span className="flex-1 truncate"><b>{s.name}</b> — {s.event_title}</span>
-                          <span className="tabular-nums opacity-70">→ {formatDateUkrainian(s.new_date)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                )}
-                {/* Needs review (expanded, highlighted) */}
-                {dayOffPlan.needs_review && dayOffPlan.needs_review.length > 0 && (
-                  <div className="rounded-xl bg-amber-50 ring-1 ring-amber-300 p-4">
-                    <div className="text-sm font-semibold text-amber-900 mb-3">⚠ потребують твого рішення ({dayOffPlan.needs_review.length})</div>
-                    <div className="space-y-3">
-                      {dayOffPlan.needs_review.map(item => {
-                        const key = `${item.event_id}::${item.task_id}`;
-                        const choice = reviewChoices[key];
-                        return (
-                          <div key={key} className="p-3 rounded-lg bg-[#F1EEE7]">
-                            <div className="text-sm font-medium">{item.name}</div>
-                            <div className="text-xs text-secondary mt-0.5">{item.event_title}</div>
-                            <div className="text-xs text-amber-900/80 mt-1.5 italic">{item.reason}</div>
-                            {item.kind === "fixed" ? (
-                              <div className="mt-2 text-xs text-secondary">залишається на {formatDateUkrainian(item.original_date)} — делегувати або зробити вручну.</div>
-                            ) : (
-                              <div className="mt-2.5 flex flex-wrap gap-1.5">
-                                {item.suggested_dates.map(d => (
-                                  <button key={d} type="button"
-                                    onClick={() => setReviewChoices({...reviewChoices, [key]: d})}
-                                    className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${choice === d ? 'bg-[#1A1717] text-[#F6F5F1]' : 'bg-black/5 hover:bg-black/10'}`}
-                                  >{formatDateUkrainian(d)}</button>
-                                ))}
-                                <button type="button"
-                                  onClick={() => setReviewChoices({...reviewChoices, [key]: null})}
-                                  className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${choice === null ? 'bg-[#1A1717] text-[#F6F5F1]' : 'bg-black/5 hover:bg-black/10'}`}
-                                >не зміщати</button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {(!dayOffPlan.auto_shifts || dayOffPlan.auto_shifts.length === 0) &&
-                 (!dayOffPlan.needs_review || dayOffPlan.needs_review.length === 0) && (
-                  <div className="text-sm text-secondary text-center py-6">на цей день не було активних задач — зміщувати нічого</div>
-                )}
-              </div>
-              <button
-                onClick={async () => {
-                  setDayOffSubmitting(true);
-                  try {
-                    const shifts = [
-                      ...((dayOffPlan.auto_shifts || []).map(s => ({event_id: s.event_id, task_id: s.task_id, new_date: s.new_date, column: s.column}))),
-                      ...((dayOffPlan.needs_review || [])
-                        .filter(item => item.kind !== "fixed")
-                        .map(item => {
-                          const key = `${item.event_id}::${item.task_id}`;
-                          const chosen = reviewChoices[key];
-                          if (!chosen) return null;
-                          return {event_id: item.event_id, task_id: item.task_id, new_date: chosen, column: item.column};
-                        }).filter(Boolean)),
-                    ];
-                    const r = await api.applyDayOffShifts(dayOffPlan.day_off.id, {shifts});
-                    toast.success(`перенесено ${r.data.count} задач`);
-                    setShowDayOffDialog(false);
-                    setDayOffPlan(null);
-                    setReviewChoices({});
-                    refreshEvents();
-                  } catch { toast.error("помилка"); }
-                  finally { setDayOffSubmitting(false); }
-                }}
-                disabled={dayOffSubmitting}
-                className="mt-6 w-full h-12 rounded-full bg-[#1A1717] text-[#F6F5F1] font-medium text-sm hover:bg-[#333333] disabled:opacity-50 transition-colors"
-              >
-                {dayOffSubmitting ? "застосовуємо..." : "застосувати перерозподіл"}
-              </button>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+      <DayOffDialog open={showDayOffDialog} onOpenChange={setShowDayOffDialog} />
 
       {/* Cancel-series choice dialog (regular events only) */}
       <AlertDialog open={!!cancelSeriesDialogFor} onOpenChange={(open) => { if (!open) setCancelSeriesDialogFor(null); }}>

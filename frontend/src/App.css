@@ -1053,6 +1053,46 @@
   color: rgba(255, 131, 112, 0.78);
 }
 
+/* Mobile: overdue cleanup as a full-screen view + entry button in the section header */
+.mobile-cleanup-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 131, 112, 0.12);
+  color: #FF8370;
+  font-size: 13px;
+  font-weight: 700;
+}
+.mobile-cleanup-btn:active { background: rgba(255, 131, 112, 0.2); }
+.overdue-cleanup-dialog.overdue-cleanup-mobile {
+  width: 100vw !important;
+  max-width: 100vw !important;
+  height: 100dvh;
+  max-height: 100dvh !important;
+  border-radius: 0 !important;
+  padding: 20px 16px calc(24px + env(safe-area-inset-bottom)) !important;
+}
+.overdue-cleanup-mobile .overdue-cleanup-header { flex-direction: column; gap: 10px; padding-right: 44px; }
+.overdue-cleanup-mobile .overdue-cleanup-header h2 { font-size: 20px !important; }
+.overdue-cleanup-mobile .overdue-cleanup-board { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+.overdue-cleanup-mobile .overdue-cleanup-column { min-height: 0; }
+.overdue-cleanup-mobile .overdue-cleanup-list { overflow: visible; }
+.overdue-cleanup-mobile .overdue-cleanup-empty { min-height: 52px; }
+.overdue-cleanup-mobile .overdue-cleanup-card-shell { cursor: default; }
+.overdue-cleanup-mobile .overdue-cleanup-card-main button { min-height: 44px; white-space: normal; line-height: 1.25; }
+.overdue-cleanup-mobile .overdue-cleanup-actions { grid-template-columns: 1fr 1fr 44px; }
+.overdue-cleanup-mobile .overdue-cleanup-actions button {
+  height: 44px !important;
+  font-size: 14px !important;
+  color: rgba(26, 23, 23, 0.72);
+  background: rgba(232, 229, 220, 0.7);
+}
+.overdue-cleanup-mobile .overdue-cleanup-actions button.danger { color: rgba(255, 131, 112, 0.85); }
+
 .section-header-chevron {
   width: 22px;
   height: 22px;
