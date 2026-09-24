@@ -2630,7 +2630,7 @@ const EventForm = () => {
   useEffect(() => { const h = () => setIsNarrow(window.innerWidth < 640); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
 
   // Back to where the user came from; direct open (no history) → list of events.
-  const goBack = () => { if ((window.history.state?.idx ?? 0) > 0) navigate(-1); else navigate("/events"); };
+  const goBack = () => goBackOr(navigate, "/events");
 
   // Get recent prices from existing events (ordered by creation date, newest first)
   const recentPrices = useMemo(() => {
