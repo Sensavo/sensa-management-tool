@@ -2355,47 +2355,30 @@ const EventDetailPage = () => {
   const [exporting, setExporting] = useState(false);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1024);
   const [openSections, setOpenSections] = useState({ description: true });
-  const [actionsOpen, setActionsOpen] = useState(false);
+  const { pushUndo } = useUndo();
   const [altegioIssueOpen, setAltegioIssueOpen] = useState(false);
   const [seriesData, setSeriesData] = useState(null);
   const [cancelSeriesOpen, setCancelSeriesOpen] = useState(false);
-  const [bookingsState, setBookingsState] = useState({ status: "idle", items: [], message: "" });
-  const [gcalUrl, setGcalUrl] = useState(null);
 
   useEffect(() => { const h = () => setIsDesktop(window.innerWidth >= 1024); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
 
   useEffect(() => {
-    setSeriesData(null); setBookingsState({ status: "idle", items: [], message: "" }); setGcalUrl(null);
-    setOpenSections({ description: true }); setActionsOpen(false); setAltegioIssueOpen(false);
+    setSeriesData(null);
+    setOpenSections({}); setAltegioIssueOpen(false);
     loadEvent();
   }, [eventId]);
 
-  // Series list + Google Calendar link are secondary — fail quietly.
+  // Series list is secondary — fail quietly.
   useEffect(() => {
     if (!event || event.id !== eventId) return;
     if (isRegularSeriesEvent(event) && !seriesData) {
       axios.get(`${API}/events/${eventId}/series`).then(r => setSeriesData(r.data)).catch(() => setSeriesData(null));
     }
-    if (event.google_calendar_event_id && !gcalUrl) {
-      axios.get(`${API}/events/${eventId}/google-calendar-url`).then(r => setGcalUrl(r.data?.url || null)).catch(() => setGcalUrl(null));
-    }
   }, [event, eventId]);
-
-  const loadBookings = async () => {
-    setBookingsState({ status: "loading", items: [], message: "" });
-    try {
-      const r = await api.getEventBookings(eventId);
-      const items = Array.isArray(r.data?.bookings) ? r.data.bookings : [];
-      setBookingsState({ status: "ready", items, message: r.data?.altegio_id ? "" : "подія не привʼязана до Altegio" });
-    } catch (error) {
-      setBookingsState({ status: "error", items: [], message: getApiErrorMessage(error, "не вдалося завантажити учасників") });
-    }
-  };
 
   const toggleSection = (key) => {
     const willOpen = !openSections[key];
     setOpenSections(prev => ({ ...prev, [key]: willOpen }));
-    if (key === "participants" && willOpen && bookingsState.status !== "loading" && bookingsState.status !== "ready") loadBookings();
   };
 
   const loadEvent = async () => {
@@ -2436,7 +2419,8 @@ const EventDetailPage = () => {
 
   const handleCancel = async () => {
     if (isRegularSeriesEvent(event)) { setCancelSeriesOpen(true); return; }
-    await cancelEventAndArchive(event, { refreshEvents, onDone: () => goBackOr(navigate, '/events') });
+    const didCancel = await cancelEventAndArchive(event, { refreshEvents, onDone: () => goBackOr(navigate, '/events') });
+    if (didCancel) pushUndo({ label: "скасування події", run: async () => { await axios.patch(`${API}/events/${eventId}`, { cancelled: false }); refreshEvents(); } });
   };
 
   // Same api calls + manager-confirm retry as the desktop cancel-series dialog.
@@ -2605,15 +2589,6 @@ const EventDetailPage = () => {
       : event.altegio_last_error;
     const seriesEvents = seriesData?.events || [];
     const otherSeriesEvents = seriesEvents.filter(inst => inst.id !== eventId);
-    const bookingStatus = (b) => {
-      if (b?.deleted) return "скасовано";
-      const a = b?.attendance ?? b?.visit_attendance;
-      if (a === 1) return "прийшов";
-      if (a === 2) return "підтверджено";
-      if (a === -1) return "не прийшов";
-      if (a === 0) return "очікує";
-      return typeof b?.status === "string" ? b.status : "";
-    };
 
     const renderSection = (key, title, meta, content) => (
       <div className="rounded-2xl bg-[#F1EEE7] mb-2" key={key}>
@@ -2651,6 +2626,7 @@ const EventDetailPage = () => {
     }) : <p className="text-secondary text-sm py-3">немає завдань</p>;
 
     const actionBtn = "min-h-[44px] px-3 rounded-xl bg-[#F6F5F1] text-sm flex items-center justify-center gap-2 disabled:opacity-50";
+    const outerBtn = actionBtn.replace("bg-[#F6F5F1]", "bg-[#F1EEE7]");
     const doneCount = (tasks) => `${tasks.filter(t => t.completed).length}/${tasks.length}`;
 
     return (
@@ -2658,29 +2634,9 @@ const EventDetailPage = () => {
         <header className="sticky top-0 z-20 bg-[#F6F5F1] px-4 pb-2 flex items-start gap-2" style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}>
           <button className="desktop-header-btn !w-11 !h-11 flex-shrink-0" onClick={() => goBackOr(navigate, '/events')} aria-label="назад" data-testid="event-detail-close-area"><ChevronLeft className="w-5 h-5" /></button>
           <h1 className="flex-1 min-w-0 text-lg font-semibold leading-snug line-clamp-2 break-words py-2">{event.title}</h1>
-          <button className="desktop-header-btn !w-11 !h-11 flex-shrink-0" onClick={() => navigate(`/event/${eventId}`)} aria-label="редагувати"><Edit className="w-4 h-4" /></button>
-          <button className="desktop-header-btn !w-11 !h-11 flex-shrink-0 text-lg leading-none" onClick={() => setActionsOpen(o => !o)} aria-expanded={actionsOpen} aria-label="дії" data-testid="detail-actions-toggle">…</button>
         </header>
 
         <div className="px-4" style={{ paddingBottom: "max(40px, env(safe-area-inset-bottom))" }}>
-          {actionsOpen && (
-            <div className="rounded-2xl bg-[#F1EEE7] p-2 mb-3 grid grid-cols-2 gap-2" data-testid="detail-actions">
-              {!event.cancelled ? (
-                <button className={actionBtn} onClick={() => { setActionsOpen(false); handleCancel(); }}><X className="w-4 h-4" />скасувати</button>
-              ) : (
-                <button className={`${actionBtn} text-green-600`} onClick={() => { setActionsOpen(false); handleRestore(); }}><RotateCcw className="w-4 h-4" />відновити</button>
-              )}
-              <button className={`${actionBtn} text-[#FF8370]`} onClick={() => { setActionsOpen(false); setDeleteDialogOpen(true); }}><Trash2 className="w-4 h-4" />видалити</button>
-              <button className={actionBtn} onClick={handleSyncAltegio} disabled={syncing}><RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />{syncing ? "..." : "оновити Altegio"}</button>
-              <button className={actionBtn} onClick={handleOpenAltegio}><ExternalLink className="w-4 h-4" />відкрити Altegio</button>
-              <button className={actionBtn} onClick={handleShareAltegio}><Share2 className="w-4 h-4" />поширити</button>
-              <button className={actionBtn} onClick={handleExportCalendar} disabled={exporting}><CalendarIcon className="w-4 h-4" />{exporting ? "..." : "в Calendar"}</button>
-              {gcalUrl && (
-                <a className={`${actionBtn} col-span-2`} href={gcalUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="w-4 h-4" />відкрити в Google Calendar</a>
-              )}
-            </div>
-          )}
-
           <div className="rounded-2xl bg-[#F1EEE7] p-4 mb-3">
             {(event.cancelled || event.cancellation_pending || altegioIssue || seriesEvents.length > 1) && (
               <div className="flex flex-wrap gap-1.5 mb-3">
@@ -2702,8 +2658,14 @@ const EventDetailPage = () => {
             )}
             <div className="flex justify-between items-center py-2 border-b border-[#E8E5DC] gap-3">
               <span className="text-secondary text-sm">дата</span>
-              <span className="font-medium text-right">{formatDateUkrainian(event.date)}{event.start_time ? ` · ${event.start_time}${event.end_time ? ` — ${event.end_time}` : ""}` : ""}</span>
+              <span className="font-medium text-right">{formatDateUkrainian(event.date)}</span>
             </div>
+            {event.start_time && (
+              <div className="flex justify-between items-center py-2 border-b border-[#E8E5DC] gap-3">
+                <span className="text-secondary text-sm">час</span>
+                <span className="font-medium">{event.start_time}{event.end_time ? ` — ${event.end_time}` : ""}</span>
+              </div>
+            )}
             <div className="flex justify-between items-center py-2 border-b border-[#E8E5DC] gap-3">
               <span className="text-secondary text-sm">ціна</span>
               <span className="font-medium text-right">
@@ -2712,43 +2674,42 @@ const EventDetailPage = () => {
                   : <>{event.price} ₴</>}
               </span>
             </div>
-            <div className="flex justify-between items-center py-2 gap-3">
-              <span className="text-secondary text-sm">місць</span>
+            <div className={`flex justify-between items-center py-2 gap-3${event.description ? " border-b border-[#E8E5DC]" : ""}`}>
+              <span className="text-secondary text-sm">учасники</span>
               {hasBookings ? (
-                <span className={`font-bold text-lg ${colorClass}`}>{event.altegio_booked_count}/{event.spots || 10}</span>
+                <span className={`font-bold ${colorClass}`}>{event.altegio_booked_count}/{event.spots || 10}</span>
               ) : (
-                <span className="font-semibold">{event.spots || 10}</span>
+                <span className="font-medium">0/{event.spots || 10}</span>
               )}
             </div>
-            {event.altegio_last_sync && <p className="text-[11px] text-secondary mt-1">Altegio оновлено: {new Date(event.altegio_last_sync).toLocaleString('uk-UA')}</p>}
+            {event.description && (
+              <div className="py-2">
+                <span className="text-secondary text-sm block mb-1">опис</span>
+                <p className="text-sm whitespace-pre-line break-words">{event.description}</p>
+              </div>
+            )}
           </div>
 
-          {event.description && renderSection("description", "опис", null, <p className="text-sm whitespace-pre-line break-words">{event.description}</p>)}
+          <div className="rounded-2xl bg-[#F1EEE7] p-4 mb-3" data-testid="detail-sync">
+            <p className="text-xs text-secondary mb-3">синхронізація</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button className={actionBtn} onClick={handleExportCalendar} disabled={exporting}><ExternalLink className="w-4 h-4" />{exporting ? "..." : "Calendar"}</button>
+              <button className={actionBtn} onClick={handleSyncAltegio} disabled={syncing}><RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />{syncing ? "..." : "Altegio"}</button>
+              <button className={actionBtn} onClick={handleOpenAltegio}><ExternalLink className="w-4 h-4" />відкрити</button>
+              <button className={actionBtn} onClick={handleShareAltegio}><Share2 className="w-4 h-4" />поширити</button>
+            </div>
+            {event.altegio_last_sync && <p className="text-xs text-secondary mt-2 text-center">оновлено: {new Date(event.altegio_last_sync).toLocaleString('uk-UA')}</p>}
+          </div>
 
-          {renderSection("participants", "учасники", hasBookings ? `${event.altegio_booked_count}/${event.spots || 10}` : null, (
-            bookingsState.status === "loading" ? <p className="text-secondary text-sm py-2">завантажую...</p>
-            : bookingsState.status === "error" ? (
-              <div className="py-2">
-                <p className="text-secondary text-sm break-words">{bookingsState.message}</p>
-                <button type="button" className="mt-1 text-sm underline min-h-[44px]" onClick={loadBookings}>спробувати ще раз</button>
-              </div>
-            )
-            : bookingsState.items.length > 0 ? bookingsState.items.map((b, i) => {
-              const name = b?.client?.name || b?.client?.display_name || b?.client_name || b?.name || "без імені";
-              const phone = b?.client?.phone || b?.phone;
-              const status = bookingStatus(b);
-              return (
-                <div key={b?.id || i} className="task-item min-h-[44px]">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium break-words">{name}</p>
-                    {phone && <a href={`tel:${phone}`} className="text-xs text-secondary">{phone}</a>}
-                  </div>
-                  {status && <span className="text-xs text-secondary flex-shrink-0">{status}</span>}
-                </div>
-              );
-            })
-            : <p className="text-secondary text-sm py-2">{bookingsState.message || "поки нікого"}</p>
-          ))}
+          <div className="grid grid-cols-2 gap-2 mb-2" data-testid="detail-actions">
+            <button className={outerBtn} onClick={() => navigate(`/event/${eventId}`)}><Edit className="w-4 h-4" />редагувати</button>
+            {!event.cancelled ? (
+              <button className={`${outerBtn} text-orange-600`} onClick={handleCancel}><X className="w-4 h-4" />скасувати</button>
+            ) : (
+              <button className={`${outerBtn} text-green-600`} onClick={handleRestore}><RotateCcw className="w-4 h-4" />відновити</button>
+            )}
+          </div>
+          <button className={`${outerBtn} w-full mb-4 text-[#FF8370]`} onClick={() => setDeleteDialogOpen(true)}><Trash2 className="w-4 h-4" />видалити назавжди</button>
 
           {renderSection("manager", "manager", doneCount(managementTasks), renderTasks(managementTasks, "", handleToggleTask))}
           {renderSection("smm", "smm", doneCount(smmTasks), renderTasks(smmTasks, "emerald", handleToggleSMMTask))}
@@ -9363,8 +9324,8 @@ function App() {
       };
       const fresh = toast.getToasts().filter(t => !seenIds.has(t.id) && t.type === "success");
       const last = fresh[fresh.length - 1];
-      if (last) toast.success(last.title, { id: last.id, action });
-      else toast(entry.toast || entry.label || "готово", { action });
+      if (last) toast.success(last.title, { id: last.id, action, duration: 8000 });
+      else toast(entry.toast || entry.label || "готово", { action, duration: 8000 });
     }, 0);
   }, []);
 
