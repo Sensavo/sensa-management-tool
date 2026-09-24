@@ -2051,8 +2051,8 @@ const EventsPage = () => {
               <div key={event.id} className={`event-card flex items-center gap-4${getEventArchiveClass(event, today)}`} onClick={() => navigate(`/event/${event.id}/view`)} data-event-date={event.date.split('T')[0]}>
                 <div className="date-badge"><span className="text-xs">{UK_MONTHS_SHORT[new Date(event.date).getMonth()]}</span><span className="text-lg font-bold">{new Date(event.date).getDate()}</span></div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold truncate">{event.title}</h3>
-                  <p className="text-sm text-secondary">{event.spots} місць • {event.price} ₴</p>
+                  <h3 className="font-semibold line-clamp-2 break-words">{event.title}</h3>
+                  <p className="text-sm text-secondary">{event.start_time ? `${event.start_time} • ` : ""}{event.spots} місць • {event.price} ₴</p>
                 </div>
                 <EventArchiveIcon event={event} today={today} />
                 {event.altegio_booked_count !== undefined && event.altegio_booked_count !== null && (
@@ -2076,11 +2076,11 @@ const EventsPage = () => {
       <Dialog open={showArchive} onOpenChange={setShowArchive}>
         <DialogContent className="dialog-content"><DialogHeader><DialogTitle>архів подій</DialogTitle></DialogHeader>
           {archivedEvents.length > 0 ? <div className="space-y-3">{archivedEvents.map(event => (
-            <div key={event.id} className="event-card flex items-center gap-4">
+            <div key={event.id} className="event-card flex items-center gap-4 cursor-pointer" onClick={() => navigate(`/event/${event.id}/view`)}>
               <div className="date-badge"><span className="text-xs">{UK_MONTHS_SHORT[new Date(event.date).getMonth()]}</span><span className="text-lg font-bold">{new Date(event.date).getDate()}</span></div>
               <div className="flex-1 min-w-0"><h3 className="font-semibold truncate">{event.title}</h3><p className="text-sm text-secondary">{event.price} ₴</p></div>
               {event.cancelled ? (
-                <button className="restore-btn cancelled" onClick={() => handleRestoreEvent(event.id)} title="відновити">
+                <button className="restore-btn cancelled" onClick={(e) => { e.stopPropagation(); handleRestoreEvent(event.id); }} title="відновити">
                   <X className="w-4 h-4" />
                 </button>
               ) : (
@@ -2308,8 +2308,50 @@ const EventDetailPage = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1024);
+  const [openSections, setOpenSections] = useState({ description: true });
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [altegioIssueOpen, setAltegioIssueOpen] = useState(false);
+  const [seriesData, setSeriesData] = useState(null);
+  const [cancelSeriesOpen, setCancelSeriesOpen] = useState(false);
+  const [bookingsState, setBookingsState] = useState({ status: "idle", items: [], message: "" });
+  const [gcalUrl, setGcalUrl] = useState(null);
 
-  useEffect(() => { loadEvent(); }, [eventId]);
+  useEffect(() => { const h = () => setIsDesktop(window.innerWidth >= 1024); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
+
+  useEffect(() => {
+    setSeriesData(null); setBookingsState({ status: "idle", items: [], message: "" }); setGcalUrl(null);
+    setOpenSections({ description: true }); setActionsOpen(false); setAltegioIssueOpen(false);
+    loadEvent();
+  }, [eventId]);
+
+  // Series list + Google Calendar link are secondary — fail quietly.
+  useEffect(() => {
+    if (!event || event.id !== eventId) return;
+    if (isRegularSeriesEvent(event) && !seriesData) {
+      axios.get(`${API}/events/${eventId}/series`).then(r => setSeriesData(r.data)).catch(() => setSeriesData(null));
+    }
+    if (event.google_calendar_event_id && !gcalUrl) {
+      axios.get(`${API}/events/${eventId}/google-calendar-url`).then(r => setGcalUrl(r.data?.url || null)).catch(() => setGcalUrl(null));
+    }
+  }, [event, eventId]);
+
+  const loadBookings = async () => {
+    setBookingsState({ status: "loading", items: [], message: "" });
+    try {
+      const r = await api.getEventBookings(eventId);
+      const items = Array.isArray(r.data?.bookings) ? r.data.bookings : [];
+      setBookingsState({ status: "ready", items, message: r.data?.altegio_id ? "" : "подія не привʼязана до Altegio" });
+    } catch (error) {
+      setBookingsState({ status: "error", items: [], message: getApiErrorMessage(error, "не вдалося завантажити учасників") });
+    }
+  };
+
+  const toggleSection = (key) => {
+    const willOpen = !openSections[key];
+    setOpenSections(prev => ({ ...prev, [key]: willOpen }));
+    if (key === "participants" && willOpen && bookingsState.status !== "loading" && bookingsState.status !== "ready") loadBookings();
+  };
 
   const loadEvent = async () => {
     try {
@@ -2339,8 +2381,34 @@ const EventDetailPage = () => {
     } catch { toast.error("помилка"); }
   };
 
+  const handleToggleMarketingTask = async (taskId, completed) => {
+    try {
+      await api.completeMarketingTask({ event_id: eventId, task_id: taskId, completed });
+      refreshEvents();
+      loadEvent();
+    } catch { toast.error("помилка"); }
+  };
+
   const handleCancel = async () => {
+    if (isRegularSeriesEvent(event)) { setCancelSeriesOpen(true); return; }
     await cancelEventAndArchive(event, { refreshEvents, onDone: () => navigate(-1) });
+  };
+
+  // Same api calls + manager-confirm retry as the desktop cancel-series dialog.
+  const cancelSeriesScope = async (scope) => {
+    const run = (confirmed) => scope === "series"
+      ? api.cancelEventSeries(eventId, confirmed)
+      : axios.patch(`${API}/events/${eventId}`, confirmed ? { cancelled: true, manager_confirmed_cancellation: true } : { cancelled: true });
+    const done = (r) => {
+      toast.success(scope === "series" ? `серію скасовано — ${r?.data?.cancelled_count || 0} подій` : "подію скасовано");
+      setCancelSeriesOpen(false); refreshEvents(); navigate(-1);
+    };
+    try { done(await run(false)); }
+    catch (error) {
+      if (confirmCancellationGuard(error)) {
+        try { done(await run(true)); } catch (retryError) { showCancellationGuardOrError(retryError); }
+      } else showCancellationGuardOrError(error);
+    }
   };
 
   const handleRestore = async () => {
@@ -2369,10 +2437,14 @@ const EventDetailPage = () => {
   };
 
   const handleOpenAltegio = async () => {
+    // iOS Safari blocks window.open after an await — open the tab synchronously
+    // inside the tap, then point it at the URL once it arrives.
+    const win = window.open("", "_blank");
     try {
       const url = await getAltegioActivityUrl(eventId);
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch { toast.error("не вдалося відкрити Altegio"); }
+      if (win) { win.opener = null; win.location.href = url; }
+      else window.location.href = url;
+    } catch { if (win) win.close(); toast.error("не вдалося відкрити Altegio"); }
   };
 
   const handleShareAltegio = async () => {
@@ -2404,22 +2476,27 @@ const EventDetailPage = () => {
   const smmDefs = allTaskDefs.smm || [];
   const mktgDefs = allTaskDefs.marketing || [];
 
+  const taskOverrides = event.task_overrides || {};
+  const mgmtDefMap = Object.fromEntries(mgmtDefs.map(d => [d.id, d]));
   const managementTasks = (settings?.reminder_types || []).map(rt => {
     const date = event.reminders?.[rt.id];
     if (!date) return null;
-    return { id: rt.id, name: rt.name, date, icon: rt.icon, completed: !!event.completed_tasks?.[rt.id], type: 'management' };
+    const ov = taskOverrides[rt.id] || {};
+    return { id: rt.id, name: ov.title || rt.name, date, icon: ov.icon || rt.icon, completed: !!event.completed_tasks?.[rt.id], type: 'management', condition: (mgmtDefMap[rt.id] || rt).condition, assignee: ov.assignee };
   }).filter(Boolean).sort((a, b) => new Date(a.date) - new Date(b.date));
 
   const smmTasks = smmDefs.map(td => {
     const date = event.smm_tasks?.[td.id];
     if (!date) return null;
-    return { id: td.id, name: td.name, date, icon: SMM_ICONS[td.id] || 'circle', completed: !!event.completed_smm_tasks?.[td.id], type: 'smm', is_announcement: td.is_announcement, is_teamwork: td.is_teamwork };
+    const ov = taskOverrides[td.id] || {};
+    return { id: td.id, name: ov.title || td.name, date, icon: SMM_ICONS[td.id] || 'circle', completed: !!event.completed_smm_tasks?.[td.id], type: 'smm', is_announcement: td.is_announcement, is_teamwork: td.is_teamwork, condition: td.condition, assignee: ov.assignee };
   }).filter(Boolean).sort((a, b) => new Date(a.date) - new Date(b.date));
 
   const marketingTasks = mktgDefs.map(td => {
     const date = event.marketing_tasks?.[td.id];
     if (!date) return null;
-    return { id: td.id, name: td.name, date, icon: td.icon || 'circle', completed: !!event.completed_marketing_tasks?.[td.id], type: 'marketing' };
+    const ov = taskOverrides[td.id] || {};
+    return { id: td.id, name: ov.title || td.name, date, icon: ov.icon || td.icon || 'circle', completed: !!event.completed_marketing_tasks?.[td.id], type: 'marketing', condition: td.condition, assignee: ov.assignee };
   }).filter(Boolean).sort((a, b) => new Date(a.date) - new Date(b.date));
 
   const TaskColumn = ({ title, tasks, colorCls, onToggle }) => (
@@ -2447,6 +2524,213 @@ const EventDetailPage = () => {
       </div>
     </div>
   );
+
+  const cancelSeriesDialog = (
+    <AlertDialog open={cancelSeriesOpen} onOpenChange={setCancelSeriesOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>скасувати регулярну подію</AlertDialogTitle>
+          <AlertDialogDescription>«{event.title || "подія"}» — частина регулярної серії. що скасовуємо?</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>залишити все</AlertDialogCancel>
+          <AlertDialogAction variant="warning" onClick={() => cancelSeriesScope("single")} data-testid="detail-cancel-series-only-this">тільки цю</AlertDialogAction>
+          <AlertDialogAction variant="danger" onClick={() => cancelSeriesScope("series")} data-testid="detail-cancel-series-all-future">цю й наступні</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+
+  if (!isDesktop) {
+    const todayStr = formatDateLocal(new Date());
+    const fmtDay = (ymd) => { const [, m, d] = String(ymd).slice(0, 10).split("-").map(Number); return `${d} ${UK_MONTHS_SHORT[m - 1]}`; };
+    const activeTier = (event.price_tiers || [])
+      .filter(t => t?.until && t.price != null && String(t.until).slice(0, 10) >= todayStr)
+      .sort((a, b) => (String(a.until) < String(b.until) ? -1 : 1))[0];
+    const regularPrice = event.base_price ?? event.price;
+    const hasBookings = event.altegio_booked_count !== null && event.altegio_booked_count !== undefined;
+    const altegioWarningText = {
+      no_service: "послугу не знайдено в Altegio — подія не зʼявиться для запису",
+      no_staff: "послуга не привʼязана до жодного учасника команди — онлайн-запис не працює",
+      service_disabled: "послуга вимкнена або не онлайн — подія прихована в Altegio",
+      prepaid_off: "для послуги вимкнена передоплата — записуються без оплати",
+    };
+    const altegioIssue = event.altegio_warning
+      ? (altegioWarningText[event.altegio_warning.type] || event.altegio_warning.message || "проблема з Altegio")
+      : event.altegio_last_error;
+    const seriesEvents = seriesData?.events || [];
+    const otherSeriesEvents = seriesEvents.filter(inst => inst.id !== eventId);
+    const bookingStatus = (b) => {
+      if (b?.deleted) return "скасовано";
+      const a = b?.attendance ?? b?.visit_attendance;
+      if (a === 1) return "прийшов";
+      if (a === 2) return "підтверджено";
+      if (a === -1) return "не прийшов";
+      if (a === 0) return "очікує";
+      return typeof b?.status === "string" ? b.status : "";
+    };
+
+    const renderSection = (key, title, meta, content) => (
+      <div className="rounded-2xl bg-[#F1EEE7] mb-2" key={key}>
+        <button type="button" className="w-full min-h-[48px] px-4 flex items-center justify-between gap-3 text-left" onClick={() => toggleSection(key)} aria-expanded={!!openSections[key]} data-testid={`detail-section-${key}`}>
+          <span className="text-sm font-semibold">{title}</span>
+          <span className="flex items-center gap-2 text-xs text-secondary tabular-nums">
+            {meta}
+            <ChevronDown className={`w-4 h-4 transition-transform ${openSections[key] ? "rotate-180" : ""}`} />
+          </span>
+        </button>
+        {openSections[key] && <div className="px-4 pb-3">{content}</div>}
+      </div>
+    );
+
+    const renderTasks = (tasks, colorCls, onToggle) => tasks.length > 0 ? tasks.map(task => {
+      const IconComponent = getIconComponent(task.icon);
+      const overdue = !task.completed && String(task.date).slice(0, 10) < todayStr;
+      const condBadge = formatTaskCondition(task.condition);
+      return (
+        <div key={task.id} className={`task-item min-h-[48px] cursor-pointer ${task.completed ? "opacity-40" : ""}`} onClick={() => onToggle(task.id, !task.completed)} data-testid={`detail-task-${task.id}`}>
+          <div className={`task-icon ${colorCls}`}><IconComponent /></div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium break-words">{task.name}</p>
+            <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+              <p className={`text-xs ${overdue ? "text-[#FF8370]" : "text-secondary"}`}>{formatDateUkrainian(task.date)}</p>
+              {condBadge && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-black/8 text-[#1A1717]/65 font-medium">{condBadge}</span>}
+              {task.assignee && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-black/5 text-secondary font-medium">{getAssigneeLabel(task.assignee)}</span>}
+            </div>
+          </div>
+          <button className={`task-checkbox ${task.completed ? "checked" : ""}`} onClick={(e) => { e.stopPropagation(); onToggle(task.id, !task.completed); }} aria-label={task.completed ? "зняти позначку" : "позначити виконаним"}>
+            <Check className="w-4 h-4" />
+          </button>
+        </div>
+      );
+    }) : <p className="text-secondary text-sm py-3">немає завдань</p>;
+
+    const actionBtn = "min-h-[44px] px-3 rounded-xl bg-[#F6F5F1] text-sm flex items-center justify-center gap-2 disabled:opacity-50";
+    const doneCount = (tasks) => `${tasks.filter(t => t.completed).length}/${tasks.length}`;
+
+    return (
+      <div className="h-[100dvh] overflow-y-auto bg-[#F6F5F1]" data-testid="event-detail-page">
+        <header className="sticky top-0 z-20 bg-[#F6F5F1] px-4 pb-2 flex items-start gap-2" style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}>
+          <button className="desktop-header-btn !w-11 !h-11 flex-shrink-0" onClick={() => navigate(-1)} aria-label="назад" data-testid="event-detail-close-area"><ChevronLeft className="w-5 h-5" /></button>
+          <h1 className="flex-1 min-w-0 text-lg font-semibold leading-snug line-clamp-2 break-words py-2">{event.title}</h1>
+          <button className="desktop-header-btn !w-11 !h-11 flex-shrink-0" onClick={() => navigate(`/event/${eventId}`)} aria-label="редагувати"><Edit className="w-4 h-4" /></button>
+          <button className="desktop-header-btn !w-11 !h-11 flex-shrink-0 text-lg leading-none" onClick={() => setActionsOpen(o => !o)} aria-expanded={actionsOpen} aria-label="дії" data-testid="detail-actions-toggle">…</button>
+        </header>
+
+        <div className="px-4" style={{ paddingBottom: "max(40px, env(safe-area-inset-bottom))" }}>
+          {actionsOpen && (
+            <div className="rounded-2xl bg-[#F1EEE7] p-2 mb-3 grid grid-cols-2 gap-2" data-testid="detail-actions">
+              {!event.cancelled ? (
+                <button className={actionBtn} onClick={() => { setActionsOpen(false); handleCancel(); }}><X className="w-4 h-4" />скасувати</button>
+              ) : (
+                <button className={`${actionBtn} text-green-600`} onClick={() => { setActionsOpen(false); handleRestore(); }}><RotateCcw className="w-4 h-4" />відновити</button>
+              )}
+              <button className={`${actionBtn} text-[#FF8370]`} onClick={() => { setActionsOpen(false); setDeleteDialogOpen(true); }}><Trash2 className="w-4 h-4" />видалити</button>
+              <button className={actionBtn} onClick={handleSyncAltegio} disabled={syncing}><RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />{syncing ? "..." : "оновити Altegio"}</button>
+              <button className={actionBtn} onClick={handleOpenAltegio}><ExternalLink className="w-4 h-4" />відкрити Altegio</button>
+              <button className={actionBtn} onClick={handleShareAltegio}><Share2 className="w-4 h-4" />поширити</button>
+              <button className={actionBtn} onClick={handleExportCalendar} disabled={exporting}><CalendarIcon className="w-4 h-4" />{exporting ? "..." : "в Calendar"}</button>
+              {gcalUrl && (
+                <a className={`${actionBtn} col-span-2`} href={gcalUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="w-4 h-4" />відкрити в Google Calendar</a>
+              )}
+            </div>
+          )}
+
+          <div className="rounded-2xl bg-[#F1EEE7] p-4 mb-3">
+            {(event.cancelled || event.cancellation_pending || altegioIssue || seriesEvents.length > 1) && (
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {event.cancelled && <span className="text-xs px-2.5 py-1 rounded-full bg-red-50 text-red-600 font-medium">скасовано</span>}
+                {event.cancellation_pending && <span className="text-xs px-2.5 py-1 rounded-full bg-orange-50 text-orange-700 font-medium">скасування чекає підтвердження</span>}
+                {altegioIssue && (
+                  <button type="button" className="text-xs px-2.5 min-h-[28px] rounded-full bg-[#FF8370]/15 text-[#C24A36] font-medium inline-flex items-center gap-1" onClick={() => setAltegioIssueOpen(o => !o)} aria-expanded={altegioIssueOpen}>
+                    <AlertTriangle className="w-3.5 h-3.5" />проблема з Altegio
+                  </button>
+                )}
+                {seriesEvents.length > 1 && <span className="text-xs px-2.5 py-1 rounded-full bg-black/5 text-secondary font-medium">серія · {seriesEvents.length}</span>}
+              </div>
+            )}
+            {altegioIssue && altegioIssueOpen && (
+              <div className="mb-3 p-3 rounded-xl bg-[#F6F5F1] text-xs break-words">
+                <p>{altegioIssue}</p>
+                {event.altegio_warning && <button type="button" className="mt-2 underline font-medium min-h-[32px]" onClick={() => emitAltegioWarning(event.altegio_warning)}>як виправити</button>}
+              </div>
+            )}
+            <div className="flex justify-between items-center py-2 border-b border-[#E8E5DC] gap-3">
+              <span className="text-secondary text-sm">дата</span>
+              <span className="font-medium text-right">{formatDateUkrainian(event.date)}{event.start_time ? ` · ${event.start_time}${event.end_time ? ` — ${event.end_time}` : ""}` : ""}</span>
+            </div>
+            <div className="flex justify-between items-center py-2 border-b border-[#E8E5DC] gap-3">
+              <span className="text-secondary text-sm">ціна</span>
+              <span className="font-medium text-right">
+                {activeTier
+                  ? <>{activeTier.price} ₴ <span className="text-secondary text-sm font-normal">· звичайна {regularPrice} · до {fmtDay(activeTier.until)}</span></>
+                  : <>{event.price} ₴</>}
+              </span>
+            </div>
+            <div className="flex justify-between items-center py-2 gap-3">
+              <span className="text-secondary text-sm">місць</span>
+              {hasBookings ? (
+                <span className={`font-bold text-lg ${colorClass}`}>{event.altegio_booked_count}/{event.spots || 10}</span>
+              ) : (
+                <span className="font-semibold">{event.spots || 10}</span>
+              )}
+            </div>
+            {event.altegio_last_sync && <p className="text-[11px] text-secondary mt-1">Altegio оновлено: {new Date(event.altegio_last_sync).toLocaleString('uk-UA')}</p>}
+          </div>
+
+          {event.description && renderSection("description", "опис", null, <p className="text-sm whitespace-pre-line break-words">{event.description}</p>)}
+
+          {renderSection("participants", "учасники", hasBookings ? `${event.altegio_booked_count}/${event.spots || 10}` : null, (
+            bookingsState.status === "loading" ? <p className="text-secondary text-sm py-2">завантажую...</p>
+            : bookingsState.status === "error" ? (
+              <div className="py-2">
+                <p className="text-secondary text-sm break-words">{bookingsState.message}</p>
+                <button type="button" className="mt-1 text-sm underline min-h-[44px]" onClick={loadBookings}>спробувати ще раз</button>
+              </div>
+            )
+            : bookingsState.items.length > 0 ? bookingsState.items.map((b, i) => {
+              const name = b?.client?.name || b?.client?.display_name || b?.client_name || b?.name || "без імені";
+              const phone = b?.client?.phone || b?.phone;
+              const status = bookingStatus(b);
+              return (
+                <div key={b?.id || i} className="task-item min-h-[44px]">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium break-words">{name}</p>
+                    {phone && <a href={`tel:${phone}`} className="text-xs text-secondary">{phone}</a>}
+                  </div>
+                  {status && <span className="text-xs text-secondary flex-shrink-0">{status}</span>}
+                </div>
+              );
+            })
+            : <p className="text-secondary text-sm py-2">{bookingsState.message || "поки нікого"}</p>
+          ))}
+
+          {renderSection("manager", "manager", doneCount(managementTasks), renderTasks(managementTasks, "", handleToggleTask))}
+          {renderSection("smm", "smm", doneCount(smmTasks), renderTasks(smmTasks, "emerald", handleToggleSMMTask))}
+          {renderSection("marketer", "marketer", doneCount(marketingTasks), renderTasks(marketingTasks, "orange", handleToggleMarketingTask))}
+
+          {otherSeriesEvents.length > 0 && renderSection("series", "інші дати серії", `${otherSeriesEvents.length}`, otherSeriesEvents.map(inst => {
+            const isPast = String(inst.date).slice(0, 10) < todayStr;
+            return (
+              <button key={inst.id} type="button" onClick={() => navigate(`/event/${inst.id}/view`)} className={`w-full min-h-[44px] flex items-center gap-3 px-1 text-left text-sm border-b border-black/5 last:border-b-0 ${inst.cancelled ? "line-through text-[#1A1717]/35" : isPast ? "text-[#1A1717]/55" : ""}`} data-testid={`detail-series-${inst.id}`}>
+                <span className="font-medium tabular-nums">{formatDateUkrainian(inst.date)}</span>
+                {inst.start_time && <span className="text-xs text-secondary">{inst.start_time}</span>}
+                <span className="ml-auto text-xs tabular-nums text-secondary">{inst.altegio_booked_count != null ? `${inst.altegio_booked_count}/${inst.spots || 10}` : `–/${inst.spots || 10}`}</span>
+                <ChevronRight className="w-4 h-4 text-secondary" />
+              </button>
+            );
+          }))}
+        </div>
+
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent className="dialog-content"><AlertDialogHeader><AlertDialogTitle>видалити подію назавжди?</AlertDialogTitle><AlertDialogDescription>Якщо є куплені місця, видалення зупиниться і буде запропоновано лише скасувати подію з архівом.</AlertDialogDescription></AlertDialogHeader>
+            <AlertDialogFooter><AlertDialogCancel>назад</AlertDialogCancel><AlertDialogAction onClick={handleDelete} variant="danger">видалити назавжди</AlertDialogAction></AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        {cancelSeriesDialog}
+      </div>
+    );
+  }
 
   return (
     <div className="desktop-dashboard" data-testid="event-detail-page">
@@ -2520,10 +2804,7 @@ const EventDetailPage = () => {
         <TaskColumn title="SMM" tasks={smmTasks} colorCls="emerald" onToggle={handleToggleSMMTask} />
 
         {/* Column 4: MARKETER */}
-        <TaskColumn title="MARKETER" tasks={marketingTasks} colorCls="orange" onToggle={(id, completed) => {
-          // Marketing tasks use smm completion endpoint with marketing prefix
-          handleToggleSMMTask(id, completed);
-        }} />
+        <TaskColumn title="MARKETER" tasks={marketingTasks} colorCls="orange" onToggle={handleToggleMarketingTask} />
       </div>
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -2531,6 +2812,7 @@ const EventDetailPage = () => {
           <AlertDialogFooter><AlertDialogCancel>назад</AlertDialogCancel><AlertDialogAction onClick={handleDelete} variant="danger">видалити назавжди</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {cancelSeriesDialog}
 
     </div>
   );
@@ -6627,7 +6909,7 @@ const DesktopDashboard = () => {
                     {selectedEvent.description && (
                       <div className="py-2">
                         <span className="text-secondary text-sm block mb-1">опис</span>
-                        <p className="text-sm">{selectedEvent.description}</p>
+                        <p className="text-sm whitespace-pre-line">{selectedEvent.description}</p>
                       </div>
                     )}
                   </div>
@@ -8653,7 +8935,7 @@ const EventsDesktopExpanded = () => {
                     {selectedEvent.description && (
                       <div className="py-2">
                         <span className="text-secondary text-sm block mb-1">опис</span>
-                        <p className="text-sm">{selectedEvent.description}</p>
+                        <p className="text-sm whitespace-pre-line">{selectedEvent.description}</p>
                       </div>
                     )}
                   </div>
