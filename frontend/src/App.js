@@ -1120,7 +1120,7 @@ const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, 
   const handleToggle = () => {
     const newCompleted = !localCompleted;
     setLocalCompleted(newCompleted);
-    onToggle(task.event_id, task.task_id, newCompleted, task.is_standalone);
+    onToggle(task.event_id, task.task_id, newCompleted, task.is_standalone, task);
   };
 
   const handleClick = () => {
@@ -1386,7 +1386,7 @@ const Dashboard = () => {
         const reminderInfo = reminderMap[reminderId]; if (!reminderInfo) return;
         const reminderDate = new Date(reminderDateStr); reminderDate.setHours(0, 0, 0, 0);
         const ov = (event.task_overrides || {})[reminderId] || {};
-        const task = { event_id: event.id, event_title: event.title, reminder_id: reminderId, reminder_name: ov.title || reminderInfo.name, reminder_date: reminderDateStr, icon: ov.icon || reminderInfo.icon, completed: !!(event.completed_tasks || {})[reminderId], is_standalone: false, color: ov.color, assignee: normalizeAssignee(ov.assignee, ""), order: ov.order || 0 };
+        const task = { event_id: event.id, event_title: event.title, reminder_id: reminderId, reminder_name: ov.title || reminderInfo.name, reminder_date: reminderDateStr, icon: ov.icon || reminderInfo.icon, completed: !!(event.completed_tasks || {})[reminderId], is_standalone: false, color: ov.color, assignee: normalizeAssignee(ov.assignee, ""), order: ov.order || 0, _kind: "reminder" };
         if (reminderDateStr === todayStr) todayTasks.push(task);
         else if (reminderDate < today && !task.completed) overdueTasks.push(task);
         else if (reminderDate > today && reminderDateStr <= twoWeeksStr) soonTasks.push(task);
@@ -1395,7 +1395,7 @@ const Dashboard = () => {
     standaloneTasks.filter(t => t.type !== "smm").forEach(task => {
       const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
       const linkedEvent = task.event_id ? events.find(event => event.id === task.event_id) : null;
-      const baseTask = { event_id: task.id, event_title: linkedEvent?.title || "", reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "manager", target_month: task.target_month };
+      const baseTask = { event_id: task.id, event_title: linkedEvent?.title || "", reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "manager", target_month: task.target_month, _kind: "standalone" };
       expandStandaloneTaskForAssignees(task, baseTask, "manager").forEach((t) => {
         if (task.date === todayStr) todayTasks.push(t);
         else if (taskDate < today && !task.completed) overdueTasks.push(t);
@@ -1414,20 +1414,20 @@ const Dashboard = () => {
       if (event.cancelled) return;
       const eventDate = new Date(event.date); eventDate.setHours(0, 0, 0, 0);
       if (eventDate < today) return;
-      Object.entries(event.smm_tasks || {}).forEach(([taskId, taskDateStr]) => {
+      [[event.smm_tasks, event.completed_smm_tasks, "smm"], [event.marketing_tasks, event.completed_marketing_tasks, "marketing"]].forEach(([tasksDict, completedDict, kind]) => Object.entries(tasksDict || {}).forEach(([taskId, taskDateStr]) => {
         const taskInfo = smmTasksMap[taskId]; if (!taskInfo) return;
         const taskDate = new Date(taskDateStr); taskDate.setHours(0, 0, 0, 0);
         const ov = (event.task_overrides || {})[taskId] || {};
-        const task = { event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov.title || taskInfo.name, task_date: taskDateStr, completed: !!(event.completed_smm_tasks || {})[taskId], color: ov.color || taskInfo.color || "standard", icon: ov.icon || taskInfo.icon, assignee: normalizeAssignee(ov.assignee, "") };
+        const task = { event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov.title || taskInfo.name, task_date: taskDateStr, completed: !!(completedDict || {})[taskId], color: ov.color || taskInfo.color || "standard", icon: ov.icon || taskInfo.icon, assignee: normalizeAssignee(ov.assignee, ""), _kind: kind };
         if (taskDateStr === todayStr) todayTasks.push(task);
         else if (taskDate < today && !task.completed) overdueTasks.push(task);
         else if (taskDate > today && taskDateStr <= twoWeeksStr) soonTasks.push(task);
-      });
+      }));
     });
     standaloneTasks.filter(t => t.type === "smm").forEach(task => {
       const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
       const linkedEvent = task.event_id ? events.find(event => event.id === task.event_id) : null;
-      const baseTask = { event_id: task.id, event_title: linkedEvent?.title || "", task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "manager", target_month: task.target_month };
+      const baseTask = { event_id: task.id, event_title: linkedEvent?.title || "", task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "manager", target_month: task.target_month, _kind: "standalone" };
       expandStandaloneTaskForAssignees(task, baseTask, "smm").forEach((t) => {
         if (task.date === todayStr) todayTasks.push(t);
         else if (taskDate < today && !task.completed) overdueTasks.push(t);
@@ -1469,11 +1469,11 @@ const Dashboard = () => {
     try {
       if (isStandalone) {
         await api.updateStandaloneTask(eventId, completed);
-        pushUndo({ label: "таск", run: async () => { await api.updateStandaloneTask(eventId, !completed); refreshStandaloneTasks(); } });
+        pushUndo({ label: "таск", toast: completed ? "таск виконано" : "таск повернуто", run: async () => { await api.updateStandaloneTask(eventId, !completed); refreshStandaloneTasks(); } });
         refreshStandaloneTasks();
       } else {
         await api.completeTask({ event_id: eventId, reminder_id: reminderId, completed });
-        pushUndo({ label: "таск", run: async () => { await api.completeTask({ event_id: eventId, reminder_id: reminderId, completed: !completed }); refreshEvents(); } });
+        pushUndo({ label: "таск", toast: completed ? "таск виконано" : "таск повернуто", run: async () => { await api.completeTask({ event_id: eventId, reminder_id: reminderId, completed: !completed }); refreshEvents(); } });
         refreshEvents();
       }
     } catch { toast.error("помилка"); }
@@ -1482,14 +1482,29 @@ const Dashboard = () => {
     try {
       if (isStandalone) {
         await api.updateStandaloneTask(eventId, completed);
-        pushUndo({ label: "таск", run: async () => { await api.updateStandaloneTask(eventId, !completed); refreshStandaloneTasks(); } });
+        pushUndo({ label: "таск", toast: completed ? "таск виконано" : "таск повернуто", run: async () => { await api.updateStandaloneTask(eventId, !completed); refreshStandaloneTasks(); } });
         refreshStandaloneTasks();
       } else {
         await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed });
-        pushUndo({ label: "таск", run: async () => { await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed: !completed }); refreshEvents(); } });
+        pushUndo({ label: "таск", toast: completed ? "таск виконано" : "таск повернуто", run: async () => { await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed: !completed }); refreshEvents(); } });
         refreshEvents();
       }
     } catch { toast.error("помилка"); }
+  };
+  const handleToggleMarketingTask = async (eventId, taskId, completed) => {
+    try {
+      await api.completeMarketingTask({ event_id: eventId, task_id: taskId, completed });
+      pushUndo({ label: "таск", toast: completed ? "таск виконано" : "таск повернуто", run: async () => { await api.completeMarketingTask({ event_id: eventId, task_id: taskId, completed: !completed }); refreshEvents(); } });
+      refreshEvents();
+    } catch { toast.error("помилка"); }
+  };
+  // Route toggle by task kind (not by column/tab) — reassigned tasks keep their storage
+  const handleToggleByKind = (fallback) => (eventId, taskId, completed, isStandalone, task) => {
+    const kind = task?._kind || (isStandalone ? "standalone" : null);
+    if (kind === "reminder") return handleToggleTask(eventId, taskId, completed, false);
+    if (kind === "smm" || kind === "standalone") return handleToggleSMMTask(eventId, taskId, completed, isStandalone);
+    if (kind === "marketing") return handleToggleMarketingTask(eventId, taskId, completed);
+    return fallback(eventId, taskId, completed, isStandalone);
   };
   const handleEventClick = (eventId) => { navigate(`/event/${eventId}/view`); };
 
@@ -1562,7 +1577,7 @@ const Dashboard = () => {
             <div className="pt-3 space-y-1">
               {[...sectionTasks].sort((a, b) => (a.completed ? 1 : 0) - (b.completed ? 1 : 0)).map((t, i) => {
                 const nt = normalizeTask(t);
-                return <SMMTaskItem key={`${nt.event_id}-${nt.task_id}-${i}`} task={nt} onToggle={activeTab === 'manager' ? handleToggleTask : handleToggleSMMTask} onEventClick={handleEventClick} onTaskEdit={handleTaskEdit} smmTasksDefinition={smmTasksDefinition} showDate={isOverdue || title === 'незабаром'} />;
+                return <SMMTaskItem key={`${nt.event_id}-${nt.task_id}-${i}`} task={nt} onToggle={handleToggleByKind(activeTab === 'manager' ? handleToggleTask : handleToggleSMMTask)} onEventClick={handleEventClick} onTaskEdit={handleTaskEdit} smmTasksDefinition={smmTasksDefinition} showDate={isOverdue || title === 'незабаром'} />;
               })}
             </div>
           ) : <p className="text-secondary py-4 text-center text-sm">все зроблено!</p>
@@ -5398,7 +5413,7 @@ const DesktopDashboard = () => {
         const reminderInfo = reminderMap[reminderId]; if (!reminderInfo) return;
         const reminderDate = new Date(reminderDateStr); reminderDate.setHours(0, 0, 0, 0);
         const ov = (event.task_overrides || {})[reminderId] || {};
-        const task = { event_id: event.id, event_title: event.title, reminder_id: reminderId, reminder_name: ov.title || reminderInfo.name, reminder_date: reminderDateStr, icon: ov.icon || reminderInfo.icon, completed: !!(event.completed_tasks || {})[reminderId], is_standalone: false, color: ov.color, assignee: normalizeAssignee(ov.assignee, ""), order: ov.order || 0 };
+        const task = { event_id: event.id, event_title: event.title, reminder_id: reminderId, reminder_name: ov.title || reminderInfo.name, reminder_date: reminderDateStr, icon: ov.icon || reminderInfo.icon, completed: !!(event.completed_tasks || {})[reminderId], is_standalone: false, color: ov.color, assignee: normalizeAssignee(ov.assignee, ""), order: ov.order || 0, _kind: "reminder" };
 
         if (reminderDateStr === todayStr) todayTasks.push(task);
         else if (reminderDate < today && !task.completed) overdueTasks.push(task);
@@ -5409,7 +5424,7 @@ const DesktopDashboard = () => {
     standaloneTasks.filter(t => t.type !== "smm").forEach(task => {
       const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
       const linkedEvent = task.event_id ? events.find(event => event.id === task.event_id) : null;
-      const baseTask = { event_id: task.id, event_title: linkedEvent?.title || "", reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "manager", type: task.type, event_id_link: task.event_id || "", order: task.order || 0 };
+      const baseTask = { event_id: task.id, event_title: linkedEvent?.title || "", reminder_id: "standalone", reminder_name: task.title, reminder_date: task.date, icon: task.icon || "coffee", completed: task.completed, is_standalone: true, color: task.color || "manager", type: task.type, event_id_link: task.event_id || "", order: task.order || 0, _kind: "standalone" };
       expandStandaloneTaskForAssignees(task, baseTask, "manager").forEach((t) => {
         if (task.date === todayStr) todayTasks.push(t);
         else if (taskDate < today && !task.completed) overdueTasks.push(t);
@@ -5427,12 +5442,12 @@ const DesktopDashboard = () => {
 
   const getSMMTasks = useCallback(() => {
     const overdueTasks = [], todayTasks = [], soonTasks = [];
-    const processTasksDict = (event, tasksDict, completedDict) => {
+    const processTasksDict = (event, tasksDict, completedDict, kind) => {
       Object.entries(tasksDict || {}).forEach(([taskId, taskDateStr]) => {
         const taskInfo = smmTasksMap[taskId]; if (!taskInfo) return;
         const taskDate = new Date(taskDateStr); taskDate.setHours(0, 0, 0, 0);
         const ov2 = (event.task_overrides || {})[taskId] || {};
-        const task = { event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov2.title || taskInfo.name, task_date: taskDateStr, completed: !!(completedDict || {})[taskId], color: ov2.color || taskInfo.color || "standard", icon: ov2.icon || taskInfo.icon, assignee: normalizeAssignee(ov2.assignee, ""), order: ov2.order || 0 };
+        const task = { event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov2.title || taskInfo.name, task_date: taskDateStr, completed: !!(completedDict || {})[taskId], color: ov2.color || taskInfo.color || "standard", icon: ov2.icon || taskInfo.icon, assignee: normalizeAssignee(ov2.assignee, ""), order: ov2.order || 0, _kind: kind };
         if (taskDateStr === todayStr) todayTasks.push(task);
         else if (taskDate < today && !task.completed) overdueTasks.push(task);
         else if (taskDate > today && taskDateStr <= twoWeeksStr) soonTasks.push(task);
@@ -5442,15 +5457,15 @@ const DesktopDashboard = () => {
       if (event.cancelled) return;
       const eventDate = new Date(event.date); eventDate.setHours(0, 0, 0, 0);
       if (eventDate < today) return;
-      processTasksDict(event, event.smm_tasks, event.completed_smm_tasks);
-      processTasksDict(event, event.marketing_tasks, event.completed_smm_tasks);
+      processTasksDict(event, event.smm_tasks, event.completed_smm_tasks, "smm");
+      processTasksDict(event, event.marketing_tasks, event.completed_marketing_tasks, "marketing");
     });
 
     // Add standalone tasks
     standaloneTasks.filter(t => t.type === "smm").forEach(task => {
       const taskDate = new Date(task.date); taskDate.setHours(0, 0, 0, 0);
       const linkedEvent = task.event_id ? events.find(event => event.id === task.event_id) : null;
-      const baseTask = { event_id: task.id, event_title: linkedEvent?.title || "", task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "manager", type: task.type, event_id_link: task.event_id || "", order: task.order || 0 };
+      const baseTask = { event_id: task.id, event_title: linkedEvent?.title || "", task_id: "standalone", task_name: task.title, task_date: task.date, icon: task.icon || "instagram", completed: task.completed, is_standalone: true, color: task.color || "manager", type: task.type, event_id_link: task.event_id || "", order: task.order || 0, _kind: "standalone" };
       expandStandaloneTaskForAssignees(task, baseTask, "smm").forEach((t) => {
         if (task.date === todayStr) todayTasks.push(t);
         else if (taskDate < today && !task.completed) overdueTasks.push(t);
@@ -5641,11 +5656,11 @@ const DesktopDashboard = () => {
     try {
       if (isStandalone) {
         await api.updateStandaloneTask(eventId, completed);
-        pushUndo({ label: "таск", run: async () => { await api.updateStandaloneTask(eventId, !completed); refreshStandaloneTasks(); } });
+        pushUndo({ label: "таск", toast: completed ? "таск виконано" : "таск повернуто", run: async () => { await api.updateStandaloneTask(eventId, !completed); refreshStandaloneTasks(); } });
         refreshStandaloneTasks();
       } else {
         await api.completeTask({ event_id: eventId, reminder_id: reminderId, completed });
-        pushUndo({ label: "таск", run: async () => { await api.completeTask({ event_id: eventId, reminder_id: reminderId, completed: !completed }); refreshEvents(); } });
+        pushUndo({ label: "таск", toast: completed ? "таск виконано" : "таск повернуто", run: async () => { await api.completeTask({ event_id: eventId, reminder_id: reminderId, completed: !completed }); refreshEvents(); } });
         refreshEvents();
       }
     } catch { toast.error("помилка"); }
@@ -5655,14 +5670,29 @@ const DesktopDashboard = () => {
     try {
       if (isStandalone) {
         await api.updateStandaloneTask(eventId, completed);
-        pushUndo({ label: "таск", run: async () => { await api.updateStandaloneTask(eventId, !completed); refreshStandaloneTasks(); } });
+        pushUndo({ label: "таск", toast: completed ? "таск виконано" : "таск повернуто", run: async () => { await api.updateStandaloneTask(eventId, !completed); refreshStandaloneTasks(); } });
         refreshStandaloneTasks();
       } else {
         await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed });
-        pushUndo({ label: "таск", run: async () => { await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed: !completed }); refreshEvents(); } });
+        pushUndo({ label: "таск", toast: completed ? "таск виконано" : "таск повернуто", run: async () => { await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed: !completed }); refreshEvents(); } });
         refreshEvents();
       }
     } catch { toast.error("помилка"); }
+  };
+  const handleToggleMarketingTask = async (eventId, taskId, completed) => {
+    try {
+      await api.completeMarketingTask({ event_id: eventId, task_id: taskId, completed });
+      pushUndo({ label: "таск", toast: completed ? "таск виконано" : "таск повернуто", run: async () => { await api.completeMarketingTask({ event_id: eventId, task_id: taskId, completed: !completed }); refreshEvents(); } });
+      refreshEvents();
+    } catch { toast.error("помилка"); }
+  };
+  // Route toggle by task kind (not by column/tab) — reassigned tasks keep their storage
+  const handleToggleByKind = (fallback) => (eventId, taskId, completed, isStandalone, task) => {
+    const kind = task?._kind || (isStandalone ? "standalone" : null);
+    if (kind === "reminder") return handleToggleTask(eventId, taskId, completed, false);
+    if (kind === "smm" || kind === "standalone") return handleToggleSMMTask(eventId, taskId, completed, isStandalone);
+    if (kind === "marketing") return handleToggleMarketingTask(eventId, taskId, completed);
+    return fallback(eventId, taskId, completed, isStandalone);
   };
   const loadArchive = async () => { try { const r = await api.getTaskArchive(); setArchive(r.data); openView("archive"); } catch { toast.error("помилка"); } };
   const handleRestoreTask = async (item) => {
@@ -6238,13 +6268,13 @@ const DesktopDashboard = () => {
             tasks={tasksByTeam.manager}
             colorClass=""
             colorHex={null}
-            onToggle={(eventId, taskId, completed, isStandalone) => {
+            onToggle={handleToggleByKind((eventId, taskId, completed, isStandalone) => {
               if (isStandalone || taskId === "standalone") {
                 handleToggleSMMTask(eventId, taskId, completed, isStandalone);
               } else {
                 handleToggleTask(eventId, taskId, completed, isStandalone);
               }
-            }}
+            })}
             onEventClick={handleEventClick}
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
@@ -6270,7 +6300,7 @@ const DesktopDashboard = () => {
             tasks={tasksByTeam.smm}
             colorClass=""
             colorHex={null}
-            onToggle={handleToggleSMMTask}
+            onToggle={handleToggleByKind(handleToggleSMMTask)}
             onEventClick={handleEventClick}
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
@@ -6298,7 +6328,7 @@ const DesktopDashboard = () => {
             tasks={tasksByTeam.marketer}
             colorClass="orange"
             colorHex="#C4703D"
-            onToggle={handleToggleSMMTask}
+            onToggle={handleToggleByKind(handleToggleSMMTask)}
             onEventClick={handleEventClick}
             onStandaloneClick={handleStandaloneTaskClick}
             onTaskEdit={handleTaskEdit}
@@ -8979,10 +9009,30 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [accessGranted, setAccessGranted] = useState(() => Boolean(getStoredAccessToken()));
   const undoStackRef = useRef([]);
+  const performUndoRef = useRef(null);
 
   const pushUndo = useCallback((entry) => {
     if (!entry?.run) return;
     undoStackRef.current = [entry, ...undoStackRef.current].slice(0, 20);
+    // Touch: no ⌘Z — show a toast with «відмінити». Reuse the success toast fired right after pushUndo, if any.
+    if (window.innerWidth >= 1024) return;
+    const seenIds = new Set(toast.getToasts().map(t => t.id));
+    setTimeout(() => {
+      const action = {
+        label: "відмінити",
+        onClick: () => {
+          const i = undoStackRef.current.indexOf(entry);
+          if (i < 0) return;
+          undoStackRef.current.splice(i, 1);
+          undoStackRef.current.unshift(entry);
+          performUndoRef.current?.();
+        },
+      };
+      const fresh = toast.getToasts().filter(t => !seenIds.has(t.id) && t.type === "success");
+      const last = fresh[fresh.length - 1];
+      if (last) toast.success(last.title, { id: last.id, action });
+      else toast(entry.toast || entry.label || "готово", { action });
+    }, 0);
   }, []);
 
   const performUndo = useCallback(async ({ silentEmpty = false } = {}) => {
@@ -9001,6 +9051,7 @@ function App() {
       return false;
     }
   }, []);
+  performUndoRef.current = performUndo;
 
   const refreshEvents = async () => { try { const r = await api.getEvents(); setEvents(r.data); } catch (e) { console.error(e); } };
   const refreshSettings = async () => { try { const r = await api.getSettings(); setSettings(r.data); } catch (e) { console.error(e); } };
