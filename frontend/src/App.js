@@ -1616,18 +1616,7 @@ const Dashboard = ({ initialTab = 'events', footer = null }) => {
     const normalizeTask = (t) => { const d = t.task_date || t.reminder_date; return { ...t, task_id: t.task_id || t.reminder_id, task_name: t.task_name || t.reminder_name, task_date: d, assignee: t.assignee || activeTab, isOverlapping: activeTab === 'smm' && !!(d && announcementOverlaps[d]) }; };
     return (
       <section className="mobile-section">
-        {isCollapsible && onCleanupClick ? (
-          <div className={`mobile-section-header ${isOverdue ? 'overdue' : ''}`}>
-            <button type="button" className="flex flex-1 min-w-0 items-center gap-2 text-left min-h-[44px]" onClick={() => setExpanded(!expanded)}>
-              <span>{title}</span>
-              <span className="mobile-section-count">({sectionTasks.length})</span>
-            </button>
-            <button type="button" className="mobile-cleanup-btn" onClick={onCleanupClick} data-testid="mobile-overdue-cleanup-btn"><Sparkles className="w-3.5 h-3.5" />розчистити</button>
-            <button type="button" className="min-h-[44px] min-w-[32px] flex items-center justify-end" onClick={() => setExpanded(!expanded)} aria-label="розгорнути протерміновані">
-              <ChevronDown className={`w-5 h-5 transition-transform ${expanded ? "rotate-180" : ""}`} style={isOverdue ? { color: "#FF8370" } : {}} />
-            </button>
-          </div>
-        ) : isCollapsible ? (
+        {isCollapsible ? (
           <button className={`mobile-section-header ${isOverdue ? 'overdue' : ''} w-full text-left`} onClick={() => setExpanded(!expanded)}>
             <span>{title}</span>
             <span className="mobile-section-count">({sectionTasks.length})</span>
@@ -1639,6 +1628,9 @@ const Dashboard = ({ initialTab = 'events', footer = null }) => {
         {(!isCollapsible || expanded) && (
           sectionTasks.length > 0 ? (
             <div className="pt-3 space-y-1">
+              {onCleanupClick && (
+                <button type="button" className="mobile-cleanup-btn w-full justify-center mb-2" style={{ minHeight: 44 }} onClick={onCleanupClick} data-testid="mobile-overdue-cleanup-btn"><Sparkles className="w-3.5 h-3.5" />розчистити протерміновані</button>
+              )}
               {[...sectionTasks].sort((a, b) => (getTaskDate(a) < getTaskDate(b) ? -1 : getTaskDate(a) > getTaskDate(b) ? 1 : 0) || getTaskOrder(a) - getTaskOrder(b) || (a.completed ? 1 : 0) - (b.completed ? 1 : 0)).map((t, i) => {
                 const nt = normalizeTask(t);
                 return <SMMTaskItem key={`${nt.event_id}-${nt.task_id}-${i}`} task={nt} onToggle={handleToggleByKind(activeTab === 'manager' ? handleToggleTask : handleToggleSMMTask)} onEventClick={handleEventClick} onTaskEdit={handleTaskEdit} onOverlapClick={activeTab === 'smm' ? setOverlapResolverTask : undefined} smmTasksDefinition={smmTasksDefinition} showDate={isOverdue || title === 'незабаром'} />;
@@ -1777,7 +1769,7 @@ const Dashboard = ({ initialTab = 'events', footer = null }) => {
                 return (
                   <div className="space-y-1.5" data-testid="mobile-edit-position">
                     <span className="block text-[11px] uppercase tracking-wide text-secondary font-semibold px-1">позиція в дні</span>
-                    <div className="grid grid-cols-4 gap-1.5">
+                    <div className="grid grid-cols-2 gap-1.5">
                       {positionChips.map(chip => (
                         <button key={chip.value} type="button" disabled={chip.disabled} style={{ height: 44 }} className={`mobile-date-chip ${editingTask._position === chip.value ? 'selected' : ''} ${chip.disabled ? 'opacity-40' : ''}`} onClick={() => setEditingTask({...editingTask, _position: editingTask._position === chip.value ? null : chip.value})}>{chip.label}</button>
                       ))}

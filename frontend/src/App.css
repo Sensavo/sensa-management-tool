@@ -386,6 +386,7 @@
 /* Settings tabs */
 .settings-tabs { @apply flex gap-2; }
 .settings-tab { @apply flex-1 py-2 px-3 rounded-xl font-medium text-sm transition-colors text-center; background: #E8E5DC; }
+@media (max-width: 480px) { .settings-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } .settings-tab { min-height: 44px; } }
 .settings-tab.active { background: #1A1717; color: #F6F5F1; }
 
 /* Desktop */
@@ -539,9 +540,11 @@
 
 
 
-.mobile-task-dialog .mobile-date-chip {
-  height: 40px;
+.mobile-task-dialog .mobile-date-chip,
+.mobile-task-dialog button.mobile-date-chip:not([data-radix-dialog-close]):not([data-radix-alert-dialog-action]):not([data-radix-alert-dialog-cancel]) {
+  height: 40px !important;
   min-height: 40px !important;
+  min-width: 0;
   padding: 0 6px !important;
   border-radius: 9999px !important;
   border: 1.5px solid rgba(26, 23, 23, 0.08);
@@ -1097,6 +1100,7 @@
 .overdue-cleanup-mobile .overdue-cleanup-column { min-height: 0; }
 .overdue-cleanup-mobile .overdue-cleanup-list { overflow: visible; }
 .overdue-cleanup-mobile .overdue-cleanup-empty { min-height: 52px; }
+.overdue-cleanup-mobile .overdue-cleanup-card-main button { overflow: visible; white-space: normal; padding-left: 1px; }
 .overdue-cleanup-mobile .overdue-cleanup-card-shell { cursor: default; }
 .overdue-cleanup-mobile .overdue-cleanup-card-main button { min-height: 44px; white-space: normal; line-height: 1.25; }
 .overdue-cleanup-mobile .overdue-cleanup-actions { grid-template-columns: 1fr 1fr 44px; }
