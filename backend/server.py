@@ -1232,6 +1232,11 @@ def _poriadok_link(path: str = "") -> str:
     return f'<a href="{_html_escape(PORIADOK_APP_URL + suffix)}">відкрити poriadok</a>'
 
 
+def _poriadok_event_link(event_id: object = "") -> str:
+    # /?event=ID opens the event popup on desktop and redirects to the event page on mobile
+    return _poriadok_link(f"/?event={event_id}") if event_id else _poriadok_link()
+
+
 def _poriadok_cleanup_link() -> str:
     return _poriadok_link("/?overdue_cleanup=1")
 
@@ -3216,7 +3221,7 @@ async def create_event(event_data: EventCreate, request: Request):
         # Single one-off event — full external sync
         await _ensure_no_duplicate_active_event(event_data.title, event_data.date, event_data.start_time or "")
         event = await _persist_event(event_data, settings, sync_external=True)
-        _notify_team(actor, f"створено подію: {_event_line(event.model_dump())}\n{_poriadok_link()}")
+        _notify_team(actor, f"створено подію: {_event_line(event.model_dump())}\n{_poriadok_event_link(event.id)}")
         return {**event.model_dump(), "series_count": 1}
 
     # Regular series — expand to SERIES_WEEKS of instances on selected weekdays
@@ -3269,7 +3274,7 @@ async def create_event(event_data: EventCreate, request: Request):
                 logging.error(f"Failed to rollback created series event {created.id}: {cleanup_error}")
         raise
 
-    _notify_team(actor, f"створено серію подій: {_event_line(master.model_dump())} (+{len(dates) - 1})\n{_poriadok_link()}")
+    _notify_team(actor, f"створено серію подій: {_event_line(master.model_dump())} (+{len(dates) - 1})\n{_poriadok_event_link(master.id)}")
 
     return {**master.model_dump(), "series_count": len(dates)}
 
@@ -3604,7 +3609,7 @@ async def _create_cancellation_tasks(event: dict, series_count: int = 0) -> int:
             created += 1
 
     if created:
-        enqueue_telegram("manager", f"створено таски для скасування: {_event_line(event)}\n{_poriadok_link()}")
+        enqueue_telegram("manager", f"створено таски для скасування: {_event_line(event)}\n{_poriadok_event_link(event.get('id'))}")
     return created
 
 
@@ -3654,7 +3659,7 @@ async def _create_manual_cleanup_task(event: dict, systems: List[str]) -> None:
     if result.upserted_id:
         enqueue_telegram(
             "manager",
-            f"не вдалося автоматично закрити {_event_line(event)} в {systems_text} — потрібне ручне закриття\n{_poriadok_link()}",
+            f"не вдалося автоматично закрити {_event_line(event)} в {systems_text} — потрібне ручне закриття\n{_poriadok_event_link(event.get('id'))}",
         )
 
 
@@ -3863,9 +3868,9 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
     updated = await db.events.find_one({"id": event_id}, {"_id": 0})
     actor = _actor_from_request(request)
     if event_data.get("cancelled") == True and not existing.get("cancelled"):
-        _notify_team(actor, f"скасовано подію: {_event_line(existing)}\n{_poriadok_link()}")
+        _notify_team(actor, f"скасовано подію: {_event_line(existing)}\n{_poriadok_event_link(event_id)}")
     elif event_data.get("cancelled") == False and existing.get("cancelled"):
-        _notify_team(actor, f"відновлено подію: {_event_line(updated)}\n{_poriadok_link()}")
+        _notify_team(actor, f"відновлено подію: {_event_line(updated)}\n{_poriadok_event_link(event_id)}")
     
     return updated
 
@@ -3965,7 +3970,7 @@ async def cancel_event_series(event_id: str, request: Request):
         except Exception as e:
             logging.error(f"Failed to create cancellation tasks for series {master_id}: {e}")
         actor = _actor_from_request(request)
-        _notify_team(actor, f"скасовано серію подій: {_event_line(anchor)} (+{len(cancelled_ids) - 1})\n{_poriadok_link()}")
+        _notify_team(actor, f"скасовано серію подій: {_event_line(anchor)} (+{len(cancelled_ids) - 1})\n{_poriadok_event_link(anchor.get('id'))}")
 
     return {"cancelled_count": len(cancelled_ids), "cancelled_ids": cancelled_ids, "master_id": master_id}
 

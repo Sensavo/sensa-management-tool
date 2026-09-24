@@ -28,7 +28,7 @@
 .page-content { @apply pb-24 px-5; }
 
 .fab { @apply fixed bottom-20 right-4 w-14 h-14 rounded-full flex items-center justify-center z-40 shadow-lg; background: #1A1717; color: #F6F5F1; }
-@media (min-width: 768px) { .fab { display: none; } }
+@media (min-width: 1024px) { .fab { display: none; } }
 .desktop-add-btn { display: none; }
 @media (min-width: 768px) { .desktop-add-btn { display: flex; } }
 

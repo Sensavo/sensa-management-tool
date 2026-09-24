@@ -987,6 +987,14 @@ const formatMonthShort = (monthStr) => {
   return `${UK_MONTHS_SHORT[parseInt(month) - 1]}. ${year.slice(2)} р.`;
 };
 
+// Back with fallback: if the page was opened directly (deep link / new tab),
+// there is no in-app history and navigate(-1) would leave the app or do nothing.
+const goBackOr = (navigate, fallback) => {
+  const idx = window.history.state?.idx;
+  if (idx === 0 || (idx == null && window.history.length <= 1)) navigate(fallback, { replace: true });
+  else navigate(-1);
+};
+
 // Bottom Navigation - with labels
 const BottomNav = () => {
   const location = useLocation();
@@ -1342,6 +1350,20 @@ const Dashboard = () => {
   const [newTaskData, setNewTaskData] = useState(null);
   const [showNewTaskCalendar, setShowNewTaskCalendar] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const location = useLocation();
+
+  // Deep links (?event=ID, ?overdue_cleanup=1) — desktop opens popups, mobile goes to pages
+  useEffect(() => {
+    const params = new URLSearchParams(location.search || "");
+    const ev = params.get("event");
+    if (ev) { navigate(`/event/${ev}/view`, { replace: true }); return; }
+    if (params.get("overdue_cleanup") === "1") {
+      setActiveTab(normalizeAssignee(getActorUser(), "manager"));
+      setOverdueExpanded(true);
+      navigate(location.pathname, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
 
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
   const todayFormatted = formatDateWithWeekday(today);
@@ -1613,17 +1635,17 @@ const Dashboard = () => {
         )}
       </div>
 
-      {activeTab !== 'events' && (
-        <button className="fab" onClick={handleNewTaskOpen} data-testid="mobile-fab">
-          <Plus className="w-6 h-6" />
-        </button>
-      )}
+      <button className="fab" onClick={activeTab === 'events' ? () => navigate('/event/new') : handleNewTaskOpen} aria-label={activeTab === 'events' ? 'нова подія' : 'нове завдання'} data-testid="mobile-fab">
+        <Plus className="w-6 h-6" />
+      </button>
 
       {/* Edit task dialog */}
       {showEditDialog && editingTask && (() => {
         const COLOR_MAP = {'manager':'#1A1717','red':'#FF8370','purple':'#9333EA','blue':'#3B82F6','orange':'#C4703D','emerald':'#059669','teal':'#14B8A6','smm':'#059669','pink':'#FF8370'};
         const selectedHex = COLOR_MAP[editingTask.color] || '#1A1717';
         const linkedEventTitle = editingTask.eventTitle || (editingTask.event_id ? events.find(e => e.id === editingTask.event_id)?.title : '');
+        const linkedEventId = editingTask._isStandalone === false ? editingTask._eventId : editingTask.event_id;
+        const hasLinkedEvent = !!linkedEventId && events.some(e => e.id === linkedEventId);
         const editDateChips = [
           { label: 'сьогодні', value: todayStr },
           { label: 'завтра', value: shiftDateLocal(todayStr, 1) },
@@ -1674,6 +1696,9 @@ const Dashboard = () => {
                 )}
                 <button className={`btn-dark h-11 text-sm ${editingTask._isStandalone ? '' : 'col-span-2'}`} onClick={handleSaveTask} data-testid="mobile-edit-save">зберегти</button>
               </div>
+              {hasLinkedEvent && (
+                <button type="button" className="w-full h-10 text-sm text-secondary lowercase" onClick={() => { setShowEditDialog(false); navigate(`/event/${linkedEventId}/view`); }} data-testid="mobile-edit-open-event">відкрити подію →</button>
+              )}
             </div>
           </DialogContent>
         </Dialog>
@@ -1732,6 +1757,8 @@ const Dashboard = () => {
         </Dialog>
         );
       })()}
+
+      <BottomNav />
     </div>
   );
 };
@@ -1987,6 +2014,9 @@ const EventsPage = () => {
   const navigate = useNavigate();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showArchive, setShowArchive] = useState(false);
+  const [searchParams] = useSearchParams();
+  const deepLinkEventId = searchParams.get("event");
+  useEffect(() => { if (deepLinkEventId) navigate(`/event/${deepLinkEventId}/view`, { replace: true }); }, [deepLinkEventId, navigate]);
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const allEvents = getVisibleEventsForMonth(events, currentMonth, today);
@@ -2317,7 +2347,7 @@ const EventDetailPage = () => {
       setEvent(r.data);
     } catch {
       toast.error("помилка");
-      navigate(-1);
+      goBackOr(navigate, '/events');
     } finally {
       setLoading(false);
     }
@@ -2340,7 +2370,7 @@ const EventDetailPage = () => {
   };
 
   const handleCancel = async () => {
-    await cancelEventAndArchive(event, { refreshEvents, onDone: () => navigate(-1) });
+    await cancelEventAndArchive(event, { refreshEvents, onDone: () => goBackOr(navigate, '/events') });
   };
 
   const handleRestore = async () => {
@@ -2351,7 +2381,7 @@ const EventDetailPage = () => {
   };
 
   const handleDelete = async () => {
-    await deleteEventPermanentlyFlow(event, { refreshEvents, onDeleted: () => navigate(-1), onCancelled: () => navigate(-1) });
+    await deleteEventPermanentlyFlow(event, { refreshEvents, onDeleted: () => goBackOr(navigate, '/events'), onCancelled: () => goBackOr(navigate, '/events') });
   };
 
   const handleSyncAltegio = async () => {
@@ -2385,7 +2415,7 @@ const EventDetailPage = () => {
 
   // ESC to go back
   useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape' && !anyOverlayOpen()) navigate(-1); };
+    const h = (e) => { if (e.key === 'Escape' && !anyOverlayOpen()) goBackOr(navigate, '/events'); };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
   }, [navigate]);
@@ -2463,7 +2493,7 @@ const EventDetailPage = () => {
             <button className="desktop-header-btn text-green-500" onClick={handleRestore} title="відновити"><RotateCcw className="w-4 h-4" /></button>
           )}
           <button className="desktop-header-btn text-[#FF8370]" onClick={() => setDeleteDialogOpen(true)} title="видалити назавжди"><Trash2 className="w-4 h-4" /></button>
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate(-1)} style={{marginRight: '-24px', paddingRight: '24px'}} data-testid="event-detail-close-area">
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => goBackOr(navigate, '/events')} style={{marginRight: '-24px', paddingRight: '24px'}} data-testid="event-detail-close-area">
             <div className="desktop-header-btn"><ChevronLeft className="w-5 h-5" /></div>
           </div>
         </div>
@@ -2709,7 +2739,7 @@ const EventForm = () => {
     return (
       <div className="animate-fade-in">
         <header className="page-header flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="rounded-full"><ChevronLeft className="w-5 h-5" /></Button>
+          <Button variant="ghost" size="icon" onClick={() => goBackOr(navigate, '/events')} className="rounded-full"><ChevronLeft className="w-5 h-5" /></Button>
           <h1 className="text-xl font-bold">редагувати</h1>
         </header>
 
