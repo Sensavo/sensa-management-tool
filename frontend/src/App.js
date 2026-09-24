@@ -502,7 +502,7 @@ const EarlyBirdTiers = ({ tiers, onChange, eventDate, regularPrice }) => {
   return (
     <div>
       {rows.map((r, i) => (
-        <div key={i} className={`grid gap-3 grid-cols-3 items-end ${i > 0 ? "mt-2" : ""}`}>
+        <div key={i} className={`grid gap-3 grid-cols-[1fr_1fr_auto] sm:grid-cols-3 items-end ${i > 0 ? "mt-2" : ""}`}>
           <div className="form-field">
             {i === 0 && <Label className="text-sm text-secondary flex items-center gap-1.5"><Bird className="w-3.5 h-3.5" /> рання пташка</Label>}
             <input type="text" inputMode="numeric" placeholder="0" value={r.price}
@@ -526,7 +526,7 @@ const EarlyBirdTiers = ({ tiers, onChange, eventDate, regularPrice }) => {
           </div>
           <div className="flex items-center h-12">
             <button type="button" onClick={() => remove(i)} title="прибрати"
-              className="w-9 h-9 flex items-center justify-center rounded-full text-secondary hover:text-red-500 hover:bg-black/5 transition-colors">
+              className="w-11 h-11 sm:w-9 sm:h-9 flex items-center justify-center rounded-full text-secondary hover:text-red-500 hover:bg-black/5 transition-colors">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -2581,6 +2581,22 @@ const EventDetailPage = () => {
   );
 };
 
+// Edit-form state → PUT payload (same shape for the loaded snapshot and the
+// submitted form, so the two can be diffed field by field).
+const buildEditPayload = (fd) => {
+  const tiers = (fd.price_tiers || []).filter(t => t.price !== "" && t.price != null && t.until).map(t => ({ price: parseFloat(t.price), until: t.until }));
+  return normalizeEventPayload({
+    title: fd.title,
+    date: fd.date,
+    price: parseFloat(fd.price),
+    price_tiers: tiers,
+    spots: fd.spots,
+    description: fd.description ?? "",
+    start_time: fd.start_time || "",
+    end_time: fd.end_time || "",
+  });
+};
+
 // Event Form with AI Parsing
 const EventForm = () => {
   const navigate = useNavigate();
@@ -2606,6 +2622,15 @@ const EventForm = () => {
   const [selectedDate, setSelectedDate] = useState(null);
   const [showPastEvents, setShowPastEvents] = useState(false);
   const [pastEvents, setPastEvents] = useState([]);
+  // Snapshot of the loaded event (as an edit payload) — PUT sends only changed fields.
+  const loadedPayloadRef = useRef(null);
+
+  // Phone width: native time pickers instead of the text + dropdown combo.
+  const [isNarrow, setIsNarrow] = useState(() => window.innerWidth < 640);
+  useEffect(() => { const h = () => setIsNarrow(window.innerWidth < 640); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
+
+  // Back to where the user came from; direct open (no history) → list of events.
+  const goBack = () => { if ((window.history.state?.idx ?? 0) > 0) navigate(-1); else navigate("/events"); };
 
   // Get recent prices from existing events (ordered by creation date, newest first)
   const recentPrices = useMemo(() => {
@@ -2635,7 +2660,7 @@ const EventForm = () => {
 
   // ESC to close
   useEffect(() => {
-    const handleKey = (e) => { if (e.key === 'Escape' && isNew && !anyOverlayOpen()) navigate("/"); };
+    const handleKey = (e) => { if (e.key === 'Escape' && isNew && !anyOverlayOpen()) goBack(); };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
   }, [isNew, navigate]);
@@ -2647,7 +2672,7 @@ const EventForm = () => {
 
   const loadEvent = async () => {
     try { const r = await axios.get(`${API}/events/${eventId}`); const e = r.data;
-      setFormData({
+      const loaded = {
         title: e.title,
         date: e.date.split("T")[0],
         price: ((e.base_price != null ? e.base_price : e.price) ?? "").toString(),
@@ -2656,7 +2681,9 @@ const EventForm = () => {
         start_time: e.start_time || "",
         end_time: e.end_time || "",
         price_tiers: (e.price_tiers || []).map(t => ({ price: t.price?.toString() ?? "", until: t.until || "" })),
-      });
+      };
+      loadedPayloadRef.current = buildEditPayload(loaded);
+      setFormData(loaded);
       setSelectedDate(new Date(e.date));
     } catch { toast.error("помилка"); navigate("/"); }
   };
@@ -2674,7 +2701,13 @@ const EventForm = () => {
         setClarificationMessage(data.clarification_message);
       }
 
-      setParsedEvents(data.events || []);
+      // Parse API returns no event_type/repeat_days — fill the same defaults the UI
+      // displays, so switching to «регулярна» sends the weekdays shown (not []).
+      setParsedEvents((data.events || []).map(ev => ({
+        ...ev,
+        event_type: ev.event_type || "new",
+        repeat_days: ev.repeat_days?.length ? ev.repeat_days : [0],
+      })));
       setShowParsedResults(true);
     } catch (e) {
       toast.error("не вдалося розпізнати. спробуй ще раз");
@@ -2699,7 +2732,7 @@ const EventForm = () => {
         start_time: event.start_time || "",
         end_time: event.end_time || "",
         event_type: event.event_type || "new",
-        repeat_days: isRegular ? (event.repeat_days || []) : [],
+        repeat_days: isRegular ? (event.repeat_days?.length ? event.repeat_days : [0]) : [],
       });
       const result = await api.createEvent(data);
       if (isRegular && result?.data?.series_count > 1) {
@@ -2715,10 +2748,10 @@ const EventForm = () => {
 
       // If no more events, go back
       if (parsedEvents.length <= 1) {
-        navigate("/");
+        goBack();
       }
-    } catch {
-      toast.error("помилка створення");
+    } catch (e) {
+      toast.error(getApiErrorMessage(e, "помилка створення"));
     }
   };
 
@@ -2737,16 +2770,18 @@ const EventForm = () => {
     }));
   };
 
-  // Manual submit (for editing)
+  // Manual submit (for editing). Sends only fields that differ from the loaded
+  // event: an unchanged `date` in the PUT would regenerate reminders/smm_tasks
+  // and drop manually moved task dates; event_type/repeat_days are never sent.
   const handleSubmit = async (e) => {
     e.preventDefault(); setLoading(true);
     try {
-      const tiers = (formData.price_tiers || []).filter(t => t.price !== "" && t.price != null && t.until).map(t => ({ price: parseFloat(t.price), until: t.until }));
-      const data = normalizeEventPayload({ ...formData, price: parseFloat(formData.price), price_tiers: tiers, event_type: formData.event_type || "new", repeat_days: formData.repeat_days || [] });
-      if (isNew) { const _r = await api.createEvent(data); toast.success("створено! 🎉"); emitAltegioWarning(_r?.data?.altegio_warning); }
-      else { const _r = await api.updateEvent(eventId, data); toast.success("збережено!"); emitAltegioWarning(_r?.data?.altegio_warning); }
-      await refreshEvents(); navigate("/");
-    } catch { toast.error("помилка"); } finally { setLoading(false); }
+      const current = buildEditPayload(formData);
+      const initial = loadedPayloadRef.current || {};
+      const data = Object.fromEntries(Object.entries(current).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(initial[k])));
+      if (Object.keys(data).length) { const _r = await api.updateEvent(eventId, data); toast.success("збережено!"); emitAltegioWarning(_r?.data?.altegio_warning); await refreshEvents(); }
+      goBack();
+    } catch (e) { toast.error(getApiErrorMessage(e, "помилка збереження")); } finally { setLoading(false); }
   };
 
   // For editing existing event - show manual form
@@ -2803,22 +2838,24 @@ const EventForm = () => {
   // New event with AI parsing
   return (
     <div className="fixed inset-0 z-50 bg-[#F6F5F1]">
-      <div className="desktop-dashboard flex flex-col">
+      <div className="desktop-dashboard flex flex-col" style={{ height: '100dvh' }}>
         <header className="desktop-header" style={{position: 'relative'}}>
           <div className="desktop-header-left">
             <span className="text-xl font-semibold">нова подія</span>
           </div>
-          <div className="desktop-header-right cursor-pointer" onClick={() => navigate("/")} data-testid="event-form-close" style={{marginRight: '-24px', paddingRight: '24px'}}>
-            <div className="desktop-header-btn relative">
+          <div className="desktop-header-right sm:mr-[-24px] sm:pr-6">
+            <button type="button" onClick={goBack} data-testid="event-form-close" aria-label="закрити" className="desktop-header-btn relative cursor-pointer min-w-11 min-h-11 sm:min-w-0 sm:min-h-0">
               <X className="w-5 h-5" />
-              <span className="absolute left-full top-1/2 -translate-y-1/2 ml-2 text-xs text-secondary flex items-center gap-1 whitespace-nowrap pointer-events-none font-normal">або <kbd className="px-1.5 py-0.5 bg-[rgba(243,238,226,0.1)] rounded text-[10px] font-mono border border-[rgba(243,238,226,0.16)]">ESC</kbd> щоб закрити</span>
+              <span className="hidden sm:flex absolute left-full top-1/2 -translate-y-1/2 ml-2 text-xs text-secondary items-center gap-1 whitespace-nowrap pointer-events-none font-normal">або <kbd className="px-1.5 py-0.5 bg-[rgba(243,238,226,0.1)] rounded text-[10px] font-mono border border-[rgba(243,238,226,0.16)]">ESC</kbd> щоб закрити</span>
+            </button>
+            <div className="hidden sm:contents" aria-hidden="true">
+              <div className="desktop-header-btn opacity-0 pointer-events-none"><FileText className="w-5 h-5" /></div>
+              <div className="btn-dark opacity-0 pointer-events-none"><Plus className="w-4 h-4" /><span>подія</span></div>
+              <div className="desktop-header-btn opacity-0 pointer-events-none"><Settings className="w-5 h-5" /></div>
             </div>
-            <div className="desktop-header-btn opacity-0 pointer-events-none"><FileText className="w-5 h-5" /></div>
-            <div className="btn-dark opacity-0 pointer-events-none"><Plus className="w-4 h-4" /><span>подія</span></div>
-            <div className="desktop-header-btn opacity-0 pointer-events-none"><Settings className="w-5 h-5" /></div>
           </div>
         </header>
-        <div className="flex-1 overflow-auto p-8">
+        <div className="flex-1 overflow-auto p-4 sm:p-8">
         {showParsedResults || !showAiInput ? (
           <div className="max-w-3xl mx-auto space-y-6">
             {clarificationMessage && (
@@ -2827,7 +2864,7 @@ const EventForm = () => {
               </div>
             )}
 
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 mb-4">
               <h2 className="text-xl font-bold">
                 {parsedEvents.length > 1 ? `розпізнано ${parsedEvents.length} подій` : "нова подія"}
               </h2>
@@ -2845,7 +2882,7 @@ const EventForm = () => {
               const hasTierIssue = earlyBirdTierIssues(event.price_tiers, event.price, event.date).some((x) => x.price || x.until);
 
               return (
-              <div key={index} className="p-6 rounded-2xl bg-black/5 space-y-4" data-testid={`parsed-event-${index}`}>
+              <div key={index} className="p-4 sm:p-6 rounded-2xl bg-black/5 space-y-4" data-testid={`parsed-event-${index}`}>
                 {hasTierIssue && (
                   <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm" data-testid={`tier-warning-${index}`}>
                     <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
@@ -2854,8 +2891,8 @@ const EventForm = () => {
                 )}
                 <div className="flex-1 space-y-4">
                   {/* Title + Type on same row */}
-                  <div className="flex gap-3 items-start">
-                    <div className="form-field flex-1">
+                  <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-start">
+                    <div className="form-field flex-1 min-w-0">
                       <div className="relative">
                         <Input
                           value={event.title}
@@ -2879,7 +2916,7 @@ const EventForm = () => {
                               e.preventDefault();
                               updateParsedEvent(index, "title", "");
                             }}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-black/10 transition-colors"
+                            className="absolute right-1 sm:right-3 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-auto sm:h-auto flex items-center justify-center p-1 rounded-full hover:bg-black/10 transition-colors"
                             aria-label="очистити назву"
                             data-testid={`clear-title-${index}`}
                           >
@@ -2925,19 +2962,33 @@ const EventForm = () => {
                         })()}
                       </div>
                     </div>
-                    <div className="form-field" style={{width: '170px', flexShrink: 0}}>
+                    <div className="form-field hidden sm:block" style={{width: '170px', flexShrink: 0}}>
                       <select
                         value={event.event_type || "new"}
                         onMouseDown={() => closeAllDropdowns(index, null)}
                         onFocus={() => closeAllDropdowns(index, null)}
                         onChange={(e) => updateParsedEvent(index, "event_type", e.target.value)}
-                        className="form-input w-full bg-[#E3DACC] font-medium cursor-pointer text-sm"
+                        className="form-input w-full bg-[#E3DACC] font-medium cursor-pointer text-base sm:text-sm"
                         style={{paddingRight: '36px', backgroundPosition: 'right 14px center'}}
                         data-testid={`event-type-select-${index}`}
                       >
                         <option value="new">подія</option>
                         <option value="regular">регулярна</option>
                       </select>
+                    </div>
+                    {/* Mobile: type as a segmented control under the full-width title */}
+                    <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-[#E3DACC] sm:hidden" role="radiogroup" aria-label="тип події">
+                      {[{ v: "new", l: "разова" }, { v: "regular", l: "регулярна" }].map(opt => {
+                        const active = (event.event_type || "new") === opt.v;
+                        return (
+                          <button key={opt.v} type="button" role="radio" aria-checked={active}
+                            onClick={() => { closeAllDropdowns(index, null); updateParsedEvent(index, "event_type", opt.v); }}
+                            className={`h-11 rounded-md text-base font-medium transition-colors ${active ? 'bg-[#1A1717] text-[#F6F5F1]' : 'text-[#1A1717]'}`}
+                            data-testid={`event-type-${opt.v}-${index}`}>
+                            {opt.l}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -2951,7 +3002,7 @@ const EventForm = () => {
                           return (
                             <button key={day.v}
                               type="button"
-                              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${selected ? 'bg-[#1A1717] text-[#F6F5F1]' : 'bg-[#F1EEE7] hover:bg-black/5'}`}
+                              className={`flex-1 min-h-11 sm:min-h-0 py-2 rounded-lg text-sm font-medium transition-colors ${selected ? 'bg-[#1A1717] text-[#F6F5F1]' : 'bg-[#F1EEE7] hover:bg-black/5'}`}
                               data-testid={`weekday-${day.v}`}
                               onClick={() => {
                                 const days = event.repeat_days || [0];
@@ -2967,8 +3018,8 @@ const EventForm = () => {
                   )}
 
                   {/* Date + Price + Spots row. For regular series, date = старт серії. */}
-                  <div className="grid gap-3 grid-cols-3">
-                    <div className="form-field" style={{ order: 2 }}>
+                  <div className="grid gap-3 grid-cols-2 sm:grid-cols-3">
+                    <div className="form-field col-span-2 sm:col-span-1 order-first sm:order-2">
                       <Label className="text-sm text-secondary">
                         {event.event_type === "regular" ? "початок серії" : "дата"}
                       </Label>
@@ -2996,7 +3047,7 @@ const EventForm = () => {
                         </PopoverContent>
                       </Popover>
                     </div>
-                      <div className="form-field relative" style={{ order: 1 }}>
+                      <div className="form-field relative sm:order-1">
                         <Label className="text-sm text-secondary">ціна (₴)</Label>
                         <div className="relative">
                           <input
@@ -3029,7 +3080,7 @@ const EventForm = () => {
                           )}
                         </div>
                       </div>
-                      <div className="form-field relative" style={{ order: 3 }}>
+                      <div className="form-field relative sm:order-3">
                         <Label className="text-sm text-secondary">місць</Label>
                         <div className="relative">
                           <button
@@ -3086,7 +3137,7 @@ const EventForm = () => {
                       <Label className="text-sm text-secondary">початок</Label>
                       <div className="relative">
                         <input
-                          type="text"
+                          type={isNarrow ? "time" : "text"}
                           value={event.start_time || "12:00"}
                           onChange={(e) => {
                             const val = e.target.value;
@@ -3099,7 +3150,7 @@ const EventForm = () => {
                               updateParsedEvent(index, "end_time", `${String(endH).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
                             }
                           }}
-                          onFocus={() => { closeAllDropdowns(index, '_showStartDropdown'); updateParsedEvent(index, "_showStartDropdown", true); }}
+                          onFocus={() => { closeAllDropdowns(index, '_showStartDropdown'); if (!isNarrow) updateParsedEvent(index, "_showStartDropdown", true); }}
                           onBlur={() => setTimeout(() => updateParsedEvent(index, "_showStartDropdown", false), 200)}
                           className="form-input w-full cursor-pointer"
                           placeholder="12:00"
@@ -3139,13 +3190,13 @@ const EventForm = () => {
                       <Label className="text-sm text-secondary">кінець</Label>
                       <div className="relative">
                         <input
-                          type="text"
+                          type={isNarrow ? "time" : "text"}
                           value={event.end_time || "14:30"}
                           onChange={(e) => {
                             updateParsedEvent(index, "end_time", e.target.value);
                             if (event._showEndDropdown) updateParsedEvent(index, "_showEndDropdown", false);
                           }}
-                          onFocus={() => { closeAllDropdowns(index, '_showEndDropdown'); updateParsedEvent(index, "_showEndDropdown", true); }}
+                          onFocus={() => { closeAllDropdowns(index, '_showEndDropdown'); if (!isNarrow) updateParsedEvent(index, "_showEndDropdown", true); }}
                           onBlur={() => setTimeout(() => updateParsedEvent(index, "_showEndDropdown", false), 200)}
                           className="form-input w-full cursor-pointer"
                           placeholder="14:30"
@@ -3188,11 +3239,11 @@ const EventForm = () => {
 
                   <div className="form-field">
                     <Label className="text-sm text-secondary">опис</Label>
-                    <Input
+                    <Textarea
                       value={event.description || ""}
                       onChange={(e) => updateParsedEvent(index, "description", e.target.value)}
-                      className="form-input"
-                      placeholder="опис (необов'язково)"
+                      className="form-input min-h-24 resize-none py-3"
+                      placeholder="опис (необовʼязково)"
                     />
                   </div>
                 </div>
@@ -3215,7 +3266,7 @@ const EventForm = () => {
             {parsedEvents.length === 0 && (
               <div className="text-center py-12">
                 <p className="text-secondary mb-4">всі події створено!</p>
-                <Button onClick={() => navigate("/")}>повернутися</Button>
+                <Button onClick={goBack}>повернутися</Button>
               </div>
             )}
 
