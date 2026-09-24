@@ -1017,7 +1017,7 @@ const BottomNav = () => {
       {navItems.map((item) => (
         <button key={item.path} className={`nav-item ${location.pathname === item.path ? "active" : ""}`} onClick={() => handleNavClick(item.path)}>
           <item.icon className="w-5 h-5" />
-          <span className="text-xs">{item.label}</span>
+          <span className="text-[11px] leading-tight">{item.label}</span>
         </button>
       ))}
     </nav>
@@ -1624,10 +1624,10 @@ const Dashboard = () => {
             </div>
             {upcomingEvents.length > 0 ? upcomingEvents.map(event => (
               <div key={event.id} className={`event-card-desktop cursor-pointer${getEventArchiveClass(event, today)}`} onClick={() => handleEventClick(event.id)} data-testid={`mobile-event-${event.id}`}>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-1 min-w-0 items-center gap-3">
                   <div className="date-badge-desktop"><span className="text-[9px] uppercase">{UK_MONTHS_SHORT[new Date(event.date).getMonth()]}</span><span className="text-base font-bold">{new Date(event.date).getDate()}</span></div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-semibold truncate">{event.title}</h3>
+                    <h3 className="text-sm font-semibold line-clamp-2">{event.title}</h3>
                     <p className="text-xs text-secondary">{event.start_time && `${event.start_time} • `}{event.price} ₴</p>
                   </div>
                   <EventArchiveIcon event={event} today={today} />
@@ -2523,7 +2523,7 @@ const EventDetailPage = () => {
 
   const taskOverrides = event.task_overrides || {};
   const mgmtDefMap = Object.fromEntries(mgmtDefs.map(d => [d.id, d]));
-  const managementTasks = (settings?.reminder_types || []).map(rt => {
+  const managementTasks = (mgmtDefs.length ? mgmtDefs : (settings?.reminder_types || [])).map(rt => {
     const date = event.reminders?.[rt.id];
     if (!date) return null;
     const ov = taskOverrides[rt.id] || {};
