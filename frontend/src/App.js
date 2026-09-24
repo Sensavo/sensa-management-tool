@@ -1334,11 +1334,11 @@ const OverlapResolverDialog = ({ task, open, onClose, onResolved }) => {
 };
 
 // Dashboard Page (Mobile)
-const Dashboard = () => {
+const Dashboard = ({ initialTab = 'events', footer = null }) => {
   const { events, settings, standaloneTasks, smmTasksDefinition, refreshEvents, refreshStandaloneTasks } = useApp();
   const { pushUndo } = useUndo();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('events');
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [overdueExpanded, setOverdueExpanded] = useState(false);
   const [soonExpanded, setSoonExpanded] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
@@ -1711,6 +1711,7 @@ const Dashboard = () => {
             <MobileTaskSection tasks={currentTasks.overdue} title="протерміновано" isOverdue isCollapsible expanded={overdueExpanded} setExpanded={setOverdueExpanded} onCleanupClick={() => setShowOverdueCleanup(true)} />
             <MobileTaskSection tasks={currentTasks.today} title="сьогодні" />
             <MobileTaskSection tasks={currentTasks.soon} title="незабаром" isCollapsible expanded={soonExpanded} setExpanded={setSoonExpanded} />
+            {activeTab === 'smm' && footer}
           </>
         )}
       </div>
@@ -2252,192 +2253,52 @@ const EventsPage = () => {
 };
 
 // SMM Page
+// /smm on mobile = the Dashboard with the SMM tab preselected (same list, edit dialog, undo, kind-routed toggles)
 const SMMPage = () => {
-  const { events, smmTasksDefinition, refreshEvents, standaloneTasks, refreshStandaloneTasks } = useApp();
+  const { events, smmTasksDefinition, refreshEvents } = useApp();
+  const { pushUndo } = useUndo();
   const navigate = useNavigate();
-  const [overdueExpanded, setOverdueExpanded] = useState(false);
-  const [soonExpanded, setSoonExpanded] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
-
-  const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
-  const todayStr = formatDateLocal(today);
-  const weekFromNow = new Date(today); weekFromNow.setDate(weekFromNow.getDate() + 7);
-  const weekFromNowStr = formatDateLocal(weekFromNow);
-
   const smmTasksMap = useMemo(() => { const map = {}; smmTasksDefinition.forEach(t => { map[t.id] = t; }); return map; }, [smmTasksDefinition]);
 
-  // Collect completed SMM tasks from events
+  // Completed SMM + marketing tasks, with per-event overrides (title/icon)
   const completedSMMTasks = useMemo(() => {
     const completed = [];
     events.forEach(event => {
-      Object.entries(event.completed_smm_tasks || {}).forEach(([taskId, isCompleted]) => {
-        if (isCompleted) {
-          const taskInfo = smmTasksMap[taskId];
-          if (taskInfo) {
-            completed.push({
-              event_id: event.id,
-              event_title: event.title,
-              task_id: taskId,
-              task_name: taskInfo.name,
-              icon: SMM_ICONS[taskId] || "instagram"
-            });
-          }
-        }
-      });
+      [[event.completed_smm_tasks, "smm"], [event.completed_marketing_tasks, "marketing"]].forEach(([completedDict, kind]) => Object.entries(completedDict || {}).forEach(([taskId, isCompleted]) => {
+        const taskInfo = smmTasksMap[taskId]; if (!isCompleted || !taskInfo) return;
+        const ov = (event.task_overrides || {})[taskId] || {};
+        completed.push({ event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov.title || taskInfo.name, icon: ov.icon || taskInfo.icon || SMM_ICONS[taskId] || "instagram", _kind: kind });
+      }));
     });
     return completed;
   }, [events, smmTasksMap]);
 
-  const getAllSMMTasks = useCallback(() => {
-    const overdueTasks = [], todayTasks = [], soonTasks = [];
-    events.forEach(event => {
-      if (event.cancelled) return;
-      const eventDate = new Date(event.date); eventDate.setHours(0, 0, 0, 0);
-      if (eventDate < today) return;
-
-      Object.entries(event.smm_tasks || {}).forEach(([taskId, taskDateStr]) => {
-        const taskInfo = smmTasksMap[taskId]; if (!taskInfo) return;
-        const taskDate = new Date(taskDateStr); taskDate.setHours(0, 0, 0, 0);
-        const ov1 = (event.task_overrides || {})[taskId] || {};
-        const taskColor = ov1.color || taskInfo.color || "standard";
-        const task = { event_id: event.id, event_title: event.title, task_id: taskId, task_name: ov1.title || taskInfo.name, task_date: taskDateStr, completed: !!(event.completed_smm_tasks || {})[taskId], color: taskColor, icon: ov1.icon || taskInfo.icon, assignee: ov1.assignee };
-
-        if (taskDateStr === todayStr) todayTasks.push(task);
-        else if (taskDate < today && !task.completed) overdueTasks.push(task);
-        else if (taskDate > today && taskDateStr <= weekFromNowStr) soonTasks.push(task);
-      });
-    });
-    soonTasks.sort((a, b) => new Date(a.task_date) - new Date(b.task_date));
-    overdueTasks.sort((a, b) => new Date(a.task_date) - new Date(b.task_date));
-    return { overdue: overdueTasks, today: todayTasks, soon: soonTasks };
-  }, [events, smmTasksMap, todayStr, weekFromNowStr, today]);
-
-  const allTasks = getAllSMMTasks();
-
-  // Split SMM tasks (smm) from other (marketer)
-  const tasksSMM = useMemo(() => ({
-    overdue: allTasks.overdue.filter(t => t.assignee === "smm" || t.color === "smm"),
-    today: allTasks.today.filter(t => t.assignee === "smm" || t.color === "smm"),
-    soon: allTasks.soon.filter(t => t.assignee === "smm" || t.color === "smm"),
-  }), [allTasks]);
-
-  const tasks = useMemo(() => ({
-    overdue: allTasks.overdue.filter(t => t.color !== "emerald"),
-    today: allTasks.today.filter(t => t.color !== "emerald"),
-    soon: allTasks.soon.filter(t => t.color !== "emerald"),
-  }), [allTasks]);
-  const handleToggleSMMTask = async (eventId, taskId, completed) => { try { await api.completeSMMTask({ event_id: eventId, task_id: taskId, completed }); refreshEvents(); } catch { toast.error("помилка"); } };
-  const handleEventClick = (eventId) => { navigate(`/event/${eventId}`); };
-
   const handleRestoreSMMTask = async (item) => {
+    const complete = item._kind === "marketing" ? api.completeMarketingTask : api.completeSMMTask;
     try {
-      await api.completeSMMTask({ event_id: item.event_id, task_id: item.task_id, completed: false });
+      await complete({ event_id: item.event_id, task_id: item.task_id, completed: false });
+      pushUndo({ label: "таск", toast: "таск повернуто", run: async () => { await complete({ event_id: item.event_id, task_id: item.task_id, completed: true }); refreshEvents(); } });
       refreshEvents();
-      toast.success("відновлено");
     } catch { toast.error("помилка"); }
   };
 
-  return (
-    <div className="animate-fade-in">
-      <header className="page-header">
-        <h1 className="logo">smm</h1>
-      </header>
-
-      <div className="page-content space-y-4 pt-4">
-        {/* SMM SMM Block (Emerald tasks) */}
-        <div className="pb-4">
-          <h2 className="text-sm font-semibold tracking-wide text-[#1A1717]/70 mb-3 px-1">SMM</h2>
-
-          {tasksSMM.overdue.length > 0 && (
-            <section className="mobile-section mb-3">
-              <button className="mobile-section-header overdue w-full text-left" onClick={() => setOverdueExpanded(!overdueExpanded)}>
-                <span>протерміновано</span>
-                <span className="mobile-section-count">({tasksSMM.overdue.length})</span>
-                <ChevronDown className={`w-5 h-5 ml-auto transition-transform ${overdueExpanded ? "rotate-180" : ""}`} style={{ color: "#FF8370" }} />
-              </button>
-              {overdueExpanded && <div className="animate-fade-in pt-4 space-y-3">{tasksSMM.overdue.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} showDate />)}</div>}
-            </section>
-          )}
-
-          <section className="mobile-section mb-3">
-            <div className="mobile-section-header">
-              <span>сьогодні</span>
-              <span className="mobile-section-count">({tasksSMM.today.length})</span>
-            </div>
-            {tasksSMM.today.length > 0 ? <div className="pt-4 space-y-3">{tasksSMM.today.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} />)}</div>
-              : <p className="text-secondary py-4 text-center text-sm">все зроблено! 🎉</p>}
-          </section>
-
-          {tasksSMM.soon.length > 0 && (
-            <section className="mobile-section">
-              <button className="mobile-section-header w-full text-left" onClick={() => setSoonExpanded(!soonExpanded)}>
-                <span>незабаром</span>
-                <span className="mobile-section-count">({tasksSMM.soon.length})</span>
-                <ChevronDown className={`w-5 h-5 ml-auto transition-transform text-secondary ${soonExpanded ? "rotate-180" : ""}`} />
-              </button>
-              {soonExpanded && <div className="animate-fade-in pt-4 space-y-3">{tasksSMM.soon.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} showDate />)}</div>}
-            </section>
-          )}
-        </div>
-
-        {/* Divider */}
-        <div className="border-t-2 border-gray-300 my-5"></div>
-
-        {/* SMM Block (Standard tasks) */}
-        <div className="pt-1">
-          <h2 className="text-sm font-semibold tracking-wide text-secondary mb-3 px-1">SMM</h2>
-
-          {tasks.overdue.length > 0 && (
-            <section className="mobile-section mb-3">
-              <button className="mobile-section-header overdue w-full text-left" onClick={() => setOverdueExpanded(!overdueExpanded)}>
-                <span>протерміновано</span>
-                <span className="mobile-section-count">({tasks.overdue.length})</span>
-                <ChevronDown className={`w-5 h-5 ml-auto transition-transform ${overdueExpanded ? "rotate-180" : ""}`} style={{ color: "#FF8370" }} />
-              </button>
-              {overdueExpanded && <div className="animate-fade-in pt-4 space-y-3">{tasks.overdue.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} showDate />)}</div>}
-            </section>
-          )}
-
-          <section className="mobile-section mb-3">
-            <div className="mobile-section-header">
-              <span>сьогодні</span>
-              <span className="mobile-section-count">({tasks.today.length})</span>
-            </div>
-            {tasks.today.length > 0 ? <div className="pt-4 space-y-3">{tasks.today.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} />)}</div>
-              : <p className="text-secondary py-4 text-center text-sm">все зроблено! 🎉</p>}
-          </section>
-
-          {tasks.soon.length > 0 && (
-            <section className="mobile-section">
-              <button className="mobile-section-header w-full text-left" onClick={() => setSoonExpanded(!soonExpanded)}>
-                <span>незабаром</span>
-                <span className="mobile-section-count">({tasks.soon.length})</span>
-                <ChevronDown className={`w-5 h-5 ml-auto transition-transform text-secondary ${soonExpanded ? "rotate-180" : ""}`} />
-              </button>
-              {soonExpanded && <div className="animate-fade-in pt-4 space-y-3">{tasks.soon.map(t => <SMMTaskItem key={`${t.event_id}-${t.task_id}`} task={t} onToggle={handleToggleSMMTask} onEventClick={handleEventClick} showDate />)}</div>}
-            </section>
-          )}
-        </div>
-
-        {allTasks.overdue.length === 0 && allTasks.today.length === 0 && allTasks.soon.length === 0 && <div className="text-center py-12"><p className="text-secondary text-sm">поки SMM завдань немає</p></div>}
-
-        <button className="archive-btn" onClick={() => setShowArchive(true)}><Archive className="w-4 h-4 inline mr-2" />архів smm</button>
-      </div>
-
-      <button className="fab" onClick={() => navigate('/smm/task/new')}><Plus className="w-6 h-6" /></button>
-
+  const archiveFooter = (
+    <>
+      <button className="archive-btn" onClick={() => navigate('/content')} data-testid="smm-content-btn"><FileText className="w-4 h-4 inline mr-2" />контент-план</button>
+      <button className="archive-btn" onClick={() => setShowArchive(true)} data-testid="smm-archive-btn"><Archive className="w-4 h-4 inline mr-2" />архів smm</button>
       <Dialog open={showArchive} onOpenChange={setShowArchive}>
-        <DialogContent className="dialog-content max-h-[80vh] overflow-y-auto"><DialogHeader><DialogTitle>архів smm</DialogTitle></DialogHeader>
-          {completedSMMTasks.length > 0 ? <div className="space-y-1">{completedSMMTasks.map((item, idx) => {
+        <DialogContent className="dialog-content max-w-[calc(100vw-24px)] sm:max-w-sm max-h-[80vh] overflow-y-auto"><DialogHeader><DialogTitle>архів smm</DialogTitle></DialogHeader>
+          {completedSMMTasks.length > 0 ? <div className="space-y-1">{completedSMMTasks.map((item) => {
             const IconComponent = getIconComponent(item.icon || "instagram");
             return (
-              <div key={idx} className="task-item">
+              <div key={`${item._kind}-${item.event_id}-${item.task_id}`} className="task-item">
                 <div className="task-icon"><IconComponent /></div>
                 <div className="flex-1 min-w-0">
                   <p className="text-base font-medium">{item.task_name}</p>
                   <p className="text-sm text-secondary">{item.event_title}</p>
                 </div>
-                <button className="restore-btn" onClick={() => handleRestoreSMMTask(item)} title="відновити">
+                <button className="restore-btn min-w-[44px] min-h-[44px] flex items-center justify-center" onClick={() => handleRestoreSMMTask(item)} title="відновити" aria-label="відновити">
                   <RotateCcw className="w-4 h-4" />
                 </button>
               </div>
@@ -2445,10 +2306,10 @@ const SMMPage = () => {
           })}</div> : <p className="text-center text-secondary py-8 text-sm">порожньо</p>}
         </DialogContent>
       </Dialog>
-
-      <BottomNav />
-    </div>
+    </>
   );
+
+  return <ResponsiveWrapper><Dashboard initialTab="smm" footer={archiveFooter} /></ResponsiveWrapper>;
 };
 
 // Event Detail Page (Mobile) - Full screen view of event details
@@ -4297,13 +4158,16 @@ const ContentPage = () => {
         // It's a user-created post — update via posts endpoint
         await axios.patch(`${API}/posts/${editingTask.post_id}`, { date: editingTask.date });
       } else {
-        // It's an event SMM task — update via smm_tasks override
-        const event = events.find(e => e.id === editingTask.event_id);
-        if (event) {
-          const updatedSmmTasks = { ...event.smm_tasks, [editingTask.task_id]: editingTask.date };
-          await axios.put(`${API}/events/${editingTask.event_id}`, { ...event, smm_tasks: updatedSmmTasks });
-          refreshEvents();
+        // Event SMM task — move only this task's date (same endpoint as desktop drag-and-drop);
+        // a full-event PUT would resend price/title and could clobber base_price or re-sync Altegio
+        if (editingTask.type === 'announcement') {
+          // Grouped card shows the earliest task date — shift the whole group by the same delta
+          const delta = Math.round((new Date(editingTask.date) - new Date(editingTask.tasks?.length ? editingTask.tasks.reduce((m, t) => (t.date < m ? t.date : m), editingTask.tasks[0].date) : editingTask.date)) / 86400000);
+          if (delta) await Promise.all((editingTask.tasks || []).map(t => api.updateEventTask(editingTask.event_id, t.task_id, { date: shiftDateLocal(t.date, delta) })));
+        } else {
+          await api.updateEventTask(editingTask.event_id, editingTask.task_id, { date: editingTask.date });
         }
+        refreshEvents();
       }
       toast.success('дату оновлено!');
       refreshPosts();
@@ -4337,7 +4201,7 @@ const ContentPage = () => {
   const todayFormatted = useMemo(() => formatDateWithWeekday(new Date()), []);
 
   return (
-    <div className="desktop-dashboard" data-testid="content-page">
+    <div className="desktop-dashboard content-page" data-testid="content-page">
       <header className="desktop-header">
         <div className="desktop-header-left gap-4">
           <span className="text-xl font-semibold">контент-план</span>
@@ -4698,10 +4562,10 @@ const ContentPage = () => {
                   <button className="flex-1 py-2.5 text-sm rounded-full border border-red-200 text-red-600" onClick={async () => { try { await axios.delete(`${API}/posts/${editingTask.post_id}`); toast.success('видалено!'); refreshPosts(); setShowTaskEditDialog(false); } catch { toast.error('помилка'); } }} data-testid="task-dialog-delete-btn"><Trash2 className="w-3.5 h-3.5 inline mr-1" />видалити</button>
                 )}
                 {editingTask.type === 'announcement' && (
-                  <button className="flex-1 py-2.5 text-sm rounded-full border border-red-200 text-red-600" onClick={async () => { try { const event = events.find(e => e.id === editingTask.event_id); if (event) { const updatedSmmTasks = { ...event.smm_tasks }; (editingTask.tasks || []).forEach(t => delete updatedSmmTasks[t.task_id]); await axios.put(`${API}/events/${editingTask.event_id}`, { ...event, smm_tasks: updatedSmmTasks }); refreshEvents(); } toast.success('видалено!'); setShowTaskEditDialog(false); } catch { toast.error('помилка'); } }} data-testid="task-dialog-delete-btn"><Trash2 className="w-3.5 h-3.5 inline mr-1" />видалити</button>
+                  <button className="flex-1 py-2.5 text-sm rounded-full border border-red-200 text-red-600" onClick={async () => { try { await Promise.all((editingTask.tasks || []).map(t => api.deleteEventTask(editingTask.event_id, t.task_id))); refreshEvents(); toast.success('видалено!'); setShowTaskEditDialog(false); } catch { toast.error('помилка'); } }} data-testid="task-dialog-delete-btn"><Trash2 className="w-3.5 h-3.5 inline mr-1" />видалити</button>
                 )}
                 {editingTask.type === 'story' && (
-                  <button className="flex-1 py-2.5 text-sm rounded-full border border-red-200 text-red-600" onClick={async () => { try { const event = events.find(e => e.id === editingTask.event_id); if (event) { const updatedSmmTasks = { ...event.smm_tasks }; delete updatedSmmTasks[editingTask.task_id]; await axios.put(`${API}/events/${editingTask.event_id}`, { ...event, smm_tasks: updatedSmmTasks }); refreshEvents(); } toast.success('видалено!'); setShowTaskEditDialog(false); } catch { toast.error('помилка'); } }} data-testid="task-dialog-delete-btn"><Trash2 className="w-3.5 h-3.5 inline mr-1" />видалити</button>
+                  <button className="flex-1 py-2.5 text-sm rounded-full border border-red-200 text-red-600" onClick={async () => { try { await api.deleteEventTask(editingTask.event_id, editingTask.task_id); refreshEvents(); toast.success('видалено!'); setShowTaskEditDialog(false); } catch { toast.error('помилка'); } }} data-testid="task-dialog-delete-btn"><Trash2 className="w-3.5 h-3.5 inline mr-1" />видалити</button>
                 )}
                 <button className="btn-dark flex-1" onClick={handleUpdateTaskDate}>зберегти</button>
               </div>
@@ -5035,6 +4899,12 @@ const SettingsPage = () => {
 
         {activeTab === "sync" && (
           <AltegioSyncSection />
+        )}
+
+        {activeTab === "sync" && (
+          <div className="section-card">
+            <AltegioHealthSection mobile />
+          </div>
         )}
 
         {activeTab === "sync" && (
@@ -7883,7 +7753,7 @@ const DesktopDashboard = () => {
 };
 
 // Settings Content for modals - with 4 columns layout
-const AltegioHealthSection = () => {
+const AltegioHealthSection = ({ mobile = false }) => {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -7905,27 +7775,27 @@ const AltegioHealthSection = () => {
   };
 
   return (
-    <div className="pt-2 border-t border-[#E8E5DC]">
-      <button className="btn-subtle w-full text-xs !h-7" onClick={() => { const next = !open; setOpen(next); if (next && !data) load(); }} disabled={loading}>
-        <Heart className="w-3.5 h-3.5" /><span>{loading ? "перевіряю..." : open ? "сховати здоровʼя сервісів" : "здоровʼя сервісів Altegio"}</span>
+    <div className={mobile ? "" : "pt-2 border-t border-[#E8E5DC]"}>
+      <button className={mobile ? "btn-subtle w-full !h-11" : "btn-subtle w-full text-xs !h-7"} onClick={() => { const next = !open; setOpen(next); if (next && !data) load(); }} disabled={loading}>
+        <Heart className={mobile ? "w-4 h-4" : "w-3.5 h-3.5"} /><span>{loading ? "перевіряю..." : open ? "сховати здоровʼя сервісів" : "здоровʼя сервісів Altegio"}</span>
       </button>
       {open && data && (
         <div className="mt-2 space-y-0.5">
           {data.services.map(s => (
-            <div key={s.id} className="reminder-item !py-1.5">
+            <div key={s.id} className={mobile ? "reminder-item !py-2.5" : "reminder-item !py-1.5"}>
               <div className="flex items-center gap-2 min-w-0">
                 <span className={s.ok ? "text-green-600" : "text-amber-600"}>{s.ok ? "✓" : "!"}</span>
                 <div className="min-w-0">
-                  <p className="font-medium text-xs truncate">{s.title}</p>
-                  {!s.ok && <p className="text-[10px] text-amber-700">{s.issues.map(i => ISSUE_LABELS[i] || i).join(" · ")}</p>}
+                  <p className={`font-medium ${mobile ? "text-sm" : "text-xs truncate"}`}>{s.title}</p>
+                  {!s.ok && <p className={mobile ? "text-xs text-amber-700" : "text-[10px] text-amber-700"}>{s.issues.map(i => ISSUE_LABELS[i] || i).join(" · ")}</p>}
                 </div>
               </div>
-              <span className="text-[10px] text-secondary whitespace-nowrap">{s.price > 0 ? `${s.price} ₴` : "free"}</span>
+              <span className={`${mobile ? "text-xs" : "text-[10px]"} text-secondary whitespace-nowrap`}>{s.price > 0 ? `${s.price} ₴` : "free"}</span>
             </div>
           ))}
           <div className="flex items-center justify-between pt-1">
-            <button className="text-[10px] text-secondary underline" onClick={load}>оновити</button>
-            <a href={data.altegio_services_url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-secondary underline inline-flex items-center gap-1">
+            <button className={mobile ? "text-sm text-secondary underline min-h-[44px]" : "text-[10px] text-secondary underline"} onClick={load}>оновити</button>
+            <a href={data.altegio_services_url} target="_blank" rel="noopener noreferrer" className={`${mobile ? "text-sm min-h-[44px]" : "text-[10px]"} text-secondary underline inline-flex items-center gap-1`}>
               <ExternalLink className="w-3 h-3" /> відкрити Altegio
             </a>
           </div>
