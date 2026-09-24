@@ -3453,6 +3453,10 @@ async def update_event(event_id: str, event_data: EventUpdate):
         raise HTTPException(status_code=404, detail="Event not found")
 
     update_dict = {k: v for k, v in event_data.model_dump().items() if v is not None}
+    # Regenerate reminders/smm_tasks only on a real date change — resending the
+    # same date must not wipe manually moved task dates.
+    if "date" in update_dict and str(update_dict["date"])[:10] == str(existing.get("date") or "")[:10]:
+        update_dict.pop("date")
     externally_synced_fields = {
         "title", "date", "price", "spots", "start_time", "end_time", "price_tiers"
     }
