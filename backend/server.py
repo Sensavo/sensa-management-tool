@@ -2913,7 +2913,45 @@ async def _resolve_altegio_service_id(title: str, explicit_service_id: Optional[
     if mapped:
         return mapped
 
-    return await _altegio_match_service_by_title(title)
+    matched = await _altegio_match_service_by_title(title)
+    if matched:
+        return matched
+
+    return await _altegio_service_id_from_history(title)
+
+
+async def _altegio_service_id_from_history(title: str) -> Optional[int]:
+    """Fall back to the service earlier Poriadok events of the same family were
+    bound to. A renamed/shortened title («УСВІДОМЛЕНІ ІГРИ» after «… PREMIUM»)
+    matches several Altegio services by substring and the title match refuses
+    to guess — but our own history is unambiguous. Exact-title history wins over
+    same-family (substring) history; either must point to ONE service."""
+    t_norm = _normalize_for_match(title)
+    if len(t_norm) < 5:
+        return None
+    past = await db.events.find(
+        {"altegio_service_id": {"$ne": None}},
+        {"_id": 0, "title": 1, "altegio_service_id": 1},
+    ).to_list(5000)
+    exact_ids, family_ids = set(), set()
+    for ev in past:
+        sid = ev.get("altegio_service_id")
+        e_norm = _normalize_for_match(ev.get("title", ""))
+        if not sid or len(e_norm) < 5:
+            continue
+        if e_norm == t_norm:
+            exact_ids.add(int(sid))
+        elif t_norm in e_norm or e_norm in t_norm:
+            family_ids.add(int(sid))
+    for ids, kind in ((exact_ids, "exact"), (family_ids, "family")):
+        if len(ids) == 1:
+            sid = next(iter(ids))
+            logging.info(f"Altegio service for '{title}' resolved from {kind} event history: {sid}")
+            return sid
+        if len(ids) > 1:
+            logging.warning(f"Altegio service history is ambiguous for '{title}' ({kind}): {sorted(ids)}")
+            return None
+    return None
 
 
 async def _ensure_no_duplicate_active_event(title: str, date_str: str, start_time: str = "") -> None:
