@@ -6613,6 +6613,10 @@ async def push_single_event_to_altegio(event_id: str):
         raise HTTPException(status_code=502, detail=result)
 
     altegio_id = str(result["activity_id"])
+    # Re-evaluate the warning: a stale «no_service» from creation must not
+    # outlive a successful push.
+    state = await _altegio_service_state(int(service_id))
+    warning = _build_altegio_warning(state, int(service_id), event.get("title") or "", price=event.get("price"))
     await db.events.update_one(
         {"id": event_id},
         {"$set": {
@@ -6622,10 +6626,12 @@ async def push_single_event_to_altegio(event_id: str):
             "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
             "altegio_last_error": None,
             "altegio_last_status_code": result.get("status_code"),
+            "altegio_warning": warning,
         }},
     )
 
     return {
+        "altegio_warning": warning,
         "event_id": event_id,
         "altegio_id": altegio_id,
         "service_id": int(service_id),
@@ -6722,6 +6728,8 @@ async def sync_single_event_from_altegio(event_id: str):
             if warn:
                 await db.events.update_one({"id": event_id}, {"$set": {"altegio_warning": warn}})
                 return {"event_id": event_id, "altegio_warning": warn, "message": "сервіс вимкнений в Altegio"}
+            if event.get("altegio_warning"):
+                await db.events.update_one({"id": event_id}, {"$set": {"altegio_warning": None}})
 
         altegio_id = event.get("altegio_id") or event.get("altegio_activity_id")
         event_date = (event.get("date") or "")[:10] or None
