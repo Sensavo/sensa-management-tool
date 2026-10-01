@@ -6546,6 +6546,8 @@ async def push_single_event_to_altegio(event_id: str):
     event = await db.events.find_one({"id": event_id}, {"_id": 0})
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
+    if event.get("cancelled") or event.get("archived"):
+        raise HTTPException(status_code=409, detail="подія скасована — в Altegio її не відправляємо")
 
     existing_altegio_id = event.get("altegio_id") or event.get("altegio_activity_id")
     if existing_altegio_id:
