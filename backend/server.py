@@ -2954,6 +2954,27 @@ async def _altegio_service_id_from_history(title: str) -> Optional[int]:
     return None
 
 
+async def _auto_create_altegio_service(title: str, price: Optional[float], spots: Optional[int]) -> Optional[int]:
+    """No service matched → create one named after the event (Poriadok is the
+    source of truth). Template = the service our most recent Altegio-linked
+    event uses. Returns the new service id or None (caller shows no_service)."""
+    if not title or not ALTEGIO_PARTNER_TOKEN:
+        return None
+    last = await db.events.find(
+        {"altegio_service_id": {"$ne": None}}, {"_id": 0, "altegio_service_id": 1}
+    ).sort("created_at", -1).limit(1).to_list(1)
+    template_id = int(last[0]["altegio_service_id"]) if last else None
+    if not template_id:
+        return None
+    result = await altegio_client.create_service_result(title, price or 0, spots or 10, template_id)
+    if not result.get("ok"):
+        logging.error(f"Altegio auto-create service failed for '{title}': {result.get('status_code')} {str(result.get('body'))[:300]}")
+        return None
+    _altegio_services_cache["fetched_at"] = 0.0
+    logging.info(f"Altegio service auto-created for '{title}': {result['service_id']} (template {template_id})")
+    return int(result["service_id"])
+
+
 async def _ensure_no_duplicate_active_event(title: str, date_str: str, start_time: str = "") -> None:
     title_norm = _normalize_for_match(title)
     date_part = (date_str or "")[:10]
@@ -3165,6 +3186,8 @@ async def _sync_event_to_external(event: Event) -> dict:
                 spots=event.spots,
                 price=event.price,
             )
+            if not service_id:
+                service_id = await _auto_create_altegio_service(event.title, event.price, event.spots)
             if service_id and int(service_id) != (event.altegio_service_id or 0):
                 # Persist match so subsequent updates reuse it without re-matching
                 await db.events.update_one({"id": event.id}, {"$set": {"altegio_service_id": int(service_id)}})
@@ -6222,6 +6245,41 @@ class AltegioClient:
             logging.error(f"Altegio service price update error: {response.status_code} - {response.text[:300]}")
             return {"ok": False, "status_code": response.status_code, "data": None, "body": response.text[:1000]}
     
+    async def create_service_result(self, title: str, price: float, capacity: int, template_service_id: int):
+        """Create a group service named after a Poriadok event.
+
+        Settings (category, duration, prepaid, tax…) are cloned from a template
+        service Poriadok already books through, so the new one behaves the same;
+        title, price, capacity and the live flags come from the event."""
+        services = await self.get_services()
+        template = next((item for item in services if str(item.get("id")) == str(int(template_service_id))), None)
+        if not template:
+            return {"ok": False, "status_code": 404, "service_id": None, "body": f"template service {template_service_id} not found"}
+        payload = {key: template.get(key) for key in ALTEGIO_SERVICE_PATCH_KEYS if key in template}
+        for key in ("staff", "salon_service_id", "api_service_id", "image_group", "date_from", "date_to"):
+            payload.pop(key, None)
+        target_price = int(round(float(price or 0)))
+        payload.update({
+            "title": title,
+            "booking_title": title,
+            "comment": "",
+            "price_min": target_price,
+            "price_max": target_price,
+            "is_multi": True,
+            "capacity": int(capacity or 10),
+            "active": 1,
+            "is_online": True,
+            "service_type": 1,
+        })
+        url = f"{self.base_url}/company/{self.company_id}/services"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, headers=self.get_v2_push_headers(), json=payload)
+            if response.status_code in (200, 201):
+                data = (response.json() or {}).get("data") or {}
+                return {"ok": bool(data.get("id")), "status_code": response.status_code, "service_id": data.get("id"), "body": data}
+            logging.error(f"Altegio service create error: {response.status_code} - {response.text[:300]}")
+            return {"ok": False, "status_code": response.status_code, "service_id": None, "body": response.text[:1000]}
+
     async def create_record(self, service_id: str, staff_id: str, client_name: str, 
                            client_phone: str, datetime_str: str, comment: str = ""):
         """Create a new booking/record in Altegio"""
@@ -6589,6 +6647,8 @@ async def push_single_event_to_altegio(event_id: str):
         price=event.get("price") or 0,
     )
 
+    if not service_id:
+        service_id = await _auto_create_altegio_service(event.get("title", ""), event.get("price"), event.get("spots"))
     if not service_id:
         raise HTTPException(status_code=400, detail="No matching Altegio service for event title")
 
