@@ -1,5 +1,6 @@
 import { useState, useEffect, createContext, useContext, useCallback, useMemo, useRef } from "react";
 import "@/App.css";
+import "@/mobile.css";
 import { BrowserRouter, Routes, Route, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { Toaster, toast } from "sonner";
@@ -9167,7 +9168,7 @@ const ResponsiveWrapper = ({ children, desktop }) => {
   useEffect(() => { const h = () => setIsDesktop(window.innerWidth >= 1024); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
 
   if (isDesktop) return desktop || <DesktopDashboard />;
-  return children;
+  return <div className="m-ui">{children}</div>;
 };
 
 // Toggle visual used inside the Altegio warning — an OFF pill with an arrow to
