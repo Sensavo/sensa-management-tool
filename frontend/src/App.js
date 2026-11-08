@@ -1164,6 +1164,7 @@ const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, 
 // Suggests less-busy nearby dates to move the announcement to.
 const OverlapResolverDialog = ({ task, open, onClose, onResolved }) => {
   const { events, standaloneTasks, smmTasksDefinition } = useApp();
+  const isMobile = useIsMobileLayout();
   const currentDate = task?.task_date || task?.reminder_date;
   const taskName = task?.task_name || task?.reminder_name || "";
   const eventTitle = task?.event_title || "";
@@ -1259,6 +1260,57 @@ const OverlapResolverDialog = ({ task, open, onClose, onResolved }) => {
   const loadPct = (load) => Math.min(100, Math.round((totalOf(load) / loadBaseline) * 100));
   // 0–33% calm green, 34–66% amber, 67%+ saturated red.
   const barColor = (pct) => pct >= 67 ? '#FF8370' : pct >= 34 ? '#C4703D' : '#3F8F4F';
+
+  if (isMobile) {
+    return (
+      <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+        <DialogContent hideClose className="m-sheet m-task-sheet sm:max-w-md">
+          <div className="m-sheet-head">
+            <DialogTitle className="m-sec">перенести анонс</DialogTitle>
+            <button type="button" className="m-ico" style={{ marginRight: -12 }} onClick={onClose} aria-label="закрити"><X strokeWidth={1.5} /></button>
+          </div>
+          <DialogDescription className="m-b m-overlap-name">«{taskName}»{eventTitle ? <span className="m-muted">—{eventTitle}</span> : null}</DialogDescription>
+          {currentLoad && (() => {
+            const pct = loadPct(currentLoad);
+            return (
+              <div className="m-field m-overlap-now">
+                <span>зараз</span>
+                <div className="m-overlap-line">
+                  <span className="m-b">{formatDateUkrainian(currentDate)}</span>
+                  <span className="m-c"><span className="m-red">{currentLoad.announcements} анонсів</span> · {pct}%</span>
+                </div>
+                <div className="m-progress"><span style={{ width: `${pct}%` }} /></div>
+              </div>
+            );
+          })()}
+          <div className="m-sec-head"><h3 className="m-sec">рекомендовані дні</h3></div>
+          <div className="m-list">
+            {suggestions.length === 0 && <div className="m-row m-c">немає вільних днів у найближчі 2 тижні</div>}
+            {suggestions.map(s => {
+              const free = s.load.announcements === 0;
+              const pct = loadPct(s.load);
+              return (
+                <button key={s.date} type="button" className="m-row" onClick={() => handleMove(s.date)}>
+                  <span className="m-overlap-day">
+                    <span className="m-n m-n-28">{s.dateObj.getDate()}</span>
+                    <span className="m-c">{dayShort(s.dateObj)}, {UK_MONTHS_SHORT[s.dateObj.getMonth()]}</span>
+                  </span>
+                  <span className="m-overlap-load">
+                    <span className="m-overlap-line">
+                      <span className={`m-c ${free ? '' : 'm-red'}`}>{free ? 'вільно' : `${s.load.announcements} анонсів`}</span>
+                      <span className="m-c">{pct}%</span>
+                    </span>
+                    <span className="m-progress"><span style={{ width: `${pct}%` }} /></span>
+                  </span>
+                  <ChevronRight className="m-task-chev" strokeWidth={1.6} />
+                </button>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -1712,7 +1764,7 @@ const Dashboard = ({ initialTab = 'events', footer = null }) => {
       {/* Overdue cleanup (full-screen) + day-off flow — same components as desktop */}
       <Dialog open={showOverdueCleanup} onOpenChange={setShowOverdueCleanup}>
         <DialogContent className="overdue-cleanup-dialog overdue-cleanup-mobile" onOpenAutoFocus={(e) => e.preventDefault()}>
-          <OverdueCleanupBoard tasksByTeam={tasksByTeam} assignee={activeTab === 'events' ? normalizeAssignee(getActorUser(), "manager") : activeTab} todayStr={todayStr} onOpenTask={handleTaskEdit} mobile />
+          <OverdueCleanupBoard tasksByTeam={tasksByTeam} assignee={activeTab === 'events' ? normalizeAssignee(getActorUser(), "manager") : activeTab} todayStr={todayStr} onOpenTask={handleTaskEdit} onClose={() => setShowOverdueCleanup(false)} mobile />
         </DialogContent>
       </Dialog>
       <DayOffDialog open={showDayOffDialog} onOpenChange={setShowDayOffDialog} mobile />
@@ -1721,154 +1773,33 @@ const Dashboard = ({ initialTab = 'events', footer = null }) => {
         <Plus className="w-6 h-6" />
       </button>
 
-      {/* Edit task dialog */}
+      {/* Edit task sheet */}
       {showEditDialog && editingTask && (() => {
-        const COLOR_MAP = {'manager':'#1A1717','red':'#FF8370','purple':'#9333EA','blue':'#3B82F6','orange':'#C4703D','emerald':'#059669','teal':'#14B8A6','smm':'#059669','pink':'#FF8370'};
-        const selectedHex = COLOR_MAP[editingTask.color] || '#1A1717';
         const linkedEventTitle = editingTask.eventTitle || (editingTask.event_id ? events.find(e => e.id === editingTask.event_id)?.title : '');
         const linkedEventId = editingTask._isStandalone === false ? editingTask._eventId : editingTask.event_id;
         const hasLinkedEvent = !!linkedEventId && events.some(e => e.id === linkedEventId);
-        const editDateChips = [
-          { label: 'сьогодні', value: todayStr },
-          { label: 'завтра', value: shiftDateLocal(todayStr, 1) },
-          { label: '+2д', value: shiftDateLocal(todayStr, 2) },
-          { label: '+3д', value: shiftDateLocal(todayStr, 3) },
-          { label: '+1 тиж', value: shiftDateLocal(todayStr, 7) },
+        const samePlacement = isSamePlacement(editingTask);
+        const positionChips = [
+          { value: 'top', label: 'на початок' },
+          { value: 'up', label: 'вище', disabled: !samePlacement },
+          { value: 'down', label: 'нижче', disabled: !samePlacement },
+          { value: 'bottom', label: 'в кінець' },
         ];
         return (
-        <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-          <DialogContent className="dialog-content mobile-task-dialog max-w-[calc(100vw-24px)] sm:max-w-sm !p-5" onOpenAutoFocus={(e) => e.preventDefault()}>
-            <DialogHeader className="pr-10">
-              <DialogTitle className="text-[20px] leading-tight">завдання</DialogTitle>
-              <DialogDescription className="flex items-center gap-1.5 text-xs lowercase">
-                <span className="relative inline-flex items-center">
-                  <select value={editingTask.assignee || 'manager'} onChange={(e) => setEditingTask({...editingTask, assignee: e.target.value})} className="appearance-none bg-transparent font-semibold outline-none cursor-pointer pr-4 uppercase tracking-wide">
-                    <option value="manager">Manager</option><option value="smm">SMM</option><option value="marketer">Marketer</option>
-                  </select>
-                  <ChevronDown className="w-3 h-3 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-secondary" />
-                </span>
-                {linkedEventTitle && <span className="truncate">· {linkedEventTitle}</span>}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 pt-3">
-              <Input placeholder="що треба зробити?" value={editingTask.title} onChange={(e) => setEditingTask({...editingTask, title: e.target.value})} className="form-input text-base h-12" data-testid="mobile-edit-input" />
-              <div className="grid grid-cols-5 gap-1.5">
-                {editDateChips.map(chip => (
-                  <button key={chip.value} type="button" className={`mobile-date-chip ${editingTask.date === chip.value ? 'selected' : ''}`} onClick={() => setEditingTask({...editingTask, date: chip.value})}>{chip.label}</button>
-                ))}
-              </div>
-              <button type="button" className="mobile-date-wide" onClick={() => setShowEditCalendar(!showEditCalendar)}><CalendarIcon className="w-4 h-4" />{formatDateUkrainian(editingTask.date)}</button>
-              {showEditCalendar && <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(editingTask.date)} onSelect={(d) => { if (d) { setEditingTask({...editingTask, date: formatDateLocal(d)}); } setShowEditCalendar(false); }} className="w-full" />}
-              {(() => {
-                const samePlacement = isSamePlacement(editingTask);
-                const positionChips = [
-                  { value: 'top', label: 'на початок' },
-                  { value: 'up', label: 'вище', disabled: !samePlacement },
-                  { value: 'down', label: 'нижче', disabled: !samePlacement },
-                  { value: 'bottom', label: 'в кінець' },
-                ];
-                return (
-                  <div className="space-y-1.5" data-testid="mobile-edit-position">
-                    <span className="block text-[11px] uppercase tracking-wide text-secondary font-semibold px-1">позиція в дні</span>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {positionChips.map(chip => (
-                        <button key={chip.value} type="button" disabled={chip.disabled} style={{ height: 44 }} className={`mobile-date-chip ${editingTask._position === chip.value ? 'selected' : ''} ${chip.disabled ? 'opacity-40' : ''}`} onClick={() => setEditingTask({...editingTask, _position: editingTask._position === chip.value ? null : chip.value})}>{chip.label}</button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
-              <div className="flex items-center justify-between gap-2 rounded-2xl bg-[#E8E5DC]/45 px-3 py-2">
-                <span className="text-[11px] uppercase tracking-wide text-secondary font-semibold">колір</span>
-                <div className="flex gap-2">
-                  {["manager", "red", "purple", "blue", "orange", "emerald", "teal"].map(c => (
-                    <button key={c} onClick={() => setEditingTask({...editingTask, color: c})} className={`color-circle-perfect ${editingTask.color === c ? 'ring-2 ring-offset-1 ring-current' : ''}`} style={{ background: COLOR_MAP[c] || '#1A1717' }} aria-label={c} />
-                  ))}
-                </div>
-              </div>
-              <div className="grid grid-cols-7 gap-2">
-                {TASK_ICONS.map(opt => { const IC = getIconComponent(opt.value); return (
-                  <button key={opt.value} className={`icon-selector-btn ${editingTask.icon === opt.value ? 'selected' : ''}`} style={{color: selectedHex}} onClick={() => setEditingTask({...editingTask, icon: opt.value})} aria-label={opt.value}><IC /></button>
-                ); })}
-              </div>
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <button className="h-11 text-sm rounded-full border border-red-200 text-red-600" onClick={handleDeleteTask} data-testid="mobile-edit-delete"><Trash2 className="w-4 h-4 inline mr-1" />видалити</button>
-                <button className="btn-dark h-11 text-sm" onClick={handleSaveTask} data-testid="mobile-edit-save">зберегти</button>
-              </div>
-              {hasLinkedEvent && (
-                <button type="button" className="w-full h-10 text-sm text-secondary lowercase" onClick={() => { setShowEditDialog(false); navigate(`/event/${linkedEventId}/view`); }} data-testid="mobile-edit-open-event">відкрити подію →</button>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
+          <MobileTaskSheet mode="edit" open={showEditDialog} onOpenChange={setShowEditDialog} task={editingTask} setTask={setEditingTask} todayStr={todayStr}
+            calendarOpen={showEditCalendar} setCalendarOpen={setShowEditCalendar} onSubmit={handleSaveTask} onDelete={handleDeleteTask}
+            positionChips={positionChips} linkedEventTitle={linkedEventTitle}
+            onOpenEvent={hasLinkedEvent ? () => { setShowEditDialog(false); navigate(`/event/${linkedEventId}/view`); } : null}
+            testPrefix="mobile-edit" />
         );
       })()}
 
-      {/* New task dialog */}
-      {showNewTask && newTaskData && (() => {
-        const COLOR_MAP = {'manager':'#1A1717','red':'#FF8370','purple':'#9333EA','blue':'#3B82F6','orange':'#C4703D','emerald':'#059669','teal':'#14B8A6','smm':'#059669','pink':'#FF8370'};
-        const selectedHex = COLOR_MAP[newTaskData.color] || '#1A1717';
-        const newDateChips = [
-          { label: 'сьогодні', value: todayStr },
-          { label: 'завтра', value: shiftDateLocal(todayStr, 1) },
-          { label: '+2д', value: shiftDateLocal(todayStr, 2) },
-          { label: '+3д', value: shiftDateLocal(todayStr, 3) },
-          { label: '+1 тиж', value: shiftDateLocal(todayStr, 7) },
-        ];
-        return (
-        <Dialog open={showNewTask} onOpenChange={setShowNewTask}>
-          <DialogContent className="dialog-content mobile-task-dialog max-w-[calc(100vw-24px)] sm:max-w-sm !p-5" onOpenAutoFocus={(e) => e.preventDefault()}>
-            <DialogHeader className="pr-10">
-              <DialogTitle className="text-[20px] leading-tight">нове завдання</DialogTitle>
-              <DialogDescription className="relative inline-flex items-center text-xs lowercase">
-                <select value={newTaskData.assignee} onChange={(e) => setNewTaskData({...newTaskData, assignee: e.target.value})} className="appearance-none bg-transparent font-semibold outline-none cursor-pointer pr-4 uppercase tracking-wide">
-                  <option value="manager">Manager</option><option value="smm">SMM</option><option value="marketer">Marketer</option>
-                </select>
-                <ChevronDown className="w-3 h-3 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none text-secondary" />
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 pt-3">
-              <Input autoFocus placeholder="що треба зробити?" value={newTaskData.title} onChange={(e) => setNewTaskData({...newTaskData, title: e.target.value})} onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleCreateTask(); }} className="form-input text-base h-12" data-testid="mobile-new-input" />
-              <div className="grid grid-cols-5 gap-1.5">
-                {newDateChips.map(chip => (
-                  <button key={chip.value} type="button" className={`mobile-date-chip ${newTaskData.date === chip.value ? 'selected' : ''}`} onClick={() => setNewTaskData({...newTaskData, date: chip.value})}>{chip.label}</button>
-                ))}
-              </div>
-              <button type="button" className="mobile-date-wide" onClick={() => setShowNewTaskCalendar(!showNewTaskCalendar)}><CalendarIcon className="w-4 h-4" />{formatDateUkrainian(newTaskData.date)}</button>
-              {showNewTaskCalendar && <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(newTaskData.date)} onSelect={(d) => { if (d) { setNewTaskData({...newTaskData, date: formatDateLocal(d)}); } setShowNewTaskCalendar(false); }} className="w-full" />}
-              <div className="relative">
-                <select value={newTaskData.event_id || ""} onChange={(e) => setNewTaskData({...newTaskData, event_id: e.target.value})} className="mobile-date-wide appearance-none outline-none px-10 truncate" style={{ fontSize: 16, textAlignLast: 'center' }} aria-label="подія" data-testid="mobile-new-event">
-                  <option value="">— без події</option>
-                  {[...events]
-                    .filter(e => !e.cancelled)
-                    .sort((a, b) => new Date(a.date) - new Date(b.date))
-                    .map(ev => {
-                      const d = new Date(ev.date);
-                      return <option key={ev.id} value={ev.id}>{`${d.getDate()} ${UK_MONTHS_NOMINATIVE[d.getMonth()]} — ${ev.title}`}</option>;
-                    })}
-                </select>
-                <ChevronDown className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-secondary" />
-              </div>
-              <div className="flex items-center justify-between gap-2 rounded-2xl bg-[#E8E5DC]/45 px-3 py-2">
-                <span className="text-[11px] uppercase tracking-wide text-secondary font-semibold">колір</span>
-                <div className="flex gap-2">
-                  {["manager", "red", "purple", "blue", "orange", "emerald", "teal"].map(c => (
-                    <button key={c} onClick={() => setNewTaskData({...newTaskData, color: c})} className={`color-circle-perfect ${newTaskData.color === c ? 'ring-2 ring-offset-1 ring-current' : ''}`} style={{ background: COLOR_MAP[c] || '#1A1717' }} aria-label={c} />
-                  ))}
-                </div>
-              </div>
-              <div className="grid grid-cols-7 gap-2">
-                {TASK_ICONS.map(opt => { const IC = getIconComponent(opt.value); return (
-                  <button key={opt.value} className={`icon-selector-btn ${newTaskData.icon === opt.value ? 'selected' : ''}`} style={{color: selectedHex}} onClick={() => setNewTaskData({...newTaskData, icon: opt.value})} aria-label={opt.value}><IC /></button>
-                ); })}
-              </div>
-              <TeamworkTaskFields task={newTaskData} setTask={setNewTaskData} />
-              <button className="btn-dark w-full h-11 text-sm" onClick={handleCreateTask} data-testid="mobile-new-save">створити</button>
-            </div>
-          </DialogContent>
-        </Dialog>
-        );
-      })()}
+      {/* New task sheet */}
+      {showNewTask && newTaskData && (
+        <MobileTaskSheet mode="new" open={showNewTask} onOpenChange={setShowNewTask} task={newTaskData} setTask={setNewTaskData} todayStr={todayStr} events={events}
+          calendarOpen={showNewTaskCalendar} setCalendarOpen={setShowNewTaskCalendar} onSubmit={handleCreateTask}
+          testPrefix="mobile-new" />
+      )}
 
       <OverlapResolverDialog
         task={overlapResolverTask}
@@ -5518,8 +5449,140 @@ const getCleanupQuickActions = (task, todayStr) => {
   ];
 };
 
+// Mobile task bottom sheet (new + edit) — used only by mobile Dashboard
+const M_TASK_COLOR_MAP = {'manager':'#1A1717','red':'#FF8370','purple':'#9333EA','blue':'#3B82F6','orange':'#C4703D','emerald':'#059669','teal':'#14B8A6','smm':'#059669','pink':'#FF8370'};
+const M_ASSIGNEE_CHIPS = [{ v: 'manager', l: 'менеджер' }, { v: 'smm', l: 'smm' }, { v: 'marketer', l: 'маркетинг' }];
+const MobileTaskSheet = ({ mode, open, onOpenChange, task, setTask, todayStr, events = [], calendarOpen, setCalendarOpen, onSubmit, onDelete, positionChips = null, linkedEventTitle = '', onOpenEvent = null, testPrefix }) => {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const isNew = mode === 'new';
+  const selectedHex = M_TASK_COLOR_MAP[task.color] || '#1A1717';
+  const dateChips = [
+    { label: 'сьогодні', value: todayStr },
+    { label: 'завтра', value: shiftDateLocal(todayStr, 1) },
+    { label: '+3 дні', value: shiftDateLocal(todayStr, 3) },
+    { label: 'тиждень', value: shiftDateLocal(todayStr, 7) },
+  ];
+  const isCustomDate = !dateChips.some(c => c.value === task.date);
+  const sortedEvents = isNew ? [...events].filter(e => !e.cancelled).sort((a, b) => new Date(a.date) - new Date(b.date)) : [];
+  const selectedEvent = isNew && task.event_id ? events.find(e => e.id === task.event_id) : null;
+  const eventLabel = isNew
+    ? (selectedEvent ? `${selectedEvent.title}, ${formatDateUkrainian(selectedEvent.date)}` : 'без події')
+    : (linkedEventTitle || 'без події');
+  const moreHint = isNew ? 'колір, іконка, teamwork' : 'колір, іконка, позиція';
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent hideClose className="m-sheet m-task-sheet sm:max-w-md" onOpenAutoFocus={(e) => e.preventDefault()}>
+        <div className="m-sheet-head">
+          <DialogTitle className="m-sec">{isNew ? 'нове завдання' : 'завдання'}</DialogTitle>
+          <button type="button" className="m-ico" style={{ marginRight: -12 }} onClick={() => onOpenChange(false)} aria-label="закрити"><X strokeWidth={1.5} /></button>
+        </div>
+        <DialogDescription className="sr-only">{isNew ? 'створення завдання' : 'редагування завдання'}</DialogDescription>
+        <textarea
+          className="m-task-title"
+          rows={2}
+          autoFocus={isNew}
+          aria-label="що треба зробити"
+          placeholder="що треба зробити?"
+          value={task.title}
+          onChange={(e) => setTask({ ...task, title: e.target.value.replace(/\n/g, ' ') })}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            if (e.ctrlKey || e.metaKey) onSubmit(); else e.currentTarget.blur();
+          }}
+          data-testid={`${testPrefix}-input`}
+        />
+
+        <div className="m-c m-task-label">коли</div>
+        <div className="m-chips">
+          {dateChips.map(chip => (
+            <button key={chip.label} type="button" className="m-ghost" aria-pressed={task.date === chip.value} onClick={() => { setTask({ ...task, date: chip.value }); setCalendarOpen(false); }}>{chip.label}</button>
+          ))}
+          <button type="button" className={`m-ghost ${isCustomDate ? '' : 'm-ghost--icon'}`} aria-pressed={isCustomDate} aria-label="інша дата" aria-expanded={calendarOpen} onClick={() => setCalendarOpen(!calendarOpen)}>
+            <CalendarIcon className="w-[18px] h-[18px]" strokeWidth={1.5} />
+            {isCustomDate && formatDateUkrainian(task.date)}
+          </button>
+        </div>
+        {calendarOpen && <Calendar mode="single" locale={uk} weekStartsOn={1} selected={new Date(task.date)} onSelect={(d) => { if (d) { setTask({ ...task, date: formatDateLocal(d) }); } setCalendarOpen(false); }} className="m-task-calendar" />}
+
+        <div className="m-c m-task-label">кому</div>
+        <div className="m-chips" role="radiogroup" aria-label="кому">
+          {M_ASSIGNEE_CHIPS.map(opt => (
+            <button key={opt.v} type="button" role="radio" className="m-ghost" aria-checked={normalizeAssignee(task.assignee, 'manager') === opt.v} onClick={() => setTask({ ...task, assignee: opt.v })}>{opt.l}</button>
+          ))}
+        </div>
+
+        <div className="m-list m-task-more">
+          {isNew ? (
+            <label className="m-row m-task-row">
+              <span className="m-b m-task-row-label">подія</span>
+              <span className="m-c m-task-row-value m-ellipsis">{eventLabel}</span>
+              <ChevronRight className="m-task-chev" strokeWidth={1.6} />
+              <select className="m-task-row-select" value={task.event_id || ''} onChange={(e) => setTask({ ...task, event_id: e.target.value })} aria-label="подія" data-testid={`${testPrefix}-event`}>
+                <option value="">без події</option>
+                {sortedEvents.map(ev => {
+                  const d = new Date(ev.date);
+                  return <option key={ev.id} value={ev.id}>{`${d.getDate()} ${UK_MONTHS_NOMINATIVE[d.getMonth()]}—${ev.title}`}</option>;
+                })}
+              </select>
+            </label>
+          ) : onOpenEvent ? (
+            <button type="button" className="m-row m-task-row" onClick={onOpenEvent} data-testid={`${testPrefix}-open-event`}>
+              <span className="m-b m-task-row-label">подія</span>
+              <span className="m-c m-task-row-value m-ellipsis">{eventLabel}</span>
+              <ChevronRight className="m-task-chev" strokeWidth={1.6} />
+            </button>
+          ) : (
+            <div className="m-row m-task-row">
+              <span className="m-b m-task-row-label">подія</span>
+              <span className="m-c m-task-row-value m-ellipsis">{eventLabel}</span>
+            </div>
+          )}
+          <button type="button" className="m-row m-task-row" aria-expanded={moreOpen} onClick={() => setMoreOpen(!moreOpen)}>
+            <span className="m-b m-task-row-label">ще налаштування</span>
+            <span className="m-c m-task-row-value m-ellipsis">{moreHint}</span>
+            <ChevronDown className="m-task-chev" strokeWidth={1.6} style={{ transform: moreOpen ? 'rotate(180deg)' : 'none' }} />
+          </button>
+          {moreOpen && (
+            <div className="m-task-settings">
+              <div className="m-c m-task-label">колір</div>
+              <div className="m-task-swatches">
+                {["manager", "red", "purple", "blue", "orange", "emerald", "teal"].map(c => (
+                  <button key={c} type="button" className="m-task-swatch" aria-pressed={task.color === c} onClick={() => setTask({ ...task, color: c })} aria-label={c}><span style={{ background: M_TASK_COLOR_MAP[c] }} /></button>
+                ))}
+              </div>
+              <div className="m-c m-task-label">іконка</div>
+              <div className="m-task-icons">
+                {TASK_ICONS.map(opt => { const IC = getIconComponent(opt.value); return (
+                  <button key={opt.value} type="button" className="m-task-icon" aria-pressed={task.icon === opt.value} style={{ color: selectedHex }} onClick={() => setTask({ ...task, icon: opt.value })} aria-label={opt.value}><IC /></button>
+                ); })}
+              </div>
+              {positionChips && (
+                <div data-testid={`${testPrefix}-position`}>
+                  <div className="m-c m-task-label">позиція в дні</div>
+                  <div className="m-grid-2 m-task-grid">
+                    {positionChips.map(chip => (
+                      <button key={chip.value} type="button" className="m-ghost" disabled={chip.disabled} aria-pressed={task._position === chip.value} style={chip.disabled ? { opacity: 0.4 } : undefined} onClick={() => setTask({ ...task, _position: task._position === chip.value ? null : chip.value })}>{chip.label}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {isNew && <div className="m-task-teamwork"><TeamworkTaskFields task={task} setTask={setTask} /></div>}
+              {onDelete && (
+                <button type="button" className="m-btn m-btn--danger m-task-delete" onClick={onDelete} data-testid={`${testPrefix}-delete`}><Trash2 className="w-[18px] h-[18px]" strokeWidth={1.5} />видалити задачу</button>
+              )}
+            </div>
+          )}
+        </div>
+
+        <button type="button" className="m-btn m-task-submit" onClick={onSubmit} disabled={!task.title?.trim()} data-testid={`${testPrefix}-save`}>{isNew ? 'створити' : 'зберегти'}</button>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 // Overdue cleanup board («навести порядок в тасках») — shared by desktop dialog and mobile full-screen view
-const OverdueCleanupBoard = ({ tasksByTeam, assignee, todayStr, onOpenTask, mobile = false }) => {
+const OverdueCleanupBoard = ({ tasksByTeam, assignee, todayStr, onOpenTask, mobile = false, onClose }) => {
   const { standaloneTasks, refreshEvents, refreshStandaloneTasks } = useApp();
   const { pushUndo } = useUndo();
   const [cleanupDragTask, setCleanupDragTask] = useState(null);
@@ -5619,6 +5682,141 @@ const OverdueCleanupBoard = ({ tasksByTeam, assignee, todayStr, onOpenTask, mobi
     await handleCleanupReschedule(task, column.date);
   };
 
+  // ---- Mobile: list of overdue tasks («протерміновані») ----
+  const [mHiddenKeys, setMHiddenKeys] = useState([]);
+  useEffect(() => { setMHiddenKeys([]); }, [tasksByTeam]);
+  const mSwipeRef = useRef(null);
+  const [mSwipe, setMSwipe] = useState({ key: null, dx: 0 });
+
+  if (mobile) {
+    const deleteOneSilently = async (task) => {
+      if (task.is_standalone) {
+        const full = standaloneTasks.find(t => t.id === task.event_id);
+        if (!full) return null;
+        await api.deleteStandaloneTask(full.id);
+        return async () => { await api.createStandaloneTask(getStandaloneTaskPayload(full)); };
+      }
+      const taskId = task.task_id || task.reminder_id;
+      if (!task.event_id || !taskId || taskId === "standalone") return null;
+      await api.deleteEventTask(task.event_id, taskId);
+      return async () => { await api.updateEventTask(task.event_id, taskId, { color: task.color, icon: task.icon, title: task.task_name, assignee: task.assignee, date: getTaskDate(task), order: getTaskOrder(task), deleted: false }); };
+    };
+    const deleteMany = async (items) => {
+      const keys = items.map(getTaskDragKey);
+      setMHiddenKeys(prev => [...prev, ...keys]);
+      try {
+        const undos = (await Promise.all(items.map(deleteOneSilently))).filter(Boolean);
+        if (undos.length) pushUndo({ label: "видалення таска", run: async () => { await Promise.all(undos.map(u => u())); refreshStandaloneTasks(); refreshEvents(); } });
+        toast.success(items.length > 1 ? `видалено ${items.length}` : "видалено");
+        refreshStandaloneTasks();
+        refreshEvents();
+      } catch {
+        setMHiddenKeys(prev => prev.filter(k => !keys.includes(k)));
+        toast.error("не вдалось видалити");
+      }
+    };
+    const rescheduleMany = async (items, date) => {
+      if (!items.length) return;
+      const before = items.map(task => ({ task, date: getTaskDate(task), order: getTaskOrder(task) }));
+      try {
+        await Promise.all(before.map(({ task, order }) => persistTaskPlacementWith(standaloneTasks, task, task.assignee || "manager", date, order || 1000)));
+        pushUndo({ label: "перенесення таска", run: async () => { await Promise.all(before.map(b => persistTaskPlacementWith(standaloneTasks, b.task, b.task.assignee || "manager", b.date, b.order))); refreshStandaloneTasks(); refreshEvents(); } });
+        toast.success(items.length > 1 ? `перенесено ${items.length}` : "перенесено");
+        refreshStandaloneTasks();
+        refreshEvents();
+      } catch {
+        toast.error("не вдалось перенести");
+      }
+    };
+
+    const tomorrowStr = shiftDateLocal(todayStr, 1);
+    const groupRows = (items) => {
+      const map = new Map();
+      items.filter(t => !mHiddenKeys.includes(getTaskDragKey(t))).forEach(task => {
+        const k = (task.task_name || "").trim().toLowerCase();
+        if (!map.has(k)) map.set(k, []);
+        map.get(k).push(task);
+      });
+      return [...map.values()].map(tasks => {
+        const titles = [...new Set(tasks.map(t => t.event_title).filter(Boolean))];
+        const dates = [...new Set(tasks.map(getTaskDate))].sort();
+        let meta;
+        if (titles.length > 2) meta = `${titles.slice(0, 2).join(", ")} і ще ${titles.length - 2}`;
+        else if (titles.length) meta = titles.join(", ");
+        else meta = dates.map(formatDateUkrainian).join(", ");
+        return { key: tasks.map(getTaskDragKey).join("|"), tasks, meta };
+      });
+    };
+    const overdueCols = cleanupColumns.filter(c => c.id === "backlog" || c.id === "yesterday");
+    const groups = overdueCols
+      .map(col => ({ id: col.id, label: col.id === "backlog" ? "раніше" : "вчора", rows: groupRows(col.items) }))
+      .filter(g => g.rows.length);
+    const allOverdue = groups.flatMap(g => g.rows.flatMap(r => r.tasks));
+    const oldest = allOverdue.map(getTaskDate).sort()[0];
+    const n = allOverdue.length;
+    const word = n % 10 === 1 && n % 100 !== 11 ? "задача" : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "задачі" : "задач";
+    const roleGen = { manager: "менеджера", smm: "smm", marketer: "маркетингу" }[normalizeAssignee(assignee)] || "";
+
+    const onTouchStart = (key) => (e) => { const t = e.touches[0]; mSwipeRef.current = { key, x: t.clientX, y: t.clientY, locked: null }; };
+    const onTouchMove = (e) => {
+      const s = mSwipeRef.current; if (!s) return;
+      const t = e.touches[0]; const dx = t.clientX - s.x; const dy = t.clientY - s.y;
+      if (s.locked === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) s.locked = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      if (s.locked === "x") setMSwipe({ key: s.key, dx: Math.min(0, dx) });
+    };
+    const onTouchEnd = (row) => () => {
+      const s = mSwipeRef.current; mSwipeRef.current = null;
+      if (s?.locked === "x" && mSwipe.key === row.key && mSwipe.dx < -96) deleteMany(row.tasks);
+      setMSwipe({ key: null, dx: 0 });
+    };
+
+    return (
+      <div className="m-cleanup">
+        <div className="m-topbar m-cleanup-top">
+          <button type="button" className="m-ico" onClick={onClose} aria-label="назад"><ChevronLeft strokeWidth={1.5} /></button>
+        </div>
+        <DialogTitle className="m-d m-cleanup-title">протерміновані</DialogTitle>
+        <DialogDescription className="m-c m-cleanup-sub">
+          {n ? `${n} ${word} ${roleGen}, найстаріша з ${formatDateUkrainian(oldest)}` : `протермінованих задач ${roleGen} немає`}
+        </DialogDescription>
+        {n > 0 && (
+          <div className="m-grid-2 m-cleanup-bulk">
+            <button type="button" className="m-ghost" onClick={() => rescheduleMany(allOverdue, todayStr)}>усі на сьогодні</button>
+            <button type="button" className="m-ghost" onClick={() => rescheduleMany(allOverdue, tomorrowStr)}>усі на завтра</button>
+          </div>
+        )}
+        {groups.map(group => (
+          <section key={group.id}>
+            <div className="m-sec-head">
+              <h2 className="m-sec">{group.label}</h2>
+              <span className="m-c">{group.rows.reduce((s, r) => s + r.tasks.length, 0)}</span>
+            </div>
+            <div className="m-list">
+              {group.rows.map(row => {
+                const first = row.tasks[0];
+                const dx = mSwipe.key === row.key ? mSwipe.dx : 0;
+                return (
+                  <div key={row.key} className="m-cleanup-swipe" onTouchStart={onTouchStart(row.key)} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd(row)} onTouchCancel={() => { mSwipeRef.current = null; setMSwipe({ key: null, dx: 0 }); }}>
+                    <span className="m-cleanup-swipe-bg" aria-hidden="true" style={{ opacity: dx < -24 ? 1 : 0 }}>видалити</span>
+                    <div className="m-row m-cleanup-row" style={{ transform: dx ? `translateX(${dx}px)` : undefined, transition: dx ? 'none' : 'transform .2s' }}>
+                      <button type="button" className="m-cleanup-main" onClick={() => onOpenTask(first)}>
+                        <div className="m-b">{first.task_name}{row.tasks.length > 1 && <span className="m-muted"> ×{row.tasks.length}</span>}</div>
+                        <div className="m-c m-ellipsis">{row.meta}</div>
+                      </button>
+                      <button type="button" className="m-txt" onClick={() => rescheduleMany(row.tasks, todayStr)}>сьогодні</button>
+                      <button type="button" className="m-txt" style={{ marginRight: -8 }} onClick={() => rescheduleMany(row.tasks, tomorrowStr)}>завтра</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ))}
+        {n > 0 && <div className="m-c m-cleanup-hint">свайп вліво видаляє задачу, її можна повернути</div>}
+      </div>
+    );
+  }
+
   return (
     <div className="overdue-cleanup-page">
       <div className="overdue-cleanup-header">
@@ -5692,7 +5890,139 @@ const DayOffDialog = ({ open, onOpenChange, mobile = false }) => {
   const [dayOffPlan, setDayOffPlan] = useState(null); // {day_off, auto_shifts, needs_review}
   const [reviewChoices, setReviewChoices] = useState({}); // task_id -> chosen new_date or null=skip
   const [dayOffSubmitting, setDayOffSubmitting] = useState(false);
+  const [dayOffAutoOpen, setDayOffAutoOpen] = useState(false);
   const chipSize = mobile ? "text-sm px-3.5 min-h-[44px]" : "text-xs px-2.5 py-1";
+  const computeDayOffPlan = async () => {
+    setDayOffSubmitting(true);
+    try {
+      const r = await api.createDayOff(dayOffForm);
+      setDayOffPlan(r.data);
+      // Pre-fill review choices with first suggested date for each chain item
+      const choices = {};
+      (r.data.needs_review || []).forEach(item => {
+        choices[`${item.event_id}::${item.task_id}`] = item.suggested_dates?.[0] || null;
+      });
+      setReviewChoices(choices);
+    } catch { toast.error("помилка створення вихідного"); }
+    finally { setDayOffSubmitting(false); }
+  };
+  const applyDayOffPlan = async () => {
+    setDayOffSubmitting(true);
+    try {
+      const shifts = [
+        ...((dayOffPlan.auto_shifts || []).map(s => ({event_id: s.event_id, task_id: s.task_id, new_date: s.new_date, column: s.column}))),
+        ...((dayOffPlan.needs_review || [])
+          .filter(item => item.kind !== "fixed")
+          .map(item => {
+            const key = `${item.event_id}::${item.task_id}`;
+            const chosen = reviewChoices[key];
+            if (!chosen) return null;
+            return {event_id: item.event_id, task_id: item.task_id, new_date: chosen, column: item.column};
+          }).filter(Boolean)),
+      ];
+      const r = await api.applyDayOffShifts(dayOffPlan.day_off.id, {shifts});
+      toast.success(`перенесено ${r.data.count} задач`);
+      onOpenChange(false);
+      setDayOffPlan(null);
+      setReviewChoices({});
+      refreshEvents();
+    } catch { toast.error("помилка"); }
+    finally { setDayOffSubmitting(false); }
+  };
+  const handleDayOffOpenChange = (o) => { onOpenChange(o); if (!o) { setDayOffPlan(null); setReviewChoices({}); setDayOffAutoOpen(false); } };
+
+  if (mobile) {
+    const roleLabel = { manager: "менеджер", smm: "smm", marketer: "маркетинг" };
+    const autoShifts = dayOffPlan?.auto_shifts || [];
+    const needsReview = dayOffPlan?.needs_review || [];
+    return (
+      <Dialog open={open} onOpenChange={handleDayOffOpenChange}>
+        <DialogContent hideClose className="m-sheet m-task-sheet sm:max-w-md" onOpenAutoFocus={(e) => e.preventDefault()}>
+          <div className="m-sheet-head">
+            <DialogTitle className="m-sec">{dayOffPlan ? "перерозподіл задач" : "додати вихідний"}</DialogTitle>
+            <button type="button" className="m-ico" style={{ marginRight: -12 }} onClick={() => handleDayOffOpenChange(false)} aria-label="закрити"><X strokeWidth={1.5} /></button>
+          </div>
+          {!dayOffPlan ? (
+            <>
+              <DialogDescription className="m-c">система запропонує перерозподіл задач цього дня</DialogDescription>
+              <div className="m-c m-task-label">хто</div>
+              <div className="m-chips" role="radiogroup" aria-label="хто">
+                {Object.entries(roleLabel).map(([v, l]) => (
+                  <button key={v} type="button" role="radio" className="m-ghost" aria-checked={dayOffForm.assignee === v} onClick={() => setDayOffForm({...dayOffForm, assignee: v})}>{l}</button>
+                ))}
+              </div>
+              <label className="m-field m-dayoff-date">
+                <span>коли</span>
+                <input type="date" value={dayOffForm.date} onChange={(e) => { if (e.target.value) setDayOffForm({...dayOffForm, date: e.target.value}); }} />
+              </label>
+              <button type="button" className="m-btn m-task-submit" onClick={computeDayOffPlan} disabled={dayOffSubmitting}>
+                {dayOffSubmitting ? "рахуємо..." : "далі—побачити перерозподіл"}
+              </button>
+            </>
+          ) : (
+            <>
+              <DialogDescription className="m-c">
+                вихідний {formatDateUkrainian(dayOffPlan.day_off.date)}, {roleLabel[dayOffPlan.day_off.assignee] || roleLabel.manager}
+              </DialogDescription>
+              {autoShifts.length > 0 && (
+                <div className="m-list m-task-more">
+                  <button type="button" className="m-row m-task-row" aria-expanded={dayOffAutoOpen} onClick={() => setDayOffAutoOpen(!dayOffAutoOpen)}>
+                    <span className="m-b m-task-row-label">перенесено автоматично</span>
+                    <span className="m-c m-task-row-value">{autoShifts.length}</span>
+                    <ChevronDown className="m-task-chev" strokeWidth={1.6} style={{ transform: dayOffAutoOpen ? 'rotate(180deg)' : 'none' }} />
+                  </button>
+                  {dayOffAutoOpen && autoShifts.map(s => (
+                    <div key={`${s.event_id}::${s.task_id}`} className="m-row">
+                      <div className="m-cleanup-main">
+                        <div className="m-b">{s.name}</div>
+                        <div className="m-c m-ellipsis">{s.event_title}</div>
+                      </div>
+                      <span className="m-c">→ {formatDateUkrainian(s.new_date)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {needsReview.length > 0 && (
+                <>
+                  <div className="m-sec-head"><h3 className="m-sec">потребують твого рішення</h3><span className="m-c">{needsReview.length}</span></div>
+                  <div className="m-list">
+                    {needsReview.map(item => {
+                      const key = `${item.event_id}::${item.task_id}`;
+                      const choice = reviewChoices[key];
+                      return (
+                        <div key={key} className="m-dayoff-item">
+                          <div className="m-b">{item.name}</div>
+                          <div className="m-c">{item.event_title}</div>
+                          {item.reason && <div className="m-c">{item.reason}</div>}
+                          {item.kind === "fixed" ? (
+                            <div className="m-c m-dayoff-fixed">залишається на {formatDateUkrainian(item.original_date)}—делегувати або зробити вручну</div>
+                          ) : (
+                            <div className="m-chips m-dayoff-chips">
+                              {item.suggested_dates.map(d => (
+                                <button key={d} type="button" className="m-ghost" aria-pressed={choice === d} onClick={() => setReviewChoices({...reviewChoices, [key]: d})}>{formatDateUkrainian(d)}</button>
+                              ))}
+                              <button type="button" className="m-ghost" aria-pressed={choice === null} onClick={() => setReviewChoices({...reviewChoices, [key]: null})}>не зміщати</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+              {autoShifts.length === 0 && needsReview.length === 0 && (
+                <div className="m-c m-dayoff-empty">на цей день не було активних задач—зміщувати нічого</div>
+              )}
+              <button type="button" className="m-btn m-task-submit" onClick={applyDayOffPlan} disabled={dayOffSubmitting}>
+                {dayOffSubmitting ? "застосовуємо..." : "застосувати перерозподіл"}
+              </button>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) { setDayOffPlan(null); setReviewChoices({}); } }}>
       <DialogContent className={mobile ? "max-w-[calc(100vw-24px)] !p-5" : "sm:max-w-md"} onOpenAutoFocus={mobile ? (e) => e.preventDefault() : undefined}>
