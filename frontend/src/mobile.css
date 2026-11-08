@@ -312,3 +312,6 @@ button.m-row { border-left: 0; border-right: 0; border-top: 0; }
 .m-confirm-actions { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
 .m-confirm-actions .m-btn--plain { background: #FFFFFF; color: var(--m-ink); border: 1px solid var(--m-line-strong); }
 .m-confirm-cancel { justify-content: center; width: 100%; font-weight: 400; color: var(--m-muted); }
+
+/* === стан без синхронізації === */
+.m-dot--idle { background: var(--m-faint); }

@@ -3004,7 +3004,7 @@ const EventDetailPage = () => {
 
           <div className="m-list" style={{ marginTop: 20 }} data-testid="detail-sync">
             <div className="m-row">
-              <span className={`m-dot${altegioIssue ? " m-dot--warn" : ""}`} />
+              <span className={`m-dot${altegioIssue ? " m-dot--warn" : event.altegio_last_sync ? "" : " m-dot--idle"}`} />
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span className="m-b">Altegio</span>{" "}
                 <span className="m-c">{altegioIssue ? "· є проблема" : event.altegio_last_sync ? `· синхронізовано ${fmtAgo(event.altegio_last_sync)}` : "· ще не синхронізовано"}</span>
