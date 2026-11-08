@@ -183,3 +183,79 @@ button.m-row { border-left: 0; border-right: 0; border-top: 0; }
 .m-more-chev { width: 16px; height: 16px; flex-shrink: 0; color: var(--m-muted); margin-left: -6px; }
 
 .m-new-task-teamwork { padding: 12px 0; border-bottom: 1px solid var(--m-line); }
+
+/* === шторка задачі, протерміновані, вихідний, перенесення анонсу (mr-cleanup) === */
+.m-sheet { color: var(--m-ink); font-family: var(--m-font); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+.m-sheet-head { display: flex; justify-content: space-between; align-items: center; height: 44px; }
+.m-sheet h2.m-sec, .m-sheet h3.m-sec { font-size: 15px; line-height: 20px; font-weight: 500; letter-spacing: -0.005em; color: var(--m-ink); margin: 0; }
+.m-sheet .m-c { font-size: 13px; line-height: 18px; color: var(--m-muted); }
+.m-sheet .m-c.m-red, .m-sheet .m-c .m-red { color: var(--m-red); }
+.m-sheet .m-b { font-size: 17px; line-height: 22px; font-weight: 400; color: var(--m-ink); }
+.m-task-title {
+  margin-top: 8px; border: 0; padding: 0; min-height: 56px; background: transparent; width: 100%;
+  font-size: 22px; line-height: 28px; font-weight: 500; letter-spacing: -0.014em; color: var(--m-ink);
+  resize: none; outline: none; box-shadow: none; border-radius: 0;
+}
+.m-task-title::placeholder { color: var(--m-faint); }
+.m-task-label { margin-top: 20px; margin-bottom: 8px; }
+.m-ghost--icon { width: 44px; padding: 0; }
+.m-ghost svg { flex-shrink: 0; }
+.m-ghost:disabled { cursor: default; }
+.m-task-calendar { margin: 8px auto 0; padding: 0; width: fit-content; }
+.m-task-more { margin-top: 20px; }
+.m-task-row { position: relative; gap: 10px; cursor: pointer; }
+.m-task-row-label { flex: 1; min-width: 0; }
+.m-task-row-value { font-size: 15px !important; line-height: 20px !important; max-width: 60%; text-align: right; }
+.m-task-chev { width: 16px; height: 16px; color: var(--m-muted); flex-shrink: 0; margin-left: -6px; transition: transform .15s; }
+.m-task-row-select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 16px; cursor: pointer; }
+.m-task-settings { padding-bottom: 16px; border-bottom: 1px solid var(--m-line); }
+.m-task-settings > .m-task-label:first-child { margin-top: 12px; }
+.m-task-swatches { display: flex; flex-wrap: wrap; gap: 2px; margin-left: -8px; }
+.m-task-swatch { width: 44px; height: 44px; border: 0; padding: 0; background: transparent; display: inline-flex; align-items: center; justify-content: center; }
+.m-task-swatch > span { width: 26px; height: 26px; border-radius: 13px; display: block; }
+.m-task-swatch[aria-pressed="true"] > span { box-shadow: 0 0 0 2px #FFFFFF, 0 0 0 3.5px var(--m-ink); }
+.m-task-icons { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.m-task-icon { height: 44px; border: 1px solid transparent; border-radius: 22px; background: transparent; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.m-task-icon svg { width: 20px; height: 20px; stroke-width: 1.5; }
+.m-task-icon[aria-pressed="true"] { border-color: var(--m-ink); }
+.m-task-grid { gap: 8px; }
+.m-task-teamwork { margin-top: 20px; }
+.m-task-delete { margin-top: 24px; }
+.m-task-submit { margin-top: 20px; }
+
+/* Протерміновані: повноекранний діалог */
+.overdue-cleanup-dialog.overdue-cleanup-mobile:has(.m-cleanup) {
+  background: #FFFFFF !important; box-shadow: none !important;
+  padding: calc(8px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom)) !important;
+  color: var(--m-ink); font-family: var(--m-font); -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums;
+}
+.overdue-cleanup-dialog.overdue-cleanup-mobile:has(.m-cleanup)::before { display: none; }
+.overdue-cleanup-dialog.overdue-cleanup-mobile:has(.m-cleanup) > button:last-child:not(.m-ico) { display: none; }
+.m-cleanup { display: flex; flex-direction: column; }
+.m-cleanup-top { margin-left: -12px; }
+.m-cleanup h2.m-d { font-size: 34px; line-height: 40px; font-weight: 500; letter-spacing: -0.022em; margin: 16px 0 0; color: var(--m-ink); }
+.m-cleanup h2.m-sec { font-size: 15px; line-height: 20px; font-weight: 500; margin: 0; }
+.m-cleanup .m-c { font-size: 13px; line-height: 18px; color: var(--m-muted); }
+.m-cleanup .m-b { font-size: 17px; line-height: 22px; color: var(--m-ink); }
+.m-cleanup-sub { margin-top: 2px; }
+.m-cleanup-bulk { gap: 8px; margin-top: 20px; }
+.m-cleanup-swipe { position: relative; overflow: hidden; border-bottom: 1px solid var(--m-line); touch-action: pan-y; }
+.m-cleanup-swipe > .m-row { border-bottom: 0; background: #FFFFFF; position: relative; }
+.m-cleanup-swipe-bg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-end; padding-right: 8px; color: var(--m-red); font-size: 15px; font-weight: 500; transition: opacity .15s; }
+.m-cleanup-row { gap: 4px; }
+.m-cleanup-main { flex: 1; min-width: 0; border: 0; padding: 0; background: transparent; text-align: left; color: inherit; }
+.m-cleanup-hint { margin-top: 12px; }
+
+/* Перенесення анонсу і вихідний */
+.m-overlap-name { margin-top: 4px; }
+.m-overlap-now { margin-top: 12px; }
+.m-overlap-now .m-progress { margin-top: 8px; }
+.m-overlap-line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.m-overlap-day { display: flex; flex-direction: column; width: 56px; flex-shrink: 0; }
+.m-overlap-load { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.m-dayoff-date { margin-top: 12px; }
+.m-dayoff-date input { min-height: 28px; -webkit-appearance: none; appearance: none; }
+.m-dayoff-item { padding: 12px 0; border-bottom: 1px solid var(--m-line); }
+.m-dayoff-chips { margin-top: 10px; }
+.m-dayoff-fixed { margin-top: 6px; }
+.m-dayoff-empty { padding: 24px 0; }
