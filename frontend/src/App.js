@@ -63,7 +63,9 @@ import {
   Laptop,
   Pencil,
   Paintbrush,
-  Film
+  Film,
+  CircleCheck,
+  Ellipsis
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -996,17 +998,18 @@ const goBackOr = (navigate, fallback) => {
   else navigate(-1);
 };
 
-// Bottom Navigation - with labels
+// Bottom Navigation — 4 розділи (сьогодні / події / контент / ще)
+const MORE_NAV_PATHS = ["/more", "/smm", "/cal", "/stats", "/analytics", "/settings"];
 const BottomNav = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const navItems = [
-    { path: "/", icon: TasksIcon, label: "завдання" },
-    { path: "/smm", icon: SMMIcon, label: "smm" },
-    { path: "/events", icon: EventsIcon, label: "події" },
-    { path: "/stats", icon: StatsIcon, label: "аналітика" },
-    { path: "/settings", icon: SettingsIcon, label: "налаштування" },
+    { path: "/", icon: CircleCheck, label: "сьогодні" },
+    { path: "/events", icon: CalendarIcon, label: "події" },
+    { path: "/content", icon: FileText, label: "контент" },
+    { path: "/more", icon: Ellipsis, label: "ще" },
   ];
+  const isActive = (path) => path === "/more" ? MORE_NAV_PATHS.includes(location.pathname) : location.pathname === path;
 
   const handleNavClick = (path) => {
     navigate(path);
@@ -1014,14 +1017,49 @@ const BottomNav = () => {
   };
 
   return (
-    <nav className="bottom-nav">
+    <nav className="m-nav" aria-label="розділи">
       {navItems.map((item) => (
-        <button key={item.path} className={`nav-item ${location.pathname === item.path ? "active" : ""}`} onClick={() => handleNavClick(item.path)}>
-          <item.icon className="w-5 h-5" />
-          <span className="text-[11px] leading-tight">{item.label}</span>
+        <button key={item.path} type="button" aria-current={isActive(item.path) ? "page" : undefined} onClick={() => handleNavClick(item.path)} data-testid={`nav-${item.path.replace('/', '') || 'today'}`}>
+          <item.icon strokeWidth={1.5} aria-hidden="true" />
+          <span>{item.label}</span>
         </button>
       ))}
     </nav>
+  );
+};
+
+// «ще» (Mobile) — розділи, що не влізли в нижню навігацію
+const MorePage = () => {
+  const navigate = useNavigate();
+  const isMobile = useIsMobileLayout();
+  useEffect(() => { if (!isMobile) navigate("/", { replace: true }); }, [isMobile, navigate]);
+  const items = [
+    { path: "/smm", icon: Megaphone, label: "smm", hint: "задачі smm і архів" },
+    { path: "/cal", icon: CalendarIcon, label: "календар" },
+    { path: "/stats", icon: BarChart3, label: "аналітика" },
+    { path: "/settings", icon: Settings, label: "налаштування" },
+    { path: "/?dayoff=1", icon: Coffee, label: "вихідний день" },
+    { path: "/task/new", icon: Plus, label: "нове завдання" },
+    { path: "/event/new", icon: PlusCircle, label: "нова подія" },
+  ];
+  if (!isMobile) return null;
+  return (
+    <div className="m-ui">
+      <div className="m-page">
+        <h1 className="m-d">ще</h1>
+        <div className="m-list" style={{ marginTop: 24 }}>
+          {items.map(({ path, icon: Icon, label, hint }) => (
+            <button key={path} type="button" className="m-row" onClick={() => navigate(path)} data-testid={`more-${label}`}>
+              <Icon className="m-more-ico" strokeWidth={1.5} aria-hidden="true" />
+              <span className="m-b" style={{ flex: 1 }}>{label}</span>
+              {hint && <span className="m-c">{hint}</span>}
+              <ChevronRight className="m-more-chev" strokeWidth={1.5} aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      </div>
+      <BottomNav />
+    </div>
   );
 };
 
@@ -1102,7 +1140,7 @@ const TaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, showDate = 
 
 // SMM Task Item
 // SMM Task Item with color support
-const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, onTaskEdit, onOverlapClick, showDate = false, smmTasksDefinition = [] }) => {
+const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, onTaskEdit, onOverlapClick, showDate = false, smmTasksDefinition = [], mobile = false, isOverdue = false }) => {
   // Determine icon - text work tasks get file icon
   const isTextWork = TEXT_WORK_SMM_TASKS.has(task.task_id);
   const iconName = task.icon || (task.is_standalone
@@ -1129,6 +1167,27 @@ const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, 
     else if (task.is_standalone && onStandaloneClick) onStandaloneClick(task);
     else if (!task.is_standalone && onEventClick) onEventClick(task.event_id);
   };
+
+  if (mobile) {
+    const sub = [task.event_title, task.target_month ? UK_MONTHS_NOMINATIVE[parseInt(task.target_month.split('-')[1]) - 1] : ""].filter(Boolean).join(" · ");
+    return (
+      <div className="m-row m-task-row" role="button" tabIndex={0} onClick={handleClick} onKeyDown={(e) => { if (e.key === 'Enter') handleClick(); }} data-testid={`task-item-${task.task_id || task.event_id}`}>
+        <button type="button" role="checkbox" aria-checked={localCompleted} aria-label={localCompleted ? "повернути" : "позначити виконаним"} className={`m-chk ${localCompleted ? "is-done" : ""} ${isOverdue && !localCompleted ? "m-chk--overdue" : ""}`} onClick={(e) => { e.stopPropagation(); handleToggle(); }}>
+          {localCompleted && <Check color="#FFFFFF" strokeWidth={3} width={12} height={12} aria-hidden="true" />}
+        </button>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span className={`m-b m-ellipsis ${localCompleted ? "m-done" : ""}`} style={{ display: 'block' }}>{task.task_name}</span>
+          {sub && <span className="m-c m-ellipsis" style={{ display: 'block' }}>{sub}</span>}
+        </span>
+        {task.isOverlapping && (
+          onOverlapClick ? (
+            <button type="button" className="m-txt m-txt--danger m-task-overlap" onClick={(e) => { e.stopPropagation(); onOverlapClick(task); }} title="на цей день є інший анонс — перенести">перетин</button>
+          ) : <span className="m-c m-red">перетин</span>
+        )}
+        {showDate && <span className={`m-c ${isOverdue ? "m-red" : ""}`} style={{ whiteSpace: 'nowrap' }}>{formatDateUkrainian(task.task_date)}</span>}
+      </div>
+    );
+  }
 
   return (
     <div className={`task-item cursor-pointer ${localCompleted ? "opacity-40" : ""}`} onClick={handleClick} data-testid={`task-item-${task.task_id || task.event_id}`}>
@@ -1335,11 +1394,12 @@ const OverlapResolverDialog = ({ task, open, onClose, onResolved }) => {
 };
 
 // Dashboard Page (Mobile)
-const Dashboard = ({ initialTab = 'events', footer = null }) => {
+const Dashboard = ({ initialTab, footer = null }) => {
   const { events, settings, standaloneTasks, smmTasksDefinition, refreshEvents, refreshStandaloneTasks } = useApp();
   const { pushUndo } = useUndo();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState(initialTab);
+  // Явний initialTab має пріоритет; інакше — роль актора («хто я»), за замовчуванням менеджер
+  const [activeTab, setActiveTab] = useState(() => initialTab || normalizeAssignee(getActorUser(), "manager"));
   const [overdueExpanded, setOverdueExpanded] = useState(false);
   const [soonExpanded, setSoonExpanded] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
@@ -1372,6 +1432,11 @@ const Dashboard = ({ initialTab = 'events', footer = null }) => {
       setActiveTab(normalizeAssignee(getActorUser(), "manager"));
       setOverdueExpanded(true);
       setShowOverdueCleanup(true);
+      navigate(location.pathname, { replace: true });
+    }
+    // ?dayoff=1 — з екрана «ще»
+    if (params.get("dayoff") === "1") {
+      setShowDayOffDialog(true);
       navigate(location.pathname, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1611,33 +1676,34 @@ const Dashboard = ({ initialTab = 'events', footer = null }) => {
 
   const loadArchive = async () => { try { const r = await api.getTaskArchive(); setArchive(r.data); setShowArchive(true); } catch { toast.error("помилка"); } };
 
-  // Render a task section (overdue/today/soon)
-  const MobileTaskSection = ({ tasks: sectionTasks, title, isOverdue, isCollapsible, expanded, setExpanded, onCleanupClick }) => {
+  // Render a task section (overdue/today/soon) — мобільні рядки .m-row
+  const MobileTaskSection = ({ tasks: sectionTasks, title, isOverdue, isCollapsible, expanded, setExpanded, showCount }) => {
     if (isCollapsible && sectionTasks.length === 0) return null;
     const normalizeTask = (t) => { const d = t.task_date || t.reminder_date; return { ...t, task_id: t.task_id || t.reminder_id, task_name: t.task_name || t.reminder_name, task_date: d, assignee: t.assignee || activeTab, isOverlapping: activeTab === 'smm' && !!(d && announcementOverlaps[d]) }; };
+    const doneCount = sectionTasks.filter(t => t.completed).length;
+    const open = !isCollapsible || expanded;
     return (
-      <section className="mobile-section">
-        {isCollapsible ? (
-          <button className={`mobile-section-header ${isOverdue ? 'overdue' : ''} w-full text-left`} onClick={() => setExpanded(!expanded)}>
-            <span>{title}</span>
-            <span className="mobile-section-count">({sectionTasks.length})</span>
-            <ChevronDown className={`w-5 h-5 ml-auto transition-transform ${isOverdue ? '' : 'text-secondary'} ${expanded ? "rotate-180" : ""}`} style={isOverdue ? { color: "#FF8370" } : {}} />
-          </button>
-        ) : (
-          <div className="mobile-section-header"><span>{title}</span><span className="mobile-section-count">({sectionTasks.length})</span></div>
-        )}
-        {(!isCollapsible || expanded) && (
+      <section>
+        <div className="m-sec-head">
+          <h2 className="m-sec">{title}</h2>
+          {isCollapsible ? (
+            <button type="button" className="m-txt m-dash-toggle" aria-expanded={open} onClick={() => setExpanded(!expanded)}>
+              <span className={isOverdue ? "m-red" : "m-muted"}>{sectionTasks.length}</span>
+              <ChevronDown strokeWidth={1.5} width={16} height={16} aria-hidden="true" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+            </button>
+          ) : (
+            <span className="m-c">{showCount ? `${doneCount} з ${sectionTasks.length}` : sectionTasks.length}</span>
+          )}
+        </div>
+        {open && (
           sectionTasks.length > 0 ? (
-            <div className="pt-3 space-y-1">
-              {onCleanupClick && (
-                <button type="button" className="mobile-cleanup-btn w-full justify-center mb-2" style={{ minHeight: 44 }} onClick={onCleanupClick} data-testid="mobile-overdue-cleanup-btn"><Sparkles className="w-3.5 h-3.5" />розчистити протерміновані</button>
-              )}
+            <div className="m-list">
               {[...sectionTasks].sort((a, b) => (getTaskDate(a) < getTaskDate(b) ? -1 : getTaskDate(a) > getTaskDate(b) ? 1 : 0) || getTaskOrder(a) - getTaskOrder(b) || (a.completed ? 1 : 0) - (b.completed ? 1 : 0)).map((t, i) => {
                 const nt = normalizeTask(t);
-                return <SMMTaskItem key={`${nt.event_id}-${nt.task_id}-${i}`} task={nt} onToggle={handleToggleByKind(activeTab === 'manager' ? handleToggleTask : handleToggleSMMTask)} onEventClick={handleEventClick} onTaskEdit={handleTaskEdit} onOverlapClick={activeTab === 'smm' ? setOverlapResolverTask : undefined} smmTasksDefinition={smmTasksDefinition} showDate={isOverdue || title === 'незабаром'} />;
+                return <SMMTaskItem key={`${nt.event_id}-${nt.task_id}-${i}`} mobile isOverdue={!!isOverdue} task={nt} onToggle={handleToggleByKind(activeTab === 'manager' ? handleToggleTask : handleToggleSMMTask)} onEventClick={handleEventClick} onTaskEdit={handleTaskEdit} onOverlapClick={activeTab === 'smm' ? setOverlapResolverTask : undefined} smmTasksDefinition={smmTasksDefinition} showDate={isOverdue || title === 'незабаром'} />;
               })}
             </div>
-          ) : <p className="text-secondary py-4 text-center text-sm">все зроблено!</p>
+          ) : <p className="m-c" style={{ padding: '16px 0', margin: 0, borderTop: '1px solid var(--m-line)' }}>на сьогодні все зроблено</p>
         )}
       </section>
     );
@@ -1645,69 +1711,129 @@ const Dashboard = ({ initialTab = 'events', footer = null }) => {
 
   const currentTasks = activeTab === 'events' ? null : tasksByTeam[activeTab] || { overdue: [], today: [], soon: [] };
   const tabs = [
-    { id: 'events', label: 'Події' },
-    { id: 'manager', label: 'Manager' },
-    { id: 'smm', label: 'SMM' },
-    { id: 'marketer', label: 'Marketer' },
+    ...(initialTab === 'events' ? [{ id: 'events', label: 'події' }] : []),
+    { id: 'manager', label: 'менеджер' },
+    { id: 'smm', label: 'smm' },
+    { id: 'marketer', label: 'маркетинг' },
   ];
 
+  // Українська множина: 1 задача / 2 задачі / 5 задач
+  const pluralUk = (n, one, few, many) => { const m10 = n % 10, m100 = n % 100; if (m10 === 1 && m100 !== 11) return one; if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few; return many; };
+
+  // Найближча подія (сьогодні або пізніше)
+  const nextEvent = useMemo(() => [...events]
+    .filter(e => !e.cancelled && getEventDateKey(e) >= todayStr)
+    .sort((a, b) => getEventDateKey(a).localeCompare(getEventDateKey(b)) || String(a.start_time || '').localeCompare(String(b.start_time || '')))[0] || null, [events, todayStr]);
+  const nextEventMeta = (() => {
+    if (!nextEvent) return null;
+    const key = getEventDateKey(nextEvent);
+    const d = new Date(`${key}T00:00:00`);
+    const f = formatDateWithWeekday(d);
+    const when = key === todayStr ? 'сьогодні' : key === shiftDateLocal(todayStr, 1) ? 'завтра' : `${f.weekday}, ${f.day} ${f.month}`;
+    const linked = [regularTasks, allSmmTasks].flatMap(g => [...g.overdue, ...g.today, ...g.soon])
+      .filter(t => !t.completed && (t.is_standalone ? t.event_id_link === nextEvent.id : t.event_id === nextEvent.id));
+    const open = new Set(linked.map(t => `${t.event_id}-${t.task_id || t.reminder_id}`)).size;
+    const parts = [nextEvent.start_time ? `${when} о ${nextEvent.start_time}` : when];
+    if (open > 0) parts.push(`${open} ${pluralUk(open, 'задача', 'задачі', 'задач')} до початку`);
+    const hasBooking = nextEvent.altegio_booked_count != null;
+    const booked = getBookedCount(nextEvent);
+    const spots = Number(nextEvent.spots) || 10;
+    return { text: parts.join(' · '), hasBooking, booked, spots, pct: Math.min(100, Math.round((booked / spots) * 100)) };
+  })();
+
+  const actor = getActorUser();
+  const ACTOR_INITIALS = { manager: 'М', smm: 'S', marketer: 'Мк' };
+  const ACTOR_NAMES = { manager: 'менеджер', smm: 'smm', marketer: 'маркетинг' };
+
   return (
-    <div className="animate-fade-in" style={{ height: '100dvh', display: 'flex', flexDirection: 'column' }}>
-      <header className="px-5 pt-6 pb-3">
-        <div className="flex items-center gap-3 mb-4">
-          <h1 className="logo text-xl" style={{ textTransform: 'none' }}>Poriadok</h1>
-          <p className="text-sm text-secondary lowercase">{todayFormatted.weekday} • {todayFormatted.day} {todayFormatted.month}</p>
-          <button type="button" className="ml-auto -mr-2 w-11 h-11 rounded-full flex items-center justify-center text-[#1A1717] hover:bg-black/5" onClick={() => setShowDayOffDialog(true)} title="вихідний" aria-label="додати вихідний" data-testid="mobile-dayoff-btn"><Coffee className="w-5 h-5" /></button>
+    <div className="animate-fade-in m-page m-dash">
+      <header className="m-dash-head">
+        <div style={{ minWidth: 0 }}>
+          <h1 className="m-d">сьогодні</h1>
+          <div className="m-c" style={{ marginTop: 2 }}>{todayFormatted.weekday}, {todayFormatted.day} {todayFormatted.month}</div>
         </div>
-        <div className="flex gap-1.5 justify-end pb-1" data-testid="mobile-tabs">
-          {tabs.map(tab => (
-            <button key={tab.id} onClick={() => { setActiveTab(tab.id); setOverdueExpanded(false); setSoonExpanded(false); }} className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeTab === tab.id ? 'bg-[#1A1717] text-[#F6F5F1]' : 'bg-[rgba(0,0,0,0.05)] text-[#1A1717]'}`} data-testid={`tab-${tab.id}`}>
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        {actor && (
+          <button type="button" className="m-avatar" aria-label={`хто я: ${ACTOR_NAMES[actor] || actor}`} title="змінити в налаштуваннях" onClick={() => navigate('/settings')} data-testid="mobile-actor-btn">{ACTOR_INITIALS[actor] || actor.slice(0, 2)}</button>
+        )}
       </header>
 
-      <div className="flex-1 overflow-y-auto px-5 pb-24 space-y-3">
-        {activeTab === 'events' ? (
-          <>
-            <div className="calendar-container-desktop mb-2">
-              <Calendar mode="single" locale={uk} weekStartsOn={1} month={currentMonth} onMonthChange={setCurrentMonth} className="w-full calendar-minimal !p-1"
-                classNames={{ month: "space-y-0 w-full", caption: "flex justify-center items-center py-1", caption_label: "text-sm font-medium", row: "flex w-full", head_row: "flex w-full", table: "w-full border-collapse", nav_button: "w-7 h-7 bg-transparent hover:bg-black/5 rounded-full flex items-center justify-center" }}
-                modifiersClassNames={{ today: "calendar-today-visible" }}
-                components={{ DayContent: ({ date }) => {
-                  return renderEventCalendarDay(date, events, currentMonth, today);
-                }}}
-              />
-            </div>
-            {upcomingEvents.length > 0 ? upcomingEvents.map(event => (
-              <div key={event.id} className={`event-card-desktop cursor-pointer${getEventArchiveClass(event, today)}`} onClick={() => handleEventClick(event.id)} data-testid={`mobile-event-${event.id}`}>
-                <div className="flex flex-1 min-w-0 items-center gap-3">
-                  <div className="date-badge-desktop"><span className="text-[9px] uppercase">{UK_MONTHS_SHORT[new Date(event.date).getMonth()]}</span><span className="text-base font-bold">{new Date(event.date).getDate()}</span></div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-semibold line-clamp-2">{event.title}</h3>
-                    <p className="text-xs text-secondary">{event.start_time && `${event.start_time} • `}{event.price} ₴</p>
-                  </div>
-                  <EventArchiveIcon event={event} today={today} />
-                  {event.altegio_booked_count != null && (
-                    <div className="text-right">
-                      <span className={`text-base font-bold ${getBookingColorClass(getBookingStatusColor(event))}`}>{event.altegio_booked_count}</span>
-                      <span className="text-xs text-secondary">/{event.spots}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )) : <p className="text-secondary text-center py-8 text-sm">поки подій немає</p>}
-          </>
-        ) : (
-          <>
-            <MobileTaskSection tasks={currentTasks.overdue} title="протерміновано" isOverdue isCollapsible expanded={overdueExpanded} setExpanded={setOverdueExpanded} onCleanupClick={() => setShowOverdueCleanup(true)} />
-            <MobileTaskSection tasks={currentTasks.today} title="сьогодні" />
-            <MobileTaskSection tasks={currentTasks.soon} title="незабаром" isCollapsible expanded={soonExpanded} setExpanded={setSoonExpanded} />
-            {activeTab === 'smm' && footer}
-          </>
-        )}
+      <div role="tablist" aria-label="роль" className="m-tabs" style={{ marginTop: 24 }} data-testid="mobile-tabs">
+        {tabs.map(tab => {
+          const overdueN = tab.id === 'events' ? 0 : (tasksByTeam[tab.id]?.overdue.length || 0);
+          return (
+            <button key={tab.id} type="button" role="tab" aria-selected={activeTab === tab.id} className="m-tab" onClick={() => { setActiveTab(tab.id); setOverdueExpanded(false); setSoonExpanded(false); }} data-testid={`tab-${tab.id}`}>
+              {tab.label}{overdueN > 0 && <sup aria-label={`${overdueN} протермінованих`}>{overdueN}</sup>}
+            </button>
+          );
+        })}
       </div>
+
+      {activeTab === 'events' ? (
+        <div className="space-y-3" style={{ paddingTop: 16 }}>
+          <div className="calendar-container-desktop mb-2">
+            <Calendar mode="single" locale={uk} weekStartsOn={1} month={currentMonth} onMonthChange={setCurrentMonth} className="w-full calendar-minimal !p-1"
+              classNames={{ month: "space-y-0 w-full", caption: "flex justify-center items-center py-1", caption_label: "text-sm font-medium", row: "flex w-full", head_row: "flex w-full", table: "w-full border-collapse", nav_button: "w-7 h-7 bg-transparent hover:bg-black/5 rounded-full flex items-center justify-center" }}
+              modifiersClassNames={{ today: "calendar-today-visible" }}
+              components={{ DayContent: ({ date }) => {
+                return renderEventCalendarDay(date, events, currentMonth, today);
+              }}}
+            />
+          </div>
+          {upcomingEvents.length > 0 ? upcomingEvents.map(event => (
+            <div key={event.id} className={`event-card-desktop cursor-pointer${getEventArchiveClass(event, today)}`} onClick={() => handleEventClick(event.id)} data-testid={`mobile-event-${event.id}`}>
+              <div className="flex flex-1 min-w-0 items-center gap-3">
+                <div className="date-badge-desktop"><span className="text-[9px] uppercase">{UK_MONTHS_SHORT[new Date(event.date).getMonth()]}</span><span className="text-base font-bold">{new Date(event.date).getDate()}</span></div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-semibold line-clamp-2">{event.title}</h3>
+                  <p className="text-xs text-secondary">{event.start_time && `${event.start_time} • `}{event.price} ₴</p>
+                </div>
+                <EventArchiveIcon event={event} today={today} />
+                {event.altegio_booked_count != null && (
+                  <div className="text-right">
+                    <span className={`text-base font-bold ${getBookingColorClass(getBookingStatusColor(event))}`}>{event.altegio_booked_count}</span>
+                    <span className="text-xs text-secondary">/{event.spots}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )) : <p className="text-secondary text-center py-8 text-sm">поки подій немає</p>}
+        </div>
+      ) : (
+        <>
+          {nextEvent && nextEventMeta && (
+            <button type="button" className="m-dash-event" onClick={() => handleEventClick(nextEvent.id)} data-testid={`mobile-next-event-${nextEvent.id}`}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="m-h">{nextEvent.title}</div>
+                  <div className="m-c" style={{ marginTop: 4 }}>{nextEventMeta.text}</div>
+                </div>
+                {nextEventMeta.hasBooking && (
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div className="m-n m-n-34"><span className={nextEventMeta.booked === 0 ? 'm-red' : ''}>{nextEventMeta.booked}</span><span className="m-faint">/{nextEventMeta.spots}</span></div>
+                    <div className="m-c" style={{ marginTop: 2 }}>записались</div>
+                  </div>
+                )}
+              </div>
+              {nextEventMeta.hasBooking && <div className="m-progress" style={{ marginTop: 16 }}><span style={{ width: `${nextEventMeta.pct}%` }} /></div>}
+            </button>
+          )}
+
+          {currentTasks.overdue.length > 0 && (
+            <button type="button" className="m-row" onClick={() => setShowOverdueCleanup(true)} data-testid="mobile-overdue-cleanup-btn">
+              <span className="m-b" style={{ flex: 1 }}><span className="m-red">{currentTasks.overdue.length}</span> {pluralUk(currentTasks.overdue.length, 'протермінована', 'протерміновані', 'протермінованих')}</span>
+              <span className="m-sec">розібрати</span>
+              <ChevronRight strokeWidth={1.6} width={16} height={16} aria-hidden="true" style={{ marginLeft: -8 }} />
+            </button>
+          )}
+
+          <div style={{ marginTop: 4 }}>
+            <MobileTaskSection tasks={currentTasks.today} title="задачі" showCount />
+            <MobileTaskSection tasks={currentTasks.overdue} title="протерміновані" isOverdue isCollapsible expanded={overdueExpanded} setExpanded={setOverdueExpanded} />
+            <MobileTaskSection tasks={currentTasks.soon} title="незабаром" isCollapsible expanded={soonExpanded} setExpanded={setSoonExpanded} />
+          </div>
+          {activeTab === 'smm' && footer && <div className="m-dash-footer">{footer}</div>}
+        </>
+      )}
 
       {/* Overdue cleanup (full-screen) + day-off flow — same components as desktop */}
       <Dialog open={showOverdueCleanup} onOpenChange={setShowOverdueCleanup}>
@@ -1717,8 +1843,8 @@ const Dashboard = ({ initialTab = 'events', footer = null }) => {
       </Dialog>
       <DayOffDialog open={showDayOffDialog} onOpenChange={setShowDayOffDialog} mobile />
 
-      <button className="fab" onClick={activeTab === 'events' ? () => navigate('/event/new') : handleNewTaskOpen} aria-label={activeTab === 'events' ? 'нова подія' : 'нове завдання'} data-testid="mobile-fab">
-        <Plus className="w-6 h-6" />
+      <button type="button" className="m-fab" onClick={activeTab === 'events' ? () => navigate('/event/new') : handleNewTaskOpen} aria-label={activeTab === 'events' ? 'нова подія' : 'нове завдання'} data-testid="mobile-fab">
+        <Plus strokeWidth={1.8} aria-hidden="true" />
       </button>
 
       {/* Edit task dialog */}
@@ -1882,6 +2008,68 @@ const Dashboard = ({ initialTab = 'events', footer = null }) => {
   );
 };
 
+// Мобільна форма нового завдання (NewTaskPage / NewSMMTaskPage) — дизайн-система .m-*
+const MobileNewTaskForm = ({ heading, task, setTask, loading, onSubmit, onCancel, onPickDate, onPickIcon }) => {
+  const todayStr = formatDateLocal(new Date());
+  const dateChips = [
+    { label: 'сьогодні', value: todayStr },
+    { label: 'завтра', value: shiftDateLocal(todayStr, 1) },
+    { label: '+3 дні', value: shiftDateLocal(todayStr, 3) },
+    { label: 'тиждень', value: shiftDateLocal(todayStr, 7) },
+  ];
+  const isChip = dateChips.some(c => c.value === task.date);
+  const assigneeOptions = [{ id: 'manager', label: 'менеджер' }, { id: 'smm', label: 'smm' }, { id: 'marketer', label: 'маркетинг' }];
+  const SelectedIcon = getIconComponent(task.icon);
+  return (
+    <div className="m-ui m-ui--no-nav animate-fade-in">
+      <div className="m-page">
+        <div className="m-topbar">
+          <button type="button" className="m-txt" style={{ padding: 0, fontWeight: 400 }} onClick={onCancel}>скасувати</button>
+        </div>
+        <h1 className="m-d" style={{ marginTop: 12 }}>{heading}</h1>
+
+        <label className="m-field" style={{ marginTop: 8 }}>
+          <span>що треба зробити?</span>
+          <textarea rows={2} autoFocus placeholder="назва завдання" value={task.title} onChange={(e) => setTask({ ...task, title: e.target.value })} onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') onSubmit(); }} data-testid="m-new-task-title" />
+        </label>
+
+        <div className="m-c" style={{ marginTop: 20 }}>коли</div>
+        <div className="m-chips" style={{ marginTop: 8 }}>
+          {dateChips.map(chip => (
+            <button key={chip.value} type="button" className="m-ghost" aria-pressed={task.date === chip.value} onClick={() => setTask({ ...task, date: chip.value })}>{chip.label}</button>
+          ))}
+          <button type="button" className="m-ghost" aria-pressed={!isChip} aria-label="інша дата" style={!isChip ? undefined : { width: 44, padding: 0 }} onClick={onPickDate}>
+            <CalendarIcon strokeWidth={1.5} width={18} height={18} aria-hidden="true" />{!isChip && formatDateUkrainian(task.date)}
+          </button>
+        </div>
+
+        <div className="m-c" style={{ marginTop: 20 }}>кому</div>
+        <div role="radiogroup" aria-label="кому" className="m-chips" style={{ marginTop: 8 }}>
+          {assigneeOptions.map(o => (
+            <button key={o.id} type="button" role="radio" className="m-ghost" aria-checked={normalizeAssignee(task.assignee, 'manager') === o.id} onClick={() => setTask({ ...task, assignee: o.id })}>{o.label}</button>
+          ))}
+        </div>
+
+        <div className="m-list" style={{ marginTop: 20 }}>
+          <button type="button" className="m-row" onClick={onPickIcon}>
+            <span className="m-b" style={{ flex: 1 }}>іконка</span>
+            <SelectedIcon strokeWidth={1.5} width={20} height={20} aria-hidden="true" />
+            <ChevronRight className="m-more-chev" strokeWidth={1.5} aria-hidden="true" />
+          </button>
+        </div>
+        <div className="m-new-task-teamwork">
+          <TeamworkTaskFields task={task} setTask={setTask} />
+        </div>
+      </div>
+      <div className="m-sticky-cta">
+        <button type="button" className="m-btn" onClick={onSubmit} disabled={loading || !task.title.trim()} data-testid="m-new-task-submit">
+          {loading ? "додаю…" : "додати завдання"}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // New Task Page (Mobile fullscreen)
 const NewTaskPage = () => {
   const navigate = useNavigate();
@@ -1907,6 +2095,52 @@ const NewTaskPage = () => {
   };
 
   const SelectedIcon = getIconComponent(newTask.icon);
+  const isMobile = useIsMobileLayout();
+  const dialogClass = isMobile ? "m-sheet" : "dialog-content";
+
+  const pickerDialogs = (
+    <>
+      <Dialog open={showCalendar} onOpenChange={setShowCalendar}>
+        <DialogContent className={dialogClass}>
+          <Calendar
+            mode="single"
+            locale={uk}
+            weekStartsOn={1}
+            selected={new Date(newTask.date)}
+            onSelect={(d) => {
+              if (d) setNewTask({ ...newTask, date: formatDateLocal(d) });
+              setShowCalendar(false);
+            }}
+            className="w-full"
+          />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showIconPicker} onOpenChange={setShowIconPicker}>
+        <DialogContent className={dialogClass}>
+          <DialogHeader><DialogTitle>обери іконку</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-6 gap-2 pt-4">
+            {CUSTOM_TASK_ICONS.map(({ value, Icon }) => (
+              <button
+                key={value}
+                className={`icon-selector-btn ${newTask.icon === value ? 'selected' : ''}`}
+                onClick={() => { setNewTask({ ...newTask, icon: value }); setShowIconPicker(false); }}
+              >
+                <Icon className="w-5 h-5" />
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+
+  if (isMobile) return (
+    <>
+      <MobileNewTaskForm heading="нове завдання" task={newTask} setTask={setNewTask} loading={loading} onSubmit={handleCreateTask} onCancel={() => goBackOr(navigate, "/")} onPickDate={() => setShowCalendar(true)} onPickIcon={() => setShowIconPicker(true)} />
+      {pickerDialogs}
+    </>
+  );
 
   return (
     <div className="animate-fade-in min-h-screen bg-[#F6F5F1]">
@@ -1968,38 +2202,7 @@ const NewTaskPage = () => {
         </button>
       </div>
 
-      <Dialog open={showCalendar} onOpenChange={setShowCalendar}>
-        <DialogContent className="dialog-content">
-          <Calendar
-            mode="single"
-            locale={uk}
-            weekStartsOn={1}
-            selected={new Date(newTask.date)}
-            onSelect={(d) => {
-              if (d) setNewTask({ ...newTask, date: formatDateLocal(d) });
-              setShowCalendar(false);
-            }}
-            className="w-full"
-          />
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showIconPicker} onOpenChange={setShowIconPicker}>
-        <DialogContent className="dialog-content">
-          <DialogHeader><DialogTitle>обери іконку</DialogTitle></DialogHeader>
-          <div className="grid grid-cols-6 gap-2 pt-4">
-            {CUSTOM_TASK_ICONS.map(({ value, Icon }) => (
-              <button
-                key={value}
-                className={`icon-selector-btn ${newTask.icon === value ? 'selected' : ''}`}
-                onClick={() => { setNewTask({ ...newTask, icon: value }); setShowIconPicker(false); }}
-              >
-                <Icon className="w-5 h-5" />
-              </button>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {pickerDialogs}
     </div>
   );
 };
@@ -2029,6 +2232,52 @@ const NewSMMTaskPage = () => {
   };
 
   const SelectedIcon = getIconComponent(newTask.icon);
+  const isMobile = useIsMobileLayout();
+  const dialogClass = isMobile ? "m-sheet" : "dialog-content";
+
+  const pickerDialogs = (
+    <>
+      <Dialog open={showCalendar} onOpenChange={setShowCalendar}>
+        <DialogContent className={dialogClass}>
+          <Calendar
+            mode="single"
+            locale={uk}
+            weekStartsOn={1}
+            selected={new Date(newTask.date)}
+            onSelect={(d) => {
+              if (d) setNewTask({ ...newTask, date: formatDateLocal(d) });
+              setShowCalendar(false);
+            }}
+            className="w-full"
+          />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showIconPicker} onOpenChange={setShowIconPicker}>
+        <DialogContent className={dialogClass}>
+          <DialogHeader><DialogTitle>обери іконку</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-5 gap-2 pt-4">
+            {SMM_TASK_ICONS.map(({ value, Icon }) => (
+              <button
+                key={value}
+                className={`icon-selector-btn ${newTask.icon === value ? 'selected' : ''}`}
+                onClick={() => { setNewTask({ ...newTask, icon: value }); setShowIconPicker(false); }}
+              >
+                <Icon className="w-5 h-5" />
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+
+  if (isMobile) return (
+    <>
+      <MobileNewTaskForm heading="нове smm завдання" task={newTask} setTask={setNewTask} loading={loading} onSubmit={handleCreateTask} onCancel={() => goBackOr(navigate, "/")} onPickDate={() => setShowCalendar(true)} onPickIcon={() => setShowIconPicker(true)} />
+      {pickerDialogs}
+    </>
+  );
 
   return (
     <div className="animate-fade-in min-h-screen bg-[#F6F5F1]">
@@ -2090,38 +2339,7 @@ const NewSMMTaskPage = () => {
         </button>
       </div>
 
-      <Dialog open={showCalendar} onOpenChange={setShowCalendar}>
-        <DialogContent className="dialog-content">
-          <Calendar
-            mode="single"
-            locale={uk}
-            weekStartsOn={1}
-            selected={new Date(newTask.date)}
-            onSelect={(d) => {
-              if (d) setNewTask({ ...newTask, date: formatDateLocal(d) });
-              setShowCalendar(false);
-            }}
-            className="w-full"
-          />
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showIconPicker} onOpenChange={setShowIconPicker}>
-        <DialogContent className="dialog-content">
-          <DialogHeader><DialogTitle>обери іконку</DialogTitle></DialogHeader>
-          <div className="grid grid-cols-5 gap-2 pt-4">
-            {SMM_TASK_ICONS.map(({ value, Icon }) => (
-              <button
-                key={value}
-                className={`icon-selector-btn ${newTask.icon === value ? 'selected' : ''}`}
-                onClick={() => { setNewTask({ ...newTask, icon: value }); setShowIconPicker(false); }}
-              >
-                <Icon className="w-5 h-5" />
-              </button>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {pickerDialogs}
     </div>
   );
 };
@@ -2278,25 +2496,33 @@ const SMMPage = () => {
 
   const archiveFooter = (
     <>
-      <button className="archive-btn" onClick={() => navigate('/content')} data-testid="smm-content-btn"><FileText className="w-4 h-4 inline mr-2" />контент-план</button>
-      <button className="archive-btn" onClick={() => setShowArchive(true)} data-testid="smm-archive-btn"><Archive className="w-4 h-4 inline mr-2" />архів smm</button>
+      <div className="m-list" style={{ marginTop: 28 }}>
+        <button type="button" className="m-row" onClick={() => navigate('/content')} data-testid="smm-content-btn">
+          <FileText className="m-more-ico" strokeWidth={1.5} aria-hidden="true" />
+          <span className="m-b" style={{ flex: 1 }}>контент-план</span>
+          <ChevronRight className="m-more-chev" strokeWidth={1.5} aria-hidden="true" />
+        </button>
+        <button type="button" className="m-row" onClick={() => setShowArchive(true)} data-testid="smm-archive-btn">
+          <Archive className="m-more-ico" strokeWidth={1.5} aria-hidden="true" />
+          <span className="m-b" style={{ flex: 1 }}>архів smm</span>
+          <span className="m-c">{completedSMMTasks.length}</span>
+          <ChevronRight className="m-more-chev" strokeWidth={1.5} aria-hidden="true" />
+        </button>
+      </div>
       <Dialog open={showArchive} onOpenChange={setShowArchive}>
-        <DialogContent className="dialog-content max-w-[calc(100vw-24px)] sm:max-w-sm max-h-[80vh] overflow-y-auto"><DialogHeader><DialogTitle>архів smm</DialogTitle></DialogHeader>
-          {completedSMMTasks.length > 0 ? <div className="space-y-1">{completedSMMTasks.map((item) => {
-            const IconComponent = getIconComponent(item.icon || "instagram");
-            return (
-              <div key={`${item._kind}-${item.event_id}-${item.task_id}`} className="task-item">
-                <div className="task-icon"><IconComponent /></div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-base font-medium">{item.task_name}</p>
-                  <p className="text-sm text-secondary">{item.event_title}</p>
-                </div>
-                <button className="restore-btn min-w-[44px] min-h-[44px] flex items-center justify-center" onClick={() => handleRestoreSMMTask(item)} title="відновити" aria-label="відновити">
-                  <RotateCcw className="w-4 h-4" />
-                </button>
-              </div>
-            );
-          })}</div> : <p className="text-center text-secondary py-8 text-sm">порожньо</p>}
+        <DialogContent className="m-sheet max-w-[calc(100vw-24px)] sm:max-w-sm max-h-[80vh] overflow-y-auto">
+          <DialogHeader className="m-topbar" style={{ textAlign: 'left' }}><DialogTitle className="m-sec">архів smm</DialogTitle></DialogHeader>
+          {completedSMMTasks.length > 0 ? <div className="m-list">{completedSMMTasks.map((item) => (
+            <div key={`${item._kind}-${item.event_id}-${item.task_id}`} className="m-row">
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span className="m-b m-ellipsis" style={{ display: 'block' }}>{item.task_name}</span>
+                {item.event_title && <span className="m-c m-ellipsis" style={{ display: 'block' }}>{item.event_title}</span>}
+              </span>
+              <button type="button" className="m-ico" onClick={() => handleRestoreSMMTask(item)} title="відновити" aria-label="відновити">
+                <RotateCcw strokeWidth={1.5} aria-hidden="true" />
+              </button>
+            </div>
+          ))}</div> : <p className="m-c" style={{ padding: '24px 0', margin: 0 }}>порожньо</p>}
         </DialogContent>
       </Dialog>
     </>
@@ -9458,6 +9684,7 @@ function App() {
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/cal" element={<CalendarFullPage />} />
               <Route path="/content" element={<ContentPage />} />
+              <Route path="/more" element={<MorePage />} />
             </Routes>
           </div>
         </BrowserRouter>

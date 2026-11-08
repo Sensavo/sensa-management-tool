@@ -111,13 +111,13 @@
 [data-radix-dialog-content] { z-index: 151 !important; }
 
 /* Dark theme for fullscreen modal */
-.dialog-content button, .dialog-content [role="button"] { border-radius: 9999px !important; }
-[data-radix-dialog-content] button:not([data-radix-dialog-close]), [role="dialog"] button:not([data-radix-dialog-close]) { border-radius: 9999px !important; }
+.dialog-content:where(:not(.m-sheet)) button, .dialog-content:where(:not(.m-sheet)) [role="button"] { border-radius: 9999px !important; }
+[data-radix-dialog-content]:where(:not(.m-sheet)) button:not([data-radix-dialog-close]), [role="dialog"]:where(:not(.m-sheet)) button:not([data-radix-dialog-close]) { border-radius: 9999px !important; }
 .dialog-wide { max-width: 920px !important; min-width: 720px; }
 
 /* Dialog - Mobile */
 @media (max-width: 640px) {
-  .dialog-content { 
+  .dialog-content:where(:not(.m-sheet)) { 
     min-width: calc(100% - 32px) !important; 
     max-width: calc(100% - 32px) !important; 
     width: calc(100% - 32px) !important; 
@@ -129,23 +129,23 @@
     overflow-y: auto;
   }
   [data-radix-dialog-overlay] { align-items: center !important; }
-  [data-radix-dialog-content] { align-items: center !important; margin: auto !important; }
-  .dialog-content h2, .dialog-content [class*="DialogTitle"] { font-size: 18px !important; }
-  .dialog-content input { font-size: 16px !important; height: 44px !important; padding: 10px 14px !important; }
-  .dialog-content > div button:not(.color-circle-perfect):not(.icon-selector-btn) { font-size: 14px !important; min-height: 40px; }
-  .dialog-content .color-circle-perfect { width: 28px !important; height: 28px !important; min-height: unset !important; font-size: 0 !important; padding: 0 !important; }
-  .dialog-content .icon-selector-btn { min-height: unset !important; width: 38px !important; height: 38px !important; font-size: 0 !important; padding: 0 !important; }
+  [data-radix-dialog-content]:where(:not(.m-sheet)) { align-items: center !important; margin: auto !important; }
+  .dialog-content:where(:not(.m-sheet)) h2, .dialog-content:where(:not(.m-sheet)) [class*="DialogTitle"] { font-size: 18px !important; }
+  .dialog-content:where(:not(.m-sheet)) input { font-size: 16px !important; height: 44px !important; padding: 10px 14px !important; }
+  .dialog-content:where(:not(.m-sheet)) > div button:not(.color-circle-perfect):not(.icon-selector-btn) { font-size: 14px !important; min-height: 40px; }
+  .dialog-content:where(:not(.m-sheet)) .color-circle-perfect { width: 28px !important; height: 28px !important; min-height: unset !important; font-size: 0 !important; padding: 0 !important; }
+  .dialog-content:where(:not(.m-sheet)) .icon-selector-btn { min-height: unset !important; width: 38px !important; height: 38px !important; font-size: 0 !important; padding: 0 !important; }
 }
 
 /* Dialog typography - larger fonts */
-.dialog-content h2, .dialog-content [class*="DialogTitle"] { font-size: 26px !important; font-weight: 600; }
-.dialog-content p, .dialog-content span { font-size: 17px; }
-.dialog-content .text-xs { font-size: 15px !important; }
-.dialog-content .text-sm { font-size: 17px !important; }
-.dialog-content input { font-size: 18px !important; padding: 16px 18px !important; height: 52px !important; }
-.dialog-content textarea { font-size: 18px !important; padding: 16px 18px !important; }
-.dialog-content button:not([data-radix-dialog-close]):not([data-radix-alert-dialog-action]):not([data-radix-alert-dialog-cancel]) { font-size: 17px !important; height: 48px !important; }
-.dialog-content label { font-size: 15px !important; }
+.dialog-content:where(:not(.m-sheet)) h2, .dialog-content:where(:not(.m-sheet)) [class*="DialogTitle"] { font-size: 26px !important; font-weight: 600; }
+.dialog-content:where(:not(.m-sheet)) p, .dialog-content:where(:not(.m-sheet)) span { font-size: 17px; }
+.dialog-content:where(:not(.m-sheet)) .text-xs { font-size: 15px !important; }
+.dialog-content:where(:not(.m-sheet)) .text-sm { font-size: 17px !important; }
+.dialog-content:where(:not(.m-sheet)) input { font-size: 18px !important; padding: 16px 18px !important; height: 52px !important; }
+.dialog-content:where(:not(.m-sheet)) textarea { font-size: 18px !important; padding: 16px 18px !important; }
+.dialog-content:where(:not(.m-sheet)) button:not([data-radix-dialog-close]):not([data-radix-alert-dialog-action]):not([data-radix-alert-dialog-cancel]) { font-size: 17px !important; height: 48px !important; }
+.dialog-content:where(:not(.m-sheet)) label { font-size: 15px !important; }
 
 .date-badge { @apply w-14 h-14 rounded-xl flex flex-col items-center justify-center; background: #1A1717; color: #F6F5F1; }
 .task-icon { @apply w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0; background: rgba(232, 229, 220, 0.78); color: #1A1717; }
