@@ -9163,6 +9163,14 @@ const AccessGate = ({ onUnlock }) => {
   );
 };
 
+// true на телефоні/планшеті (<1024px) — для сторінок поза ResponsiveWrapper,
+// які мають самі ставити клас .m-ui і мобільну розмітку.
+const useIsMobileLayout = () => {
+  const [m, setM] = useState(() => window.innerWidth < 1024);
+  useEffect(() => { const h = () => setM(window.innerWidth < 1024); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
+  return m;
+};
+
 const ResponsiveWrapper = ({ children, desktop }) => {
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1024);
   useEffect(() => { const h = () => setIsDesktop(window.innerWidth >= 1024); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
