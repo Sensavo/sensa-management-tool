@@ -259,3 +259,56 @@ button.m-row { border-left: 0; border-right: 0; border-top: 0; }
 .m-dayoff-chips { margin-top: 10px; }
 .m-dayoff-fixed { margin-top: 6px; }
 .m-dayoff-empty { padding: 24px 0; }
+
+/* === події: список, картка, форма, підтвердження (mr-events) === */
+.m-ev-head { display: flex; justify-content: space-between; align-items: flex-start; }
+.m-ev-head-actions { display: flex; gap: 4px; margin-right: -10px; }
+.m-ev-topbar { margin: 0 -10px; }
+.m-ev-topbar-txt { padding: 0; font-weight: 400; }
+
+.m-ev-week { margin-top: 24px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); text-align: center; padding-bottom: 12px; border-bottom: 1px solid var(--m-line); }
+.m-ev-day { border: 0; background: transparent; padding: 0; display: flex; flex-direction: column; align-items: center; color: var(--m-ink); min-height: 44px; }
+.m-ev-day-num { margin-top: 6px; width: 36px; height: 36px; border-radius: 18px; font-size: 17px; line-height: 36px; display: block; }
+.m-ev-day-num.is-today { background: var(--m-ink); color: #FFFFFF; font-weight: 500; }
+.m-ev-day-dot { margin-top: 6px; width: 4px; height: 4px; border-radius: 2px; background: transparent; }
+.m-ev-day-dot.is-on { background: var(--m-ink); }
+
+.m-ev-sec { margin-top: 28px; padding-bottom: 4px; }
+.m-ev-date { width: 40px; flex-shrink: 0; }
+.m-ev-date .m-n-28 { line-height: 30px; }
+.m-ev-empty { padding: 48px 0; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+.m-ui .event-highlight { background: transparent; box-shadow: inset 3px 0 0 var(--m-ink); }
+
+.m-ev-unit { font-size: 17px; }
+.m-ev-chk-icon { width: 12px; height: 12px; color: #FFFFFF; }
+
+/* Нижні шторки подій */
+.m-sheet.m-ev-sheet::before, .m-sheet.m-confirm::before { position: static; inset: auto; }
+.m-ev-sheet-head { padding: 8px 0 12px; }
+.m-ev-sheet-list .m-row { min-height: 56px; }
+.m-ev-row-ico { width: 22px; height: 22px; flex-shrink: 0; }
+.m-ev-archive-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; border: 0; background: transparent; padding: 0; text-align: left; color: inherit; min-height: 44px; }
+
+/* Форма */
+.m-ev-field-btn { border: 0; background: transparent; padding: 0; width: 100%; text-align: left; font-size: 17px; line-height: 22px; min-height: 22px; letter-spacing: -0.008em; color: var(--m-ink); }
+.m-ev-field-btn.m-faint { color: var(--m-faint); }
+.m-ev-field--bad { border-bottom-color: var(--m-red); }
+.m-ev-field--bad input, .m-ev-field--bad .m-ev-field-btn { color: var(--m-red); }
+.m-ev-inline { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.m-ev-x { width: 32px; height: 32px; margin: -6px -6px -6px 0; border: 0; background: transparent; padding: 0; color: var(--m-muted); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; }
+.m-ev-x::after { content: ''; position: absolute; inset: -6px; }
+.m-ev-x svg { width: 18px; height: 18px; }
+.m-ev-rel { position: relative; }
+.m-ev-suggest { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; background: #FFFFFF; border: 1px solid var(--m-line-strong); border-radius: 12px; max-height: 240px; overflow-y: auto; }
+.m-ev-suggest-item { display: block; width: 100%; min-height: 44px; padding: 0 14px; border: 0; border-bottom: 1px solid var(--m-line); background: transparent; text-align: left; font-size: 17px; color: var(--m-ink); }
+.m-ev-suggest-item:last-child { border-bottom: 0; }
+.m-ev-switch-row { display: flex; align-items: center; justify-content: space-between; min-height: 56px; border-bottom: 1px solid var(--m-line); }
+.m-ev-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin-top: 6px; }
+.m-ev-weekdays .m-ghost { padding: 0; min-width: 0; }
+
+/* Діалог підтвердження (ConfirmHost) */
+.m-confirm .m-confirm-title { font-size: 22px; line-height: 28px; font-weight: 500; letter-spacing: -0.014em; color: var(--m-ink); text-align: left; }
+.m-confirm .m-confirm-text { font-size: 15px; line-height: 20px; color: var(--m-ink-2); white-space: pre-line; text-align: left; }
+.m-confirm-actions { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+.m-confirm-actions .m-btn--plain { background: #FFFFFF; color: var(--m-ink); border: 1px solid var(--m-line-strong); }
+.m-confirm-cancel { justify-content: center; width: 100%; font-weight: 400; color: var(--m-muted); }

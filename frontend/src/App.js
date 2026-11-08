@@ -77,6 +77,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { uk } from "date-fns/locale";
+import { MoreHorizontal, Search } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -397,10 +398,34 @@ const getCancellationGuardDetail = (error) => {
   return detail?.code === "manager_confirmation_required" ? detail : null;
 };
 
-const confirmCancellationGuard = (error) => {
+// Promise-based confirm dialogs (замість window.confirm). <ConfirmHost/> слухає
+// CONFIRM_EVENT і рендерить AlertDialog (на мобайлі—нижня шторка .m-sheet).
+// confirmAsync → true/false; choiceAsync → value обраної опції або null.
+const CONFIRM_EVENT = "poriadok-confirm";
+const confirmAsync = ({ title, message, confirmLabel = "так", cancelLabel = "ні", danger = false } = {}) => new Promise((resolve) => {
+  window.dispatchEvent(new CustomEvent(CONFIRM_EVENT, { detail: {
+    title, message, cancelLabel,
+    options: [{ value: true, label: confirmLabel, danger }],
+    resolve: (v) => resolve(v === true),
+  } }));
+});
+const choiceAsync = ({ title, message, options = [], cancelLabel = "назад" } = {}) => new Promise((resolve) => {
+  window.dispatchEvent(new CustomEvent(CONFIRM_EVENT, { detail: {
+    title, message, cancelLabel, options,
+    resolve: (v) => resolve(v ?? null),
+  } }));
+});
+
+const confirmCancellationGuard = async (error) => {
   const detail = getCancellationGuardDetail(error);
   if (!detail) return false;
-  return window.confirm(`${detail.message}\n\nПідтвердити, що менеджер вже узгодив з учасниками?`);
+  return confirmAsync({
+    title: "менеджер вже говорив з учасниками?",
+    message: detail.message,
+    confirmLabel: "так, узгоджено",
+    cancelLabel: "ще ні",
+    danger: true,
+  });
 };
 
 const showCancellationGuardOrError = (error, fallback = "помилка") => {
@@ -590,7 +615,7 @@ const cancelEventAndArchive = async (event, { refreshEvents, onDone, confirmed =
     onDone?.();
     return true;
   } catch (error) {
-    if (confirmCancellationGuard(error)) {
+    if (await confirmCancellationGuard(error)) {
       return cancelEventAndArchive(event, { refreshEvents, onDone, confirmed: true });
     }
     showCancellationGuardOrError(error);
@@ -605,8 +630,17 @@ const deleteEventPermanentlyFlow = async (event, { refreshEvents, onDeleted, onC
   let deleteScope = "single";
 
   if (isRegularSeriesEvent(event)) {
-    const deleteSeries = window.confirm(`«${event.title || "подія"}» — частина регулярної серії.\n\nOK — видалити цю і всі наступні події серії.\nCancel — видалити тільки цю подію.`);
-    deleteScope = deleteSeries ? "series" : "single";
+    const scope = await choiceAsync({
+      title: "що видаляємо?",
+      message: `«${event.title || "подія"}»—частина регулярної серії.`,
+      options: [
+        { value: "single", label: "тільки цю подію" },
+        { value: "series", label: "цю й усі наступні", danger: true },
+      ],
+      cancelLabel: "назад",
+    });
+    if (!scope) return false;
+    deleteScope = scope;
   }
 
   const runDelete = (confirmed = false) => (
@@ -631,14 +665,30 @@ const deleteEventPermanentlyFlow = async (event, { refreshEvents, onDeleted, onC
 
   const booked = getBookedCount(latest);
   if (booked > 0) {
-    const shouldCancel = window.confirm(`У події є ${booked} куплених/заброньованих місць. Видаляти назавжди не можна. Скасувати подію, закрити Google Calendar/Altegio і залишити в архіві?`);
+    const shouldCancel = await confirmAsync({
+      title: "видалити не можна",
+      message: `На подію вже ${booked} куплених або заброньованих місць. Її можна лише скасувати: закриємо запис у Google Calendar і Altegio, а сама подія лишиться в архіві.`,
+      confirmLabel: "скасувати подію",
+      cancelLabel: "назад",
+      danger: true,
+    });
     if (!shouldCancel) return false;
     return cancelEventAndArchive(latest, { refreshEvents, onDone: onCancelled });
   }
 
   const scopeText = deleteScope === "series" ? "цю і всі наступні події серії" : "цю подію";
-  const shouldDelete = window.confirm(`${syncWarning ? `${syncWarning}\n\nPoriadok ще раз перевірить бронювання перед видаленням.\n\n` : ""}Видалити ${scopeText} назавжди? OK — видалити з історії. Cancel — лише скасувати і залишити в архіві.`);
-  if (!shouldDelete) {
+  // Явна кнопка «лише скасувати» = колишня гілка Cancel; закриття шторки—нічого не робить.
+  const deleteChoice = await choiceAsync({
+    title: `видалити ${scopeText} назавжди?`,
+    message: `${syncWarning ? `${syncWarning}\n\nPoriadok ще раз перевірить бронювання перед видаленням.\n\n` : ""}Подія зникне з історії. Якщо не хочеш видаляти—можна лише скасувати її і залишити в архіві.`,
+    options: [
+      { value: "cancel", label: "лише скасувати" },
+      { value: "delete", label: "видалити назавжди", danger: true },
+    ],
+    cancelLabel: "назад",
+  });
+  if (!deleteChoice) return false;
+  if (deleteChoice === "cancel") {
     return cancelEventAndArchive(latest, { refreshEvents, onDone: onCancelled });
   }
 
@@ -651,7 +701,13 @@ const deleteEventPermanentlyFlow = async (event, { refreshEvents, onDeleted, onC
   } catch (error) {
     const detail = getCancellationGuardDetail(error);
     if (detail) {
-      const shouldDeleteConfirmed = window.confirm(`${detail.message}\n\nПідтвердити, що менеджер перевірив Altegio/учасників і видалити ${scopeText} назавжди?`);
+      const shouldDeleteConfirmed = await confirmAsync({
+        title: "менеджер усе перевірив?",
+        message: `${detail.message}\n\nЯкщо менеджер уже перевірив Altegio й учасників—видалимо ${scopeText} назавжди.`,
+        confirmLabel: "так, видалити",
+        cancelLabel: "ні",
+        danger: true,
+      });
       if (shouldDeleteConfirmed) {
         try {
           const response = await runDelete(true);
@@ -661,18 +717,36 @@ const deleteEventPermanentlyFlow = async (event, { refreshEvents, onDeleted, onC
           return true;
         } catch (confirmedError) {
           const message = getApiErrorMessage(confirmedError, "не вдалося видалити після підтвердження");
-          const shouldCancel = window.confirm(`${message}\n\nСкасувати подію і залишити її в архіві?`);
+          const shouldCancel = await confirmAsync({
+            title: "скасувати подію замість видалення?",
+            message: `${message}\n\nМожна скасувати подію і залишити її в архіві.`,
+            confirmLabel: "скасувати подію",
+            cancelLabel: "нічого не робити",
+            danger: true,
+          });
           if (shouldCancel) return cancelEventAndArchive(latest, { refreshEvents, onDone: onCancelled, confirmed: true });
           return false;
         }
       }
-      const shouldCancel = window.confirm("Скасувати подію і залишити її в архіві?");
+      const shouldCancel = await confirmAsync({
+        title: "скасувати подію?",
+        message: "Подія лишиться в архіві.",
+        confirmLabel: "скасувати подію",
+        cancelLabel: "нічого не робити",
+        danger: true,
+      });
       if (shouldCancel) return cancelEventAndArchive(latest, { refreshEvents, onDone: onCancelled, confirmed: true });
       return false;
     }
     if (error?.response?.status === 502) {
       const message = getApiErrorMessage(error, "не вдалося видалити подію з Google Calendar або Altegio");
-      const shouldCancel = window.confirm(`${message}\n\nПовністю видалити зараз не вийшло. Скасувати подію і залишити її в архіві?`);
+      const shouldCancel = await confirmAsync({
+        title: "видалити зараз не вийшло",
+        message: `${message}\n\nМожна натомість скасувати подію і залишити її в архіві.`,
+        confirmLabel: "скасувати подію",
+        cancelLabel: "нічого не робити",
+        danger: true,
+      });
       if (shouldCancel) return cancelEventAndArchive(latest, { refreshEvents, onDone: onCancelled });
       return false;
     }
@@ -2276,18 +2350,32 @@ const NewSMMTaskPage = () => {
 };
 
 // Events Page
+const UK_WEEKDAYS_SHORT = ["нд", "пн", "вт", "ср", "чт", "пт", "сб"];
+const parseYmdLocal = (value) => {
+  const [y, m, d] = String(value || "").slice(0, 10).split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+};
+// Ціна для списку/картки: активна рання пташка або звичайна.
+const getEventActiveTier = (event, todayStr) => (event?.price_tiers || [])
+  .filter(t => t?.until && t.price != null && t.price !== "" && String(t.until).slice(0, 10) >= todayStr)
+  .sort((a, b) => (String(a.until) < String(b.until) ? -1 : 1))[0] || null;
+
 const EventsPage = () => {
-  const { events, settings, refreshEvents } = useApp();
+  const { events, refreshEvents } = useApp();
   const { pushUndo } = useUndo();
   const navigate = useNavigate();
-  const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showArchive, setShowArchive] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const [searchParams] = useSearchParams();
   const deepLinkEventId = searchParams.get("event");
   useEffect(() => { if (deepLinkEventId) navigate(`/event/${deepLinkEventId}/view`, { replace: true }); }, [deepLinkEventId, navigate]);
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const allEvents = getVisibleEventsForMonth(events, currentMonth, today);
+  const todayStr = formatDateLocal(today);
+  const upcoming = getVisibleEventsForMonth(events, today, today);
+  const q = query.trim().toLowerCase();
+  const visible = q ? upcoming.filter(e => String(e.title || "").toLowerCase().includes(q)) : upcoming;
 
   // Archive: cancelled events + past events + archived events
   const archivedEvents = events.filter(e => {
@@ -2296,25 +2384,31 @@ const EventsPage = () => {
     return e.cancelled || e.archived || eventDate < today;
   }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  const handleDateSelect = (date) => {
-    if (date) {
-      const dateStr = formatDateLocal(date);
-      const element = document.querySelector(`[data-event-date="${dateStr}"]`);
-      if (element) { element.scrollIntoView({ behavior: 'smooth', block: 'center' }); element.classList.add('event-highlight'); setTimeout(() => element.classList.remove('event-highlight'), 2000); }
-    }
-  };
+  // Тижнева стрічка: 7 днів від сьогодні, крапка—є активні події.
+  const activeDays = new Set(upcoming.map(getEventDateKey));
+  const weekDays = Array.from({ length: 7 }, (_, i) => { const d = new Date(today); d.setDate(d.getDate() + i); return d; });
 
-  const handleEventClick = (event) => { setSelectedEvent(event); setShowEventDialog(true); };
-  const handleDeleteEvent = async () => {
-    await deleteEventPermanentlyFlow(selectedEvent, {
-      refreshEvents,
-      onDeleted: () => { setShowEventDialog(false); setDeleteDialogOpen(false); },
-      onCancelled: () => { setShowEventDialog(false); setDeleteDialogOpen(false); },
-    });
-  };
-  const handleToggleTaskInDialog = async (reminderId, completed) => {
-    try { await api.completeTask({ event_id: selectedEvent.id, reminder_id: reminderId, completed }); refreshEvents(); const r = await axios.get(`${API}/events/${selectedEvent.id}`); setSelectedEvent(r.data); }
-    catch { toast.error("помилка"); }
+  // Агенда: цей тиждень (0–6 днів), наступний (7–13), далі—по місяцях.
+  const groups = [];
+  visible.forEach(event => {
+    const d = parseYmdLocal(event.date);
+    const diff = Math.round((d - today) / 86400000);
+    let key, label;
+    if (diff < 7) { key = "w0"; label = "цей тиждень"; }
+    else if (diff < 14) { key = "w1"; label = "наступний тиждень"; }
+    else {
+      key = `${d.getFullYear()}-${d.getMonth()}`;
+      label = `${UK_MONTHS_NOMINATIVE[d.getMonth()]}${d.getFullYear() !== today.getFullYear() ? ` ${d.getFullYear()}` : ""}`;
+    }
+    let g = groups.find(x => x.key === key);
+    if (!g) { g = { key, label, items: [] }; groups.push(g); }
+    g.items.push(event);
+  });
+
+  const handleDaySelect = (date) => {
+    const dateStr = formatDateLocal(date);
+    const element = document.querySelector(`[data-event-date="${dateStr}"]`);
+    if (element) { element.scrollIntoView({ behavior: 'smooth', block: 'center' }); element.classList.add('event-highlight'); setTimeout(() => element.classList.remove('event-highlight'), 2000); }
   };
 
   const handleRestoreEvent = async (eventId) => {
@@ -2326,66 +2420,117 @@ const EventsPage = () => {
     } catch { toast.error("помилка"); }
   };
 
+  const eventMeta = (event) => {
+    const parts = [];
+    if (event.start_time) parts.push(event.start_time);
+    const tier = getEventActiveTier(event, todayStr);
+    if (tier) {
+      const u = parseYmdLocal(tier.until);
+      parts.push(`${tier.price} ₴ до ${u.getDate()} ${UK_MONTHS[u.getMonth()]}`);
+    } else if (event.price != null && event.price !== "") parts.push(`${event.price} ₴`);
+    if (isRegularSeriesEvent(event)) parts.push("серія");
+    return parts.join(" · ");
+  };
+
+  const renderBooked = (event) => {
+    const spots = event.spots || 10;
+    const has = event.altegio_booked_count !== undefined && event.altegio_booked_count !== null;
+    const n = has ? Number(event.altegio_booked_count) || 0 : null;
+    return (
+      <div className="m-b" aria-label={has ? `записались ${n} з ${spots}` : `місць ${spots}`}>
+        {n === null ? <span className="m-faint">—</span> : <span className={n === 0 ? "m-red" : ""}>{n}</span>}
+        <span className="m-faint">/{spots}</span>
+      </div>
+    );
+  };
+
+  const now = new Date();
+
   return (
-    <div className="animate-fade-in">
-      <header className="page-header">
-        <h1 className="logo">події</h1>
-      </header>
-
-      <div className="page-content pt-4">
-        <div className="calendar-container mb-6">
-          <Calendar mode="single" locale={uk} weekStartsOn={1} onSelect={handleDateSelect} month={currentMonth} onMonthChange={setCurrentMonth} className="w-full calendar-minimal"
-            modifiersClassNames={{ today: "calendar-today-hidden" }}
-            components={{ DayContent: ({ date }) => {
-              return renderEventCalendarDay(date, events, currentMonth, today);
-            }}}
-          />
+    <div className="m-page" data-testid="events-page">
+      <div className="m-ev-head">
+        <div>
+          <h1 className="m-d">події</h1>
+          <div className="m-c" style={{ marginTop: 2 }}>{UK_MONTHS_NOMINATIVE[now.getMonth()]} {now.getFullYear()}</div>
         </div>
-
-        <section>
-          <div className="section-header mb-3"><span className="section-title">всі події</span></div>
-          {allEvents.length > 0 ? (
-            <div className="space-y-3">{allEvents.map(event => (
-              <div key={event.id} className={`event-card flex items-center gap-4${getEventArchiveClass(event, today)}`} onClick={() => navigate(`/event/${event.id}/view`)} data-event-date={event.date.split('T')[0]}>
-                <div className="date-badge"><span className="text-xs">{UK_MONTHS_SHORT[new Date(event.date).getMonth()]}</span><span className="text-lg font-bold">{new Date(event.date).getDate()}</span></div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold line-clamp-2 break-words">{event.title}</h3>
-                  <p className="text-sm text-secondary">{event.start_time ? `${event.start_time} • ` : ""}{event.spots} місць • {event.price} ₴</p>
-                </div>
-                <EventArchiveIcon event={event} today={today} />
-                {event.altegio_booked_count !== undefined && event.altegio_booked_count !== null && (
-                  <div className="text-right">
-                    <span className={`text-lg font-bold ${getBookingColorClass(getBookingStatusColor(event))}`}>
-                      {event.altegio_booked_count}
-                    </span>
-                    <span className="text-sm text-secondary">/{event.spots}</span>
-                  </div>
-                )}
-              </div>
-            ))}</div>
-          ) : <div className="text-center py-12"><p className="text-secondary text-sm">поки подій немає</p><button className="btn-dark mt-4" onClick={() => navigate("/event/new")}><Plus className="w-4 h-4 mr-2" />створити</button></div>}
-        </section>
-
-        <button className="archive-btn" onClick={() => setShowArchive(true)}><Archive className="w-4 h-4 inline mr-2" />архів подій</button>
+        <div className="m-ev-head-actions">
+          <button type="button" className="m-ico" aria-label="пошук" aria-pressed={searchOpen} onClick={() => { setSearchOpen(o => !o); if (searchOpen) setQuery(""); }}><Search strokeWidth={1.5} /></button>
+          <button type="button" className="m-ico" aria-label="архів подій" onClick={() => setShowArchive(true)}><Archive strokeWidth={1.5} /></button>
+        </div>
       </div>
 
-      <button className="fab" onClick={() => navigate("/event/new")}><Plus className="w-6 h-6" /></button>
+      {searchOpen && (
+        <label className="m-field" style={{ marginTop: 12 }}>
+          <span>пошук</span>
+          <input type="search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="назва події" data-testid="events-search" />
+        </label>
+      )}
+
+      {!q && (
+        <div className="m-ev-week" role="list" aria-label="найближчі 7 днів">
+          {weekDays.map((d, i) => {
+            const key = formatDateLocal(d);
+            const has = activeDays.has(key);
+            return (
+              <button key={key} type="button" role="listitem" className="m-ev-day" onClick={() => handleDaySelect(d)} aria-label={`${d.getDate()} ${UK_MONTHS[d.getMonth()]}${has ? ", є події" : ""}`}>
+                <span className="m-c">{UK_WEEKDAYS_SHORT[d.getDay()]}</span>
+                <span className={`m-ev-day-num${i === 0 ? " is-today" : ""}`}>{d.getDate()}</span>
+                <span className={`m-ev-day-dot${has ? " is-on" : ""}`} />
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {groups.length > 0 ? groups.map(g => (
+        <section key={g.key}>
+          <h2 className="m-sec m-ev-sec">{g.label}</h2>
+          <div className="m-list">
+            {g.items.map(event => {
+              const d = parseYmdLocal(event.date);
+              return (
+                <button key={event.id} type="button" className="m-row m-row--tall" onClick={() => navigate(`/event/${event.id}/view`)} data-event-date={getEventDateKey(event)} data-testid={`event-row-${event.id}`}>
+                  <div className="m-ev-date">
+                    <div className="m-n m-n-28">{d.getDate()}</div>
+                    <div className="m-c">{UK_WEEKDAYS_SHORT[d.getDay()]}</div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="m-b m-ellipsis">{event.title}</div>
+                    <div className="m-c m-ellipsis">{eventMeta(event)}</div>
+                  </div>
+                  {renderBooked(event)}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )) : (
+        <div className="m-ev-empty">
+          <p className="m-c">{q ? "нічого не знайдено" : "поки подій немає"}</p>
+          {!q && <button type="button" className="m-ghost" onClick={() => navigate("/event/new")}><Plus strokeWidth={1.5} className="w-4 h-4" />створити</button>}
+        </div>
+      )}
+
+      <button type="button" className="m-fab" aria-label="нова подія" onClick={() => navigate("/event/new")} data-testid="events-fab"><Plus strokeWidth={1.8} /></button>
 
       <Dialog open={showArchive} onOpenChange={setShowArchive}>
-        <DialogContent className="dialog-content"><DialogHeader><DialogTitle>архів подій</DialogTitle></DialogHeader>
-          {archivedEvents.length > 0 ? <div className="space-y-3">{archivedEvents.map(event => (
-            <div key={event.id} className="event-card flex items-center gap-4 cursor-pointer" onClick={() => navigate(`/event/${event.id}/view`)}>
-              <div className="date-badge"><span className="text-xs">{UK_MONTHS_SHORT[new Date(event.date).getMonth()]}</span><span className="text-lg font-bold">{new Date(event.date).getDate()}</span></div>
-              <div className="flex-1 min-w-0"><h3 className="font-semibold truncate">{event.title}</h3><p className="text-sm text-secondary">{event.price} ₴</p></div>
-              {event.cancelled ? (
-                <button className="restore-btn cancelled" onClick={(e) => { e.stopPropagation(); handleRestoreEvent(event.id); }} title="відновити">
-                  <X className="w-4 h-4" />
+        <DialogContent className="m-sheet m-ev-sheet" hideClose>
+          <DialogHeader className="m-ev-sheet-head"><DialogTitle className="m-h">архів подій</DialogTitle><DialogDescription className="sr-only">минулі й скасовані події</DialogDescription></DialogHeader>
+          {archivedEvents.length > 0 ? <div className="m-list">{archivedEvents.map(event => {
+            const d = parseYmdLocal(event.date);
+            return (
+              <div key={event.id} className="m-row">
+                <button type="button" className="m-ev-archive-main" onClick={() => { setShowArchive(false); navigate(`/event/${event.id}/view`); }}>
+                  <div className="m-ev-date"><div className="m-n m-n-28">{d.getDate()}</div><div className="m-c">{UK_MONTHS_SHORT[d.getMonth()]}</div></div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className={`m-b m-ellipsis${event.cancelled ? " m-done" : ""}`}>{event.title}</div>
+                    <div className="m-c">{event.cancelled ? "скасовано" : "минула"}{event.price != null ? ` · ${event.price} ₴` : ""}</div>
+                  </div>
                 </button>
-              ) : (
-                <span className="text-xs text-secondary">минула</span>
-              )}
-            </div>
-          ))}</div> : <p className="text-center text-secondary py-8 text-sm">порожньо</p>}
+                {event.cancelled && <button type="button" className="m-txt" onClick={() => handleRestoreEvent(event.id)}>відновити</button>}
+              </div>
+            );
+          })}</div> : <p className="m-c" style={{ padding: "24px 0", textAlign: "center" }}>порожньо</p>}
         </DialogContent>
       </Dialog>
 
@@ -2480,6 +2625,9 @@ const EventDetailPage = () => {
   const [altegioIssueOpen, setAltegioIssueOpen] = useState(false);
   const [seriesData, setSeriesData] = useState(null);
   const [cancelSeriesOpen, setCancelSeriesOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [roleTab, setRoleTab] = useState("manager");
+  const [showAllTasks, setShowAllTasks] = useState(false);
 
   useEffect(() => { const h = () => setIsDesktop(window.innerWidth >= 1024); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
 
@@ -2555,7 +2703,7 @@ const EventDetailPage = () => {
     };
     try { done(await run(false)); }
     catch (error) {
-      if (confirmCancellationGuard(error)) {
+      if (await confirmCancellationGuard(error)) {
         try { done(await run(true)); } catch (retryError) { showCancellationGuardOrError(retryError); }
       } else showCancellationGuardOrError(error);
     }
@@ -2693,168 +2841,227 @@ const EventDetailPage = () => {
 
   if (!isDesktop) {
     const todayStr = formatDateLocal(new Date());
-    const fmtDay = (ymd) => { const [, m, d] = String(ymd).slice(0, 10).split("-").map(Number); return `${d} ${UK_MONTHS_SHORT[m - 1]}`; };
-    const activeTier = (event.price_tiers || [])
-      .filter(t => t?.until && t.price != null && String(t.until).slice(0, 10) >= todayStr)
-      .sort((a, b) => (String(a.until) < String(b.until) ? -1 : 1))[0];
+    const fmtDay = (ymd) => { const d = parseYmdLocal(ymd); return `${d.getDate()} ${UK_MONTHS_SHORT[d.getMonth()]}`; };
+    const activeTier = getEventActiveTier(event, todayStr);
     const regularPrice = event.base_price ?? event.price;
     const hasBookings = event.altegio_booked_count !== null && event.altegio_booked_count !== undefined;
+    const bookedN = hasBookings ? (Number(event.altegio_booked_count) || 0) : 0;
+    const spots = event.spots || 10;
     const altegioWarningText = {
-      no_service: "послугу не знайдено в Altegio — подія не зʼявиться для запису",
-      no_staff: "послуга не привʼязана до жодного учасника команди — онлайн-запис не працює",
-      service_disabled: "послуга вимкнена або не онлайн — подія прихована в Altegio",
-      prepaid_off: "для послуги вимкнена передоплата — записуються без оплати",
+      no_service: "послугу не знайдено в Altegio—подія не зʼявиться для запису",
+      no_staff: "послуга не привʼязана до жодного учасника команди—онлайн-запис не працює",
+      service_disabled: "послуга вимкнена або не онлайн—подія прихована в Altegio",
+      prepaid_off: "для послуги вимкнена передоплата—записуються без оплати",
     };
     const altegioIssue = event.altegio_warning
       ? (altegioWarningText[event.altegio_warning.type] || event.altegio_warning.message || "проблема з Altegio")
       : event.altegio_last_error;
     const seriesEvents = seriesData?.events || [];
     const otherSeriesEvents = seriesEvents.filter(inst => inst.id !== eventId);
+    const inCalendar = !!(event.google_calendar_event_id || event.google_calendar_id);
 
-    const renderSection = (key, title, meta, content) => (
-      <div className="rounded-2xl bg-[#F1EEE7] mb-2" key={key}>
-        <button type="button" className="w-full min-h-[48px] px-4 flex items-center justify-between gap-3 text-left" onClick={() => toggleSection(key)} aria-expanded={!!openSections[key]} data-testid={`detail-section-${key}`}>
-          <span className="text-sm font-semibold">{title}</span>
-          <span className="flex items-center gap-2 text-xs text-secondary tabular-nums">
-            {meta}
-            <ChevronDown className={`w-4 h-4 transition-transform ${openSections[key] ? "rotate-180" : ""}`} />
-          </span>
-        </button>
-        {openSections[key] && <div className="px-4 pb-3">{content}</div>}
-      </div>
-    );
+    const ed = parseYmdLocal(event.date);
+    const dateLine = `${UK_WEEKDAYS[ed.getDay()].replace("'", "ʼ")}, ${ed.getDate()} ${UK_MONTHS[ed.getMonth()]}${event.start_time ? ` · ${event.start_time}${event.end_time ? `—${event.end_time}` : ""}` : ""}`;
 
-    const renderTasks = (tasks, colorCls, onToggle) => tasks.length > 0 ? tasks.map(task => {
-      const IconComponent = getIconComponent(task.icon);
-      const overdue = !task.completed && String(task.date).slice(0, 10) < todayStr;
-      const condBadge = formatTaskCondition(task.condition);
-      return (
-        <div key={task.id} className={`task-item min-h-[48px] cursor-pointer ${task.completed ? "opacity-40" : ""}`} onClick={() => onToggle(task.id, !task.completed)} data-testid={`detail-task-${task.id}`}>
-          <div className={`task-icon ${colorCls}`}><IconComponent /></div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium break-words">{task.name}</p>
-            <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-              <p className={`text-xs ${overdue ? "text-[#FF8370]" : "text-secondary"}`}>{formatDateUkrainian(task.date)}</p>
-              {condBadge && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-black/8 text-[#1A1717]/65 font-medium">{condBadge}</span>}
-              {task.assignee && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-black/5 text-secondary font-medium">{getAssigneeLabel(task.assignee)}</span>}
-            </div>
-          </div>
-          <button className={`task-checkbox ${task.completed ? "checked" : ""}`} onClick={(e) => { e.stopPropagation(); onToggle(task.id, !task.completed); }} aria-label={task.completed ? "зняти позначку" : "позначити виконаним"}>
-            <Check className="w-4 h-4" />
-          </button>
-        </div>
-      );
-    }) : <p className="text-secondary text-sm py-3">немає завдань</p>;
+    const fmtAgo = (iso) => {
+      const t = new Date(iso).getTime();
+      if (!Number.isFinite(t)) return "";
+      const min = Math.max(0, Math.round((Date.now() - t) / 60000));
+      if (min < 1) return "щойно";
+      if (min < 60) return `${min} хв тому`;
+      const h = Math.round(min / 60);
+      if (h < 24) return `${h} год тому`;
+      return new Date(iso).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' });
+    };
 
-    const actionBtn = "min-h-[44px] px-3 rounded-xl bg-[#F6F5F1] text-sm flex items-center justify-center gap-2 disabled:opacity-50";
-    const outerBtn = actionBtn.replace("bg-[#F6F5F1]", "bg-[#F1EEE7]");
-    const doneCount = (tasks) => `${tasks.filter(t => t.completed).length}/${tasks.length}`;
+    const roles = [
+      { key: "manager", label: "менеджер", tasks: managementTasks, onToggle: handleToggleTask },
+      { key: "smm", label: "smm", tasks: smmTasks, onToggle: handleToggleSMMTask },
+      { key: "marketer", label: "маркетинг", tasks: marketingTasks, onToggle: handleToggleMarketingTask },
+    ];
+    const allTasks = [...managementTasks, ...smmTasks, ...marketingTasks];
+    const doneAll = allTasks.filter(t => t.completed).length;
+    const role = roles.find(r => r.key === roleTab) || roles[0];
+    // Спершу невиконані за датою, потім виконані.
+    const roleTasks = [...role.tasks].sort((a, b) => (a.completed === b.completed ? 0 : a.completed ? 1 : -1));
+    const TASK_PREVIEW = 4;
+    const shownTasks = showAllTasks ? roleTasks : roleTasks.slice(0, TASK_PREVIEW);
+
+    // Шторка «⋯» має закритись до відкриття діалогу підтвердження (Radix не любить два модальні шари одночасно).
+    const closeSheet = () => new Promise((r) => { setMoreOpen(false); setTimeout(r, 180); });
+    const handleCancelMobile = async () => {
+      await closeSheet();
+      if (isRegularSeriesEvent(event)) {
+        const scope = await choiceAsync({
+          title: "скасувати регулярну подію",
+          message: `«${event.title || "подія"}»—частина регулярної серії. Що скасовуємо?`,
+          options: [
+            { value: "single", label: "тільки цю" },
+            { value: "series", label: "цю й наступні", danger: true },
+          ],
+          cancelLabel: "залишити все",
+        });
+        if (scope) cancelSeriesScope(scope);
+        return;
+      }
+      handleCancel();
+    };
+    const handleDeleteMobile = async () => {
+      await closeSheet();
+      const ok = await confirmAsync({
+        title: "видалити подію назавжди?",
+        message: "Якщо на подію вже купили місця, видалення зупиниться—тоді її можна буде лише скасувати й залишити в архіві.",
+        confirmLabel: "видалити назавжди",
+        cancelLabel: "назад",
+        danger: true,
+      });
+      if (ok) handleDelete();
+    };
+    const sheetAction = (fn) => () => { setMoreOpen(false); fn(); };
 
     return (
-      <div className="h-[100dvh] overflow-y-auto bg-[#F6F5F1]" data-testid="event-detail-page">
-        <header className="sticky top-0 z-20 bg-[#F6F5F1] px-4 pb-2 flex items-start gap-2" style={{ paddingTop: "max(12px, env(safe-area-inset-top))" }}>
-          <button className="desktop-header-btn !w-11 !h-11 flex-shrink-0" onClick={() => goBackOr(navigate, '/events')} aria-label="назад" data-testid="event-detail-close-area"><ChevronLeft className="w-5 h-5" /></button>
-          <h1 className="flex-1 min-w-0 text-lg font-semibold leading-snug line-clamp-2 break-words py-2">{event.title}</h1>
-        </header>
-
-        <div className="px-4" style={{ paddingBottom: "max(40px, env(safe-area-inset-bottom))" }}>
-          <div className="rounded-2xl bg-[#F1EEE7] p-4 mb-3">
-            {(event.cancelled || event.cancellation_pending || altegioIssue || seriesEvents.length > 1) && (
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {event.cancelled && <span className="text-xs px-2.5 py-1 rounded-full bg-red-50 text-red-600 font-medium">скасовано</span>}
-                {event.cancellation_pending && <span className="text-xs px-2.5 py-1 rounded-full bg-orange-50 text-orange-700 font-medium">скасування чекає підтвердження</span>}
-                {altegioIssue && (
-                  <button type="button" className="text-xs px-2.5 min-h-[28px] rounded-full bg-[#FF8370]/15 text-[#C24A36] font-medium inline-flex items-center gap-1" onClick={() => setAltegioIssueOpen(o => !o)} aria-expanded={altegioIssueOpen}>
-                    <AlertTriangle className="w-3.5 h-3.5" />проблема з Altegio
-                  </button>
-                )}
-                {seriesEvents.length > 1 && <span className="text-xs px-2.5 py-1 rounded-full bg-black/5 text-secondary font-medium">серія · {seriesEvents.length}</span>}
-              </div>
-            )}
-            {altegioIssue && altegioIssueOpen && (
-              <div className="mb-3 p-3 rounded-xl bg-[#F6F5F1] text-xs break-words">
-                <p>{altegioIssue}</p>
-                {event.altegio_warning && <button type="button" className="mt-2 underline font-medium min-h-[32px]" onClick={() => emitAltegioWarning(event.altegio_warning)}>як виправити</button>}
-              </div>
-            )}
-            <div className="flex justify-between items-center py-2 border-b border-[#E8E5DC] gap-3">
-              <span className="text-secondary text-sm">дата</span>
-              <span className="font-medium text-right">{formatDateUkrainian(event.date)}</span>
+      <div className="m-ui" data-testid="event-detail-page">
+        <div className="m-page">
+          <div className="m-topbar m-ev-topbar">
+            <button type="button" className="m-ico" onClick={() => goBackOr(navigate, '/events')} aria-label="назад" data-testid="event-detail-close-area"><ChevronLeft strokeWidth={1.5} /></button>
+            <div className="m-ev-head-actions">
+              <button type="button" className="m-ico" onClick={() => navigate(`/event/${eventId}`)} aria-label="редагувати"><Pencil strokeWidth={1.5} /></button>
+              <button type="button" className="m-ico" onClick={() => setMoreOpen(true)} aria-label="ще дії" data-testid="detail-more"><MoreHorizontal strokeWidth={1.5} /></button>
             </div>
-            {event.start_time && (
-              <div className="flex justify-between items-center py-2 border-b border-[#E8E5DC] gap-3">
-                <span className="text-secondary text-sm">час</span>
-                <span className="font-medium">{event.start_time}{event.end_time ? ` — ${event.end_time}` : ""}</span>
-              </div>
-            )}
-            <div className="flex justify-between items-center py-2 border-b border-[#E8E5DC] gap-3">
-              <span className="text-secondary text-sm">ціна</span>
-              <span className="font-medium text-right">
-                {activeTier
-                  ? <>{activeTier.price} ₴ <span className="text-secondary text-sm font-normal">· звичайна {regularPrice} · до {fmtDay(activeTier.until)}</span></>
-                  : <>{event.price} ₴</>}
-              </span>
-            </div>
-            <div className={`flex justify-between items-center py-2 gap-3${event.description ? " border-b border-[#E8E5DC]" : ""}`}>
-              <span className="text-secondary text-sm">учасники</span>
-              {hasBookings ? (
-                <span className={`font-bold ${colorClass}`}>{event.altegio_booked_count}/{event.spots || 10}</span>
-              ) : (
-                <span className="font-medium">0/{event.spots || 10}</span>
-              )}
-            </div>
-            {event.description && (
-              <div className="py-2">
-                <span className="text-secondary text-sm block mb-1">опис</span>
-                <p className="text-sm whitespace-pre-line break-words">{event.description}</p>
-              </div>
-            )}
           </div>
 
-          <div className="rounded-2xl bg-[#F1EEE7] p-4 mb-3" data-testid="detail-sync">
-            <p className="text-xs text-secondary mb-3">синхронізація</p>
-            <div className="grid grid-cols-2 gap-2">
-              <button className={actionBtn} onClick={handleExportCalendar} disabled={exporting}><ExternalLink className="w-4 h-4" />{exporting ? "..." : "Calendar"}</button>
-              <button className={actionBtn} onClick={handleSyncAltegio} disabled={syncing}><RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />{syncing ? "..." : "Altegio"}</button>
-              <button className={actionBtn} onClick={handleOpenAltegio}><ExternalLink className="w-4 h-4" />відкрити</button>
-              <button className={actionBtn} onClick={handleShareAltegio}><Share2 className="w-4 h-4" />поширити</button>
+          <h1 className="m-d" style={{ marginTop: 16, overflowWrap: "anywhere" }}>{event.title}</h1>
+          <div className="m-b m-muted" style={{ marginTop: 4 }}>{dateLine}</div>
+          {(event.cancelled || event.cancellation_pending || seriesEvents.length > 1) && (
+            <div className="m-c" style={{ marginTop: 4 }}>
+              {event.cancelled && <span className="m-red">скасовано</span>}
+              {event.cancelled && (event.cancellation_pending || seriesEvents.length > 1) && " · "}
+              {event.cancellation_pending && <span className="m-red">скасування чекає підтвердження</span>}
+              {event.cancellation_pending && seriesEvents.length > 1 && " · "}
+              {seriesEvents.length > 1 && <span>серія з {seriesEvents.length} подій</span>}
             </div>
-            {event.altegio_last_sync && <p className="text-xs text-secondary mt-2 text-center">оновлено: {new Date(event.altegio_last_sync).toLocaleString('uk-UA')}</p>}
+          )}
+
+          <div className="m-metrics" style={{ marginTop: 24 }} data-testid="detail-metrics">
+            <div>
+              <div className="m-n m-n-28">{activeTier ? activeTier.price : event.price}<span className="m-ev-unit"> ₴</span></div>
+              <div className="m-c" style={{ marginTop: 2 }}>{activeTier ? `до ${fmtDay(activeTier.until)}, далі ${regularPrice}` : "ціна"}</div>
+            </div>
+            <div>
+              <div className="m-n m-n-28"><span className={bookedN === 0 ? "m-red" : ""}>{bookedN}</span><span className="m-faint">/{spots}</span></div>
+              <div className="m-c" style={{ marginTop: 2 }}>записались</div>
+            </div>
+            <div>
+              <div className="m-n m-n-28">{doneAll}<span className="m-faint">/{allTasks.length}</span></div>
+              <div className="m-c" style={{ marginTop: 2 }}>задач</div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 mb-2" data-testid="detail-actions">
-            <button className={outerBtn} onClick={() => navigate(`/event/${eventId}`)}><Edit className="w-4 h-4" />редагувати</button>
-            {!event.cancelled ? (
-              <button className={`${outerBtn} text-orange-600`} onClick={handleCancel}><X className="w-4 h-4" />скасувати</button>
-            ) : (
-              <button className={`${outerBtn} text-green-600`} onClick={handleRestore}><RotateCcw className="w-4 h-4" />відновити</button>
-            )}
-          </div>
-          <button className={`${outerBtn} w-full mb-4 text-[#FF8370]`} onClick={() => setDeleteDialogOpen(true)}><Trash2 className="w-4 h-4" />видалити назавжди</button>
-
-          {renderSection("manager", "manager", doneCount(managementTasks), renderTasks(managementTasks, "", handleToggleTask))}
-          {renderSection("smm", "smm", doneCount(smmTasks), renderTasks(smmTasks, "emerald", handleToggleSMMTask))}
-          {renderSection("marketer", "marketer", doneCount(marketingTasks), renderTasks(marketingTasks, "orange", handleToggleMarketingTask))}
-
-          {otherSeriesEvents.length > 0 && renderSection("series", "інші дати серії", `${otherSeriesEvents.length}`, otherSeriesEvents.map(inst => {
-            const isPast = String(inst.date).slice(0, 10) < todayStr;
-            return (
-              <button key={inst.id} type="button" onClick={() => navigate(`/event/${inst.id}/view`)} className={`w-full min-h-[44px] flex items-center gap-3 px-1 text-left text-sm border-b border-black/5 last:border-b-0 ${inst.cancelled ? "line-through text-[#1A1717]/35" : isPast ? "text-[#1A1717]/55" : ""}`} data-testid={`detail-series-${inst.id}`}>
-                <span className="font-medium tabular-nums">{formatDateUkrainian(inst.date)}</span>
-                {inst.start_time && <span className="text-xs text-secondary">{inst.start_time}</span>}
-                <span className="ml-auto text-xs tabular-nums text-secondary">{inst.altegio_booked_count != null ? `${inst.altegio_booked_count}/${inst.spots || 10}` : `–/${inst.spots || 10}`}</span>
-                <ChevronRight className="w-4 h-4 text-secondary" />
+          <div role="tablist" aria-label="задачі ролі" className="m-tabs" style={{ marginTop: 24 }}>
+            {roles.map(r => (
+              <button key={r.key} type="button" role="tab" className="m-tab" aria-selected={roleTab === r.key} onClick={() => { setRoleTab(r.key); setShowAllTasks(false); }} data-testid={`detail-section-${r.key}`}>
+                {r.label} <span className="m-tab-count">{r.tasks.filter(t => t.completed).length}/{r.tasks.length}</span>
               </button>
-            );
-          }))}
+            ))}
+          </div>
+          <div role="tabpanel">
+            {roleTasks.length === 0 && <p className="m-c" style={{ padding: "16px 0" }}>немає задач</p>}
+            {shownTasks.map(task => {
+              const overdue = !task.completed && String(task.date).slice(0, 10) < todayStr;
+              const meta = [
+                overdue ? `протерміновано з ${formatDateUkrainian(task.date)}` : formatDateUkrainian(task.date),
+                formatTaskCondition(task.condition),
+                task.assignee ? getAssigneeLabel(task.assignee) : null,
+              ].filter(Boolean).join(" · ");
+              return (
+                <div key={task.id} className="m-row" data-testid={`detail-task-${task.id}`}>
+                  <button type="button" role="checkbox" aria-checked={task.completed}
+                    className={`m-chk${overdue ? " m-chk--overdue" : ""}`}
+                    onClick={() => role.onToggle(task.id, !task.completed)}
+                    aria-label={task.completed ? "зняти позначку" : "позначити виконаним"}>
+                    {task.completed && <Check className="m-ev-chk-icon" strokeWidth={3} />}
+                  </button>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span className={`m-b${task.completed ? " m-done" : ""}`} style={{ display: "block", overflowWrap: "anywhere" }}>{task.name}</span>
+                    {!task.completed && <span className={`m-c${overdue ? " m-red" : ""}`}>{meta}</span>}
+                  </span>
+                </div>
+              );
+            })}
+            {roleTasks.length > TASK_PREVIEW && (
+              <button type="button" className="m-txt" style={{ paddingLeft: 0, marginTop: 4 }} onClick={() => setShowAllTasks(v => !v)}>
+                {showAllTasks ? "згорнути" : `усі ${roleTasks.length} задач`}
+              </button>
+            )}
+          </div>
+
+          {event.description && (
+            <>
+              <h2 className="m-sec" style={{ marginTop: 20 }}>опис</h2>
+              <p className="m-b" style={{ margin: "6px 0 0", color: "var(--m-ink-2)", whiteSpace: "pre-line", overflowWrap: "anywhere" }}>{event.description}</p>
+            </>
+          )}
+
+          <div className="m-list" style={{ marginTop: 20 }} data-testid="detail-sync">
+            <div className="m-row">
+              <span className={`m-dot${altegioIssue ? " m-dot--warn" : ""}`} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span className="m-b">Altegio</span>{" "}
+                <span className="m-c">{altegioIssue ? "· є проблема" : event.altegio_last_sync ? `· синхронізовано ${fmtAgo(event.altegio_last_sync)}` : "· ще не синхронізовано"}</span>
+                {altegioIssue && <span className="m-c m-red" style={{ display: "block", overflowWrap: "anywhere" }}>{altegioIssue}</span>}
+                {event.altegio_warning && <button type="button" className="m-txt" style={{ paddingLeft: 0 }} onClick={() => emitAltegioWarning(event.altegio_warning)}>як виправити</button>}
+              </span>
+              <button type="button" className="m-txt" style={{ marginRight: -8 }} onClick={handleSyncAltegio} disabled={syncing}>{syncing ? "оновлюю…" : "оновити"}</button>
+            </div>
+            <div className="m-row">
+              <span className={`m-dot${inCalendar ? "" : " m-dot--warn"}`} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span className="m-b">Google Calendar</span>{" "}
+                <span className="m-c">{inCalendar ? "· у календарі" : "· не додано"}</span>
+              </span>
+              <button type="button" className="m-txt" style={{ marginRight: -8 }} onClick={handleExportCalendar} disabled={exporting}>{exporting ? "додаю…" : inCalendar ? "оновити" : "додати"}</button>
+            </div>
+          </div>
+
+          {otherSeriesEvents.length > 0 && (
+            <>
+              <div className="m-sec-head"><h2 className="m-sec">інші дати серії</h2><span className="m-c">{otherSeriesEvents.length}</span></div>
+              <div className="m-list">
+                {otherSeriesEvents.map(inst => {
+                  const isPast = String(inst.date).slice(0, 10) < todayStr;
+                  const d = parseYmdLocal(inst.date);
+                  const n = inst.altegio_booked_count;
+                  return (
+                    <button key={inst.id} type="button" className="m-row" onClick={() => navigate(`/event/${inst.id}/view`)} data-testid={`detail-series-${inst.id}`}>
+                      <span style={{ flex: 1, minWidth: 0 }} className={`m-b${inst.cancelled ? " m-done" : isPast ? " m-muted" : ""}`}>
+                        {UK_WEEKDAYS_SHORT[d.getDay()]}, {d.getDate()} {UK_MONTHS[d.getMonth()]}{inst.start_time ? <span className="m-c"> · {inst.start_time}</span> : null}
+                      </span>
+                      <span className="m-b">{n != null ? <span className={Number(n) === 0 && !isPast && !inst.cancelled ? "m-red" : ""}>{n}</span> : <span className="m-faint">—</span>}<span className="m-faint">/{inst.spots || 10}</span></span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          <div style={{ height: 24 }} />
         </div>
 
-        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <AlertDialogContent className="dialog-content"><AlertDialogHeader><AlertDialogTitle>видалити подію назавжди?</AlertDialogTitle><AlertDialogDescription>Якщо є куплені місця, видалення зупиниться і буде запропоновано лише скасувати подію з архівом.</AlertDialogDescription></AlertDialogHeader>
-            <AlertDialogFooter><AlertDialogCancel>назад</AlertDialogCancel><AlertDialogAction onClick={handleDelete} variant="danger">видалити назавжди</AlertDialogAction></AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-        {cancelSeriesDialog}
+        <Dialog open={moreOpen} onOpenChange={setMoreOpen}>
+          <DialogContent className="m-sheet m-ev-sheet" hideClose>
+            <DialogHeader className="sr-only"><DialogTitle>дії з подією</DialogTitle><DialogDescription>{event.title}</DialogDescription></DialogHeader>
+            <div className="m-list m-ev-sheet-list" data-testid="detail-actions">
+              <button type="button" className="m-row" onClick={sheetAction(handleOpenAltegio)}><ExternalLink strokeWidth={1.5} className="m-ev-row-ico" /><span className="m-b">відкрити в Altegio</span></button>
+              <button type="button" className="m-row" onClick={sheetAction(handleShareAltegio)}><Share2 strokeWidth={1.5} className="m-ev-row-ico" /><span className="m-b">скопіювати посилання на запис</span></button>
+              {!event.cancelled ? (
+                <button type="button" className="m-row" onClick={handleCancelMobile}><X strokeWidth={1.5} className="m-ev-row-ico m-red" /><span className="m-b m-red">скасувати подію</span></button>
+              ) : (
+                <button type="button" className="m-row" onClick={sheetAction(handleRestore)}><RotateCcw strokeWidth={1.5} className="m-ev-row-ico" /><span className="m-b">відновити подію</span></button>
+              )}
+              <button type="button" className="m-row" onClick={handleDeleteMobile}><Trash2 strokeWidth={1.5} className="m-ev-row-ico m-red" /><span className="m-b m-red">видалити назавжди</span></button>
+            </div>
+            <button type="button" className="m-txt" style={{ width: "100%", justifyContent: "center", marginTop: 8 }} onClick={() => setMoreOpen(false)}>закрити</button>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
@@ -2961,6 +3168,84 @@ const buildEditPayload = (fd) => {
   });
 };
 
+// Мобільна форма події: дата у форматі «неділя, 22 листопада».
+const fmtLongDateUk = (ymd) => {
+  if (!ymd) return "";
+  const d = parseYmdLocal(ymd);
+  return `${UK_WEEKDAYS[d.getDay()].replace("'", "ʼ")}, ${d.getDate()} ${UK_MONTHS[d.getMonth()]}`;
+};
+
+// Поле дати для мобільної форми: .m-field + Popover з календарем.
+const MobileDateField = ({ label, value, onChange, open, onOpenChange, invalid = false, testId }) => (
+  <div className={`m-field${invalid ? " m-ev-field--bad" : ""}`}>
+    <span>{label}</span>
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <button type="button" className={`m-ev-field-btn${value ? "" : " m-faint"}`} data-testid={testId}>{value ? fmtLongDateUk(value) : "обери дату"}</button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-2" align="start">
+        <Calendar mode="single" locale={uk} weekStartsOn={1}
+          selected={value ? parseYmdLocal(value) : undefined}
+          onSelect={(d) => { if (d) onChange(formatDateLocal(d)); onOpenChange(false); }}
+          className="calendar-minimal" modifiersClassNames={{ today: "calendar-today-visible" }} />
+      </PopoverContent>
+    </Popover>
+  </div>
+);
+
+// Рання пташка для мобайлу: перемикач .m-switch + рядки [ціна до дати · діє до].
+// Та сама модель даних і перевірки, що й EarlyBirdTiers.
+const MobileEarlyBird = ({ tiers, onChange, eventDate, regularPrice }) => {
+  const rows = tiers || [];
+  const on = rows.length > 0;
+  const [openCal, setOpenCal] = useState(null);
+  const update = (i, patch) => onChange(rows.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+  const add = () => onChange([...rows, { price: "", until: "" }]);
+  const remove = (i) => onChange(rows.filter((_, idx) => idx !== i));
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const eventDay = eventDate ? new Date(eventDate) : null;
+  const calDisabled = eventDay ? { before: today, after: eventDay } : { before: today };
+  const issues = earlyBirdTierIssues(rows, regularPrice, eventDate);
+  const fmt = (d) => { const x = parseYmdLocal(d); return `${x.getDate()} ${UK_MONTHS[x.getMonth()]}`; };
+  return (
+    <div>
+      <div className="m-ev-switch-row">
+        <span className="m-b">рання пташка</span>
+        <button type="button" role="switch" aria-checked={on} aria-label="рання пташка" className="m-switch"
+          onClick={() => onChange(on ? [] : [{ price: "", until: "" }])} data-testid="early-bird-switch" />
+      </div>
+      {rows.map((r, i) => (
+        <div key={i} className="m-grid-2">
+          <label className={`m-field${issues[i]?.price ? " m-ev-field--bad" : ""}`}>
+            <span>ціна до дати, ₴</span>
+            <input type="text" inputMode="numeric" placeholder="0" value={r.price}
+              onChange={(e) => update(i, { price: e.target.value.replace(/[^0-9]/g, "") })} />
+          </label>
+          <div className={`m-field${issues[i]?.until ? " m-ev-field--bad" : ""}`}>
+            <span>діє до</span>
+            <div className="m-ev-inline">
+              <Popover open={openCal === i} onOpenChange={(o) => setOpenCal(o ? i : null)}>
+                <PopoverTrigger asChild>
+                  <button type="button" className={`m-ev-field-btn${r.until ? "" : " m-faint"}`}>{r.until ? fmt(r.until) : "обери дату"}</button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-2" align="end">
+                  <Calendar mode="single" locale={uk} weekStartsOn={1}
+                    selected={r.until ? parseYmdLocal(r.until) : undefined}
+                    disabled={calDisabled}
+                    onSelect={(d) => { if (d) update(i, { until: formatDateLocal(d) }); setOpenCal(null); }}
+                    className="calendar-minimal" modifiersClassNames={{ today: "calendar-today-visible" }} />
+                </PopoverContent>
+              </Popover>
+              {rows.length > 1 && <button type="button" className="m-ev-x" onClick={() => remove(i)} aria-label="прибрати дату"><X strokeWidth={1.5} /></button>}
+            </div>
+          </div>
+        </div>
+      ))}
+      {on && <button type="button" className="m-txt" style={{ paddingLeft: 0 }} onClick={add}>+ ще одна дата</button>}
+    </div>
+  );
+};
+
 // Event Form with AI Parsing
 const EventForm = () => {
   const navigate = useNavigate();
@@ -2989,6 +3274,8 @@ const EventForm = () => {
   // Snapshot of the loaded event (as an edit payload) — PUT sends only changed fields.
   const loadedPayloadRef = useRef(null);
 
+  const isMobile = useIsMobileLayout();
+  const [mobileDateOpen, setMobileDateOpen] = useState(null);
   // Phone width: native time pickers instead of the text + dropdown combo.
   const [isNarrow, setIsNarrow] = useState(() => window.innerWidth < 640);
   useEffect(() => { const h = () => setIsNarrow(window.innerWidth < 640); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
@@ -3147,6 +3434,224 @@ const EventForm = () => {
       goBack();
     } catch (e) { toast.error(getApiErrorMessage(e, "помилка збереження")); } finally { setLoading(false); }
   };
+
+  const blankParsedEvent = () => ({ title: "", date: formatDateLocal(new Date()), price: 0, spots: 10, description: "", start_time: "12:00", end_time: "14:30", event_type: "new", repeat_days: [0] });
+
+  // Mobile: edit existing event (та сама логіка handleSubmit, diff-only PUT)
+  if (!isNew && isMobile) {
+    const setF = (patch) => setFormData({ ...formData, ...patch });
+    return (
+      <div className="m-ui m-ui--no-nav" data-testid="event-form-mobile">
+        <form onSubmit={handleSubmit} className="m-page">
+          <div className="m-topbar">
+            <button type="button" className="m-txt m-ev-topbar-txt" onClick={goBack} data-testid="event-form-close">скасувати</button>
+          </div>
+          <h1 className="m-d" style={{ marginTop: 12 }}>редагування</h1>
+
+          <label className="m-field" style={{ marginTop: 8 }}><span>назва</span>
+            <input placeholder="як назвемо?" value={formData.title} onChange={(e) => setF({ title: e.target.value })} required />
+          </label>
+          <MobileDateField label="дата" value={formData.date} open={mobileDateOpen === "edit"} onOpenChange={(o) => setMobileDateOpen(o ? "edit" : null)}
+            onChange={(ymd) => { setSelectedDate(parseYmdLocal(ymd)); setF({ date: ymd }); }} />
+          <div className="m-grid-2">
+            <label className="m-field"><span>початок</span>
+              <input type="time" value={formData.start_time} onChange={(e) => handleStartTimeChange(e.target.value, (updates) => setF(updates))} />
+            </label>
+            <label className="m-field"><span>кінець</span>
+              <input type="time" value={formData.end_time} onChange={(e) => setF({ end_time: e.target.value })} />
+            </label>
+          </div>
+          <div className="m-grid-2">
+            <label className="m-field"><span>{(formData.price_tiers || []).length ? "звичайна ціна, ₴" : "ціна, ₴"}</span>
+              <input type="number" inputMode="numeric" placeholder="0" value={formData.price} onFocus={() => { if (formData.price === "0") setF({ price: "" }); }} onChange={(e) => setF({ price: e.target.value })} required />
+            </label>
+            <label className="m-field"><span>місць</span>
+              <input type="number" inputMode="numeric" placeholder="10" value={formData.spots} onChange={(e) => setF({ spots: e.target.value })} />
+            </label>
+          </div>
+          <MobileEarlyBird tiers={formData.price_tiers} eventDate={formData.date} regularPrice={formData.price} onChange={(t) => setF({ price_tiers: t })} />
+          <label className="m-field"><span>опис</span>
+            <textarea rows={3} placeholder="що буде, що взяти з собою" value={formData.description || ""} onChange={(e) => setF({ description: e.target.value })} />
+          </label>
+
+          <div className="m-sticky-cta">
+            <button type="submit" className="m-btn" disabled={loading}>{loading ? "зберігаю…" : "зберегти"}</button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
+  // Mobile: new event (ручна форма або «заповнити з тексту»)
+  if (isNew && isMobile) {
+    const aiView = showAiInput && !showParsedResults;
+    const backToManual = () => { setShowAiInput(false); if (parsedEvents.length === 0) setParsedEvents([blankParsedEvent()]); };
+    const single = parsedEvents.length === 1;
+    return (
+      <div className="m-ui m-ui--no-nav" data-testid="event-form-mobile">
+        <div className="m-page">
+          <div className="m-topbar">
+            <button type="button" className="m-txt m-ev-topbar-txt" onClick={goBack} data-testid="event-form-close">скасувати</button>
+            {aiView ? (
+              <button type="button" className="m-txt m-ev-topbar-txt" style={{ fontWeight: 500 }} onClick={backToManual}>вручну</button>
+            ) : (
+              <button type="button" className="m-txt m-ev-topbar-txt" style={{ fontWeight: 500 }} onClick={() => { setShowAiInput(true); setShowParsedResults(false); }} data-testid="switch-to-ai">
+                <Sparkles strokeWidth={1.5} className="w-4 h-4" />заповнити з тексту
+              </button>
+            )}
+          </div>
+
+          {aiView ? (
+            <>
+              <h1 className="m-d" style={{ marginTop: 12 }}>заповнити з тексту</h1>
+              <p className="m-c" style={{ marginTop: 8 }}>напиши про подію своїми словами—розпізнаємо назву, дату, ціну й кількість місць. можна вставити кілька подій одразу</p>
+              <label className="m-field" style={{ marginTop: 8 }}><span>текст</span>
+                <textarea rows={6} autoFocus placeholder="наприклад: Bodyart Light 15 лютого, 700 грн, 10 місць" value={aiInput} onChange={(e) => setAiInput(e.target.value)} />
+              </label>
+              <div className="m-sticky-cta">
+                <button type="button" className="m-btn" onClick={handleAiParse} disabled={aiParsing || !aiInput.trim()}>
+                  {aiParsing ? "розпізнаю…" : <><Sparkles strokeWidth={1.5} className="w-4 h-4" />розпізнати</>}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <h1 className="m-d" style={{ marginTop: 12 }}>{parsedEvents.length > 1 ? `розпізнано ${parsedEvents.length} подій` : "нова подія"}</h1>
+              {clarificationMessage && <p className="m-c m-red" style={{ marginTop: 8 }}>{clarificationMessage}</p>}
+
+              {parsedEvents.map((event, index) => {
+                const hasTierIssue = earlyBirdTierIssues(event.price_tiers, event.price, event.date).some((x) => x.price || x.until);
+                const isRegular = event.event_type === "regular";
+                const titleQ = (event.title || "").toLowerCase().trim();
+                const seenT = new Set();
+                const suggestions = event._showTitleDropdown ? [...allEvents]
+                  .sort((a, b) => new Date(b.created_at || b.date) - new Date(a.created_at || a.date))
+                  .filter(e => { if (!e.title || seenT.has(e.title)) return false; seenT.add(e.title); return true; })
+                  .filter(e => !titleQ || e.title.toLowerCase().includes(titleQ))
+                  .slice(0, 8) : [];
+                const confirmBtn = (
+                  <button type="button" className="m-btn" onClick={() => handleConfirmEvent(event, index)} disabled={!event.title || !event.date} data-testid={`confirm-event-${index}`}>створити подію</button>
+                );
+                return (
+                  <section key={index} data-testid={`parsed-event-${index}`} style={{ marginTop: index === 0 ? 16 : 36 }}>
+                    {!single && <h2 className="m-sec" style={{ marginBottom: 8 }}>подія {index + 1}</h2>}
+                    {hasTierIssue && <p className="m-c m-red" style={{ marginBottom: 8 }} data-testid={`tier-warning-${index}`}>перевір поля ранньої пташки, позначені червоним—можлива помилка розпізнавання</p>}
+
+                    <div role="radiogroup" aria-label="тип події" className="m-tabs">
+                      {[{ v: "new", l: "разова" }, { v: "regular", l: "регулярна" }].map(opt => {
+                        const active = (event.event_type || "new") === opt.v;
+                        return (
+                          <button key={opt.v} type="button" role="radio" aria-checked={active} aria-selected={active} className="m-tab"
+                            onClick={() => { closeAllDropdowns(index, null); updateParsedEvent(index, "event_type", opt.v); }}
+                            data-testid={`event-type-${opt.v}-${index}`}>{opt.l}</button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="m-ev-rel">
+                      <label className="m-field" style={{ marginTop: 8 }}><span>назва</span>
+                        <span className="m-ev-inline">
+                          <input value={event.title} placeholder="назва події" autoComplete="off"
+                            onChange={(e) => { updateParsedEvent(index, "title", e.target.value); updateParsedEvent(index, "_showTitleDropdown", true); }}
+                            onFocus={() => { closeAllDropdowns(index, '_showTitleDropdown'); updateParsedEvent(index, "_showTitleDropdown", true); }}
+                            onBlur={() => setTimeout(() => updateParsedEvent(index, "_showTitleDropdown", false), 200)} />
+                          {event.title && <button type="button" className="m-ev-x" onMouseDown={(e) => { e.preventDefault(); updateParsedEvent(index, "title", ""); }} aria-label="очистити назву" data-testid={`clear-title-${index}`}><X strokeWidth={1.5} /></button>}
+                        </span>
+                      </label>
+                      {suggestions.length > 0 && (
+                        <div className="m-ev-suggest">
+                          {suggestions.map((src, i) => (
+                            <button key={i} type="button" className="m-ev-suggest-item m-ellipsis" onMouseDown={() => {
+                              setParsedEvents(prev => prev.map((ev, idx) => idx !== index ? ev : {
+                                ...ev,
+                                title: src.title,
+                                price: src.price ?? ev.price,
+                                spots: src.spots ?? ev.spots,
+                                description: src.description ?? ev.description,
+                                start_time: src.start_time || ev.start_time,
+                                end_time: src.end_time || ev.end_time,
+                                _showTitleDropdown: false,
+                              }));
+                            }}>{src.title}</button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {isRegular && (
+                      <div className="m-field"><span>дні тижня</span>
+                        <div className="m-ev-weekdays">
+                          {[{v:0,l:'пн'},{v:1,l:'вт'},{v:2,l:'ср'},{v:3,l:'чт'},{v:4,l:'пт'},{v:5,l:'сб'},{v:6,l:'нд'}].map(day => {
+                            const selected = (event.repeat_days || [0]).includes(day.v);
+                            return (
+                              <button key={day.v} type="button" className="m-ghost" aria-pressed={selected} data-testid={`weekday-${day.v}`}
+                                onClick={() => {
+                                  const days = event.repeat_days || [0];
+                                  const newDays = selected ? days.filter(d => d !== day.v) : [...days, day.v];
+                                  updateParsedEvent(index, "repeat_days", newDays.length ? newDays : [day.v]);
+                                }}>{day.l}</button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    <MobileDateField label={isRegular ? "початок серії" : "дата"} value={event.date} testId={`date-picker-${index}`}
+                      invalid={!!(event._isRepeat && event.date < formatDateLocal(new Date()))}
+                      open={mobileDateOpen === index} onOpenChange={(o) => { closeAllDropdowns(index, null); setMobileDateOpen(o ? index : null); }}
+                      onChange={(ymd) => updateParsedEvent(index, "date", ymd)} />
+
+                    <div className="m-grid-2">
+                      <label className="m-field"><span>початок</span>
+                        <input type="time" value={event.start_time || "12:00"} onChange={(e) => updateParsedEvent(index, "start_time", e.target.value)} data-testid={`start-time-${index}`} />
+                      </label>
+                      <label className="m-field"><span>кінець</span>
+                        <input type="time" value={event.end_time || "14:30"} onChange={(e) => updateParsedEvent(index, "end_time", e.target.value)} data-testid={`end-time-${index}`} />
+                      </label>
+                    </div>
+                    <div className="m-grid-2">
+                      <label className="m-field"><span>{(event.price_tiers || []).length ? "звичайна ціна, ₴" : "ціна, ₴"}</span>
+                        <input type="text" inputMode="numeric" placeholder="0" value={event.price || ""} data-testid={`price-input-${index}`}
+                          onFocus={() => { if (String(event.price) === "0") updateParsedEvent(index, "price", ""); closeAllDropdowns(index, '_showPriceDropdown'); updateParsedEvent(index, "_showPriceDropdown", true); }}
+                          onChange={(e) => updateParsedEvent(index, "price", e.target.value.replace(/[^0-9]/g, ''))}
+                          onBlur={() => setTimeout(() => updateParsedEvent(index, "_showPriceDropdown", false), 200)} />
+                      </label>
+                      <label className="m-field"><span>місць</span>
+                        <input type="text" inputMode="numeric" placeholder="10" value={event.spots ?? ""} data-testid={`spots-picker-${index}`}
+                          onChange={(e) => updateParsedEvent(index, "spots", e.target.value.replace(/[^0-9]/g, ''))} />
+                      </label>
+                    </div>
+                    {event._showPriceDropdown && recentPrices.length > 0 && (
+                      <div className="m-chips" style={{ marginTop: 10 }} aria-label="нещодавні ціни">
+                        {recentPrices.slice(0, 8).map(p => (
+                          <button key={p} type="button" className="m-ghost" onMouseDown={(e) => { e.preventDefault(); updateParsedEvent(index, "price", String(p)); updateParsedEvent(index, "_showPriceDropdown", false); }}>{p} ₴</button>
+                        ))}
+                      </div>
+                    )}
+
+                    <MobileEarlyBird tiers={event.price_tiers || []} eventDate={event.date} regularPrice={event.price} onChange={(t) => updateParsedEvent(index, "price_tiers", t)} />
+
+                    <label className="m-field"><span>опис</span>
+                      <textarea rows={2} placeholder="що буде, що взяти з собою" value={event.description || ""} onChange={(e) => updateParsedEvent(index, "description", e.target.value)} />
+                    </label>
+
+                    {single ? <div className="m-sticky-cta">{confirmBtn}</div> : <div style={{ marginTop: 16 }}>{confirmBtn}</div>}
+                  </section>
+                );
+              })}
+
+              {parsedEvents.length === 0 && (
+                <div className="m-ev-empty">
+                  <p className="m-c">усі події створено</p>
+                  <button type="button" className="m-ghost" onClick={goBack}>повернутися</button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // For editing existing event - show manual form
   if (!isNew) {
@@ -6975,7 +7480,7 @@ const DesktopDashboard = () => {
       closeEventDetail();
       refreshEvents();
     } catch (error) {
-      if (confirmCancellationGuard(error)) {
+      if (await confirmCancellationGuard(error)) {
         try {
           await axios.patch(`${API}/events/${id}`, { cancelled: true, manager_confirmed_cancellation: true });
           toast.success("подію скасовано");
@@ -6997,7 +7502,7 @@ const DesktopDashboard = () => {
       closeEventDetail();
       refreshEvents();
     } catch (error) {
-      if (confirmCancellationGuard(error)) {
+      if (await confirmCancellationGuard(error)) {
         try {
           const r = await api.cancelEventSeries(id, true);
           toast.success(`серію скасовано — ${r.data.cancelled_count} подій`);
@@ -9842,6 +10347,63 @@ const AltegioWarningHost = () => {
   );
 };
 
+// App-wide host для confirmAsync/choiceAsync. На мобайлі—нижня шторка .m-sheet
+// з кнопками .m-btn; на десктопі—звичайний AlertDialog.
+const ConfirmHost = () => {
+  const [req, setReq] = useState(null);
+  const resolverRef = useRef(null);
+  const isMobile = useIsMobileLayout();
+  const settle = (value) => {
+    const r = resolverRef.current;
+    resolverRef.current = null;
+    setReq(null);
+    if (r) r(value);
+  };
+  useEffect(() => {
+    const h = (e) => {
+      if (resolverRef.current) resolverRef.current(null);
+      resolverRef.current = e.detail?.resolve || null;
+      setReq(e.detail || null);
+    };
+    window.addEventListener(CONFIRM_EVENT, h);
+    return () => window.removeEventListener(CONFIRM_EVENT, h);
+  }, []);
+
+  const open = !!req;
+  const r = req || {};
+  const options = r.options || [];
+  return (
+    <AlertDialog open={open} onOpenChange={(o) => { if (!o) settle(null); }}>
+      <AlertDialogContent className={isMobile ? "m-sheet m-confirm" : ""} data-testid="confirm-dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle className={isMobile ? "m-confirm-title" : ""}>{r.title}</AlertDialogTitle>
+          {r.message ? (
+            <AlertDialogDescription className={isMobile ? "m-confirm-text" : "whitespace-pre-line"}>{r.message}</AlertDialogDescription>
+          ) : <AlertDialogDescription className="sr-only">{r.title}</AlertDialogDescription>}
+        </AlertDialogHeader>
+        {isMobile ? (
+          <div className="m-confirm-actions">
+            {options.map((opt, i) => (
+              <button key={String(opt.value)} type="button"
+                className={opt.danger ? "m-btn m-btn--danger" : (i === options.length - 1 ? "m-btn" : "m-btn m-btn--plain")}
+                onClick={() => settle(opt.value)} data-testid={`confirm-option-${opt.value}`}>{opt.label}</button>
+            ))}
+            <button type="button" className="m-txt m-confirm-cancel" onClick={() => settle(null)} data-testid="confirm-cancel">{r.cancelLabel || "назад"}</button>
+          </div>
+        ) : (
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => settle(null)} data-testid="confirm-cancel">{r.cancelLabel || "назад"}</AlertDialogCancel>
+            {options.map((opt) => (
+              <AlertDialogAction key={String(opt.value)} variant={opt.danger ? "danger" : "primary"}
+                onClick={() => settle(opt.value)} data-testid={`confirm-option-${opt.value}`}>{opt.label}</AlertDialogAction>
+            ))}
+          </AlertDialogFooter>
+        )}
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+};
+
 // Theme Context
 // Main App
 function App() {
@@ -10000,6 +10562,7 @@ function App() {
           <div className="app-container">
             <Toaster position="top-center" richColors />
             <AltegioWarningHost />
+            <ConfirmHost />
             <Routes>
               <Route path="/" element={<ResponsiveWrapper><Dashboard /></ResponsiveWrapper>} />
               <Route path="/events" element={<ResponsiveWrapper desktop={<EventsDesktopExpanded />}><EventsPage /></ResponsiveWrapper>} />
