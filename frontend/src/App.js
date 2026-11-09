@@ -77,7 +77,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { uk } from "date-fns/locale";
-import { MoreHorizontal, Search } from "lucide-react";
+import { MoreHorizontal, Search, ArrowUpRight } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -1861,10 +1861,12 @@ const Dashboard = ({ initialTab, footer = null }) => {
     const open = new Set(linked.map(t => `${t.event_id}-${t.task_id || t.reminder_id}`)).size;
     const parts = [nextEvent.start_time ? `${when} о ${nextEvent.start_time}` : when];
     if (open > 0) parts.push(`${open} ${pluralUk(open, 'задача', 'задачі', 'задач')} до початку`);
+    const chip = nextEvent.start_time ? `${when} · ${nextEvent.start_time}` : when;
+    const openText = open > 0 ? `ще ${open} ${pluralUk(open, 'задача', 'задачі', 'задач')}` : '';
     const hasBooking = nextEvent.altegio_booked_count != null;
     const booked = getBookedCount(nextEvent);
     const spots = Number(nextEvent.spots) || 10;
-    return { text: parts.join(' · '), hasBooking, booked, spots, pct: Math.min(100, Math.round((booked / spots) * 100)) };
+    return { text: parts.join(' · '), chip, openText, hasBooking, booked, spots, pct: Math.min(100, Math.round((booked / spots) * 100)) };
   })();
 
   const actor = getActorUser();
@@ -1875,15 +1877,15 @@ const Dashboard = ({ initialTab, footer = null }) => {
     <div className="animate-fade-in m-page m-dash">
       <header className="m-dash-head">
         <div style={{ minWidth: 0 }}>
+          <div className="m-c">{todayFormatted.weekday}, {todayFormatted.day} {todayFormatted.month}</div>
           <h1 className="m-d">сьогодні</h1>
-          <div className="m-c" style={{ marginTop: 2 }}>{todayFormatted.weekday}, {todayFormatted.day} {todayFormatted.month}</div>
         </div>
         {actor && (
           <button type="button" className="m-avatar" aria-label={`хто я: ${ACTOR_NAMES[actor] || actor}`} title="змінити в налаштуваннях" onClick={() => navigate('/settings')} data-testid="mobile-actor-btn">{ACTOR_INITIALS[actor] || actor.slice(0, 2)}</button>
         )}
       </header>
 
-      <div role="tablist" aria-label="роль" className="m-tabs" style={{ marginTop: 24 }} data-testid="mobile-tabs">
+      <div role="tablist" aria-label="роль" className="m-tabs" style={{ marginTop: 20 }} data-testid="mobile-tabs">
         {tabs.map(tab => {
           const overdueN = tab.id === 'events' ? 0 : (tasksByTeam[tab.id]?.overdue.length || 0);
           return (
@@ -1927,33 +1929,48 @@ const Dashboard = ({ initialTab, footer = null }) => {
       ) : (
         <>
           {nextEvent && nextEventMeta && (
-            <button type="button" className="m-dash-event" onClick={() => handleEventClick(nextEvent.id)} data-testid={`mobile-next-event-${nextEvent.id}`}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16 }}>
-                <div style={{ minWidth: 0 }}>
-                  <div className="m-h">{nextEvent.title}</div>
-                  <div className="m-c" style={{ marginTop: 4 }}>{nextEventMeta.text}</div>
-                </div>
-                {nextEventMeta.hasBooking && (
-                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <div className="m-n m-n-34"><span className={nextEventMeta.booked === 0 ? 'm-red' : ''}>{nextEventMeta.booked}</span><span className="m-faint">/{nextEventMeta.spots}</span></div>
-                    <div className="m-c" style={{ marginTop: 2 }}>записались</div>
-                  </div>
-                )}
+            <button type="button" className="m-hero" onClick={() => handleEventClick(nextEvent.id)} data-testid={`mobile-next-event-${nextEvent.id}`}>
+              <div className="m-hero-top">
+                <span className="m-hero-chip">{nextEventMeta.chip}</span>
+                {nextEventMeta.openText && <span className="m-hero-sub">{nextEventMeta.openText}</span>}
               </div>
-              {nextEventMeta.hasBooking && <div className="m-progress" style={{ marginTop: 16 }}><span style={{ width: `${nextEventMeta.pct}%` }} /></div>}
+              <div className="m-hero-title">{nextEvent.title}</div>
+              {nextEventMeta.hasBooking ? (
+                <>
+                  <div className="m-hero-nums">
+                    <div className="m-hero-big"><span className={nextEventMeta.booked === 0 ? 'm-hero-zero' : ''}>{nextEventMeta.booked}</span><span className="m-hero-of">/{nextEventMeta.spots}</span></div>
+                    <span className="m-hero-sub" style={{ paddingBottom: 4 }}>записались</span>
+                  </div>
+                  <div className="m-hero-seg" aria-hidden="true">
+                    {Array.from({ length: 10 }, (_, k) => <i key={k} className={k < Math.round(nextEventMeta.pct / 10) ? 'is-on' : ''} />)}
+                  </div>
+                </>
+              ) : null}
             </button>
           )}
 
-          {currentTasks.overdue.length > 0 && (
-            <button type="button" className="m-row" onClick={() => setShowOverdueCleanup(true)} data-testid="mobile-overdue-cleanup-btn">
-              <span className="m-b" style={{ flex: 1 }}><span className="m-red">{currentTasks.overdue.length}</span> {pluralUk(currentTasks.overdue.length, 'протермінована', 'протерміновані', 'протермінованих')}</span>
-              <span className="m-sec">розібрати</span>
-              <ChevronRight strokeWidth={1.6} width={16} height={16} aria-hidden="true" style={{ marginLeft: -8 }} />
-            </button>
-          )}
+          {(() => {
+            const todayDone = currentTasks.today.filter(t => t.completed).length;
+            const overdueN = currentTasks.overdue.length;
+            return (
+              <div className="m-tiles">
+                <button type="button" className="m-tile" onClick={() => overdueN > 0 && setShowOverdueCleanup(true)} disabled={overdueN === 0} data-testid="mobile-overdue-cleanup-btn">
+                  <span className="m-tile-top">
+                    <span className={`m-tile-num${overdueN > 0 ? ' m-red' : ''}`}>{overdueN}</span>
+                    {overdueN > 0 && <span className="m-tile-arr" aria-hidden="true"><ArrowUpRight strokeWidth={2.2} width={14} height={14} /></span>}
+                  </span>
+                  <span className="m-tile-label">{overdueN > 0 ? 'протерміновано' : 'протермінованих нема'}</span>
+                </button>
+                <div className="m-tile">
+                  <span className="m-tile-num">{todayDone}<span className="m-faint">/{currentTasks.today.length}</span></span>
+                  <span className="m-tile-label">задачі на сьогодні</span>
+                </div>
+              </div>
+            );
+          })()}
 
           <div style={{ marginTop: 4 }}>
-            <MobileTaskSection tasks={currentTasks.today} title="задачі" showCount />
+            <MobileTaskSection tasks={currentTasks.today} title="задачі" />
             <MobileTaskSection tasks={currentTasks.overdue} title="протерміновані" isOverdue isCollapsible expanded={overdueExpanded} setExpanded={setOverdueExpanded} />
             <MobileTaskSection tasks={currentTasks.soon} title="незабаром" isCollapsible expanded={soonExpanded} setExpanded={setSoonExpanded} />
           </div>
@@ -2965,7 +2982,8 @@ const EventDetailPage = () => {
             ))}
           </div>
           <div role="tabpanel">
-            {roleTasks.length === 0 && <p className="m-c" style={{ padding: "16px 0" }}>немає задач</p>}
+            {roleTasks.length === 0 && <p className="m-c" style={{ padding: "16px 6px" }}>немає задач</p>}
+            {shownTasks.length > 0 && <div className="m-list" style={{ marginTop: 12 }}>
             {shownTasks.map(task => {
               const overdue = !task.completed && String(task.date).slice(0, 10) < todayStr;
               const meta = [
@@ -2988,8 +3006,9 @@ const EventDetailPage = () => {
                 </div>
               );
             })}
+            </div>}
             {roleTasks.length > TASK_PREVIEW && (
-              <button type="button" className="m-txt" style={{ paddingLeft: 0, marginTop: 4 }} onClick={() => setShowAllTasks(v => !v)}>
+              <button type="button" className="m-txt" style={{ paddingLeft: 6, marginTop: 4 }} onClick={() => setShowAllTasks(v => !v)}>
                 {showAllTasks ? "згорнути" : `усі ${roleTasks.length} задач`}
               </button>
             )}
@@ -3006,8 +3025,8 @@ const EventDetailPage = () => {
             <div className="m-row">
               <span className={`m-dot${altegioIssue ? " m-dot--warn" : event.altegio_last_sync ? "" : " m-dot--idle"}`} />
               <span style={{ flex: 1, minWidth: 0 }}>
-                <span className="m-b">Altegio</span>{" "}
-                <span className="m-c">{altegioIssue ? "· є проблема" : event.altegio_last_sync ? `· синхронізовано ${fmtAgo(event.altegio_last_sync)}` : "· ще не синхронізовано"}</span>
+                <span className="m-b" style={{ display: "block" }}>Altegio</span>
+                <span className="m-c">{altegioIssue ? "є проблема" : event.altegio_last_sync ? `синхронізовано ${fmtAgo(event.altegio_last_sync)}` : "ще не синхронізовано"}</span>
                 {altegioIssue && <span className="m-c m-red" style={{ display: "block", overflowWrap: "anywhere" }}>{altegioIssue}</span>}
                 {event.altegio_warning && <button type="button" className="m-txt" style={{ paddingLeft: 0 }} onClick={() => emitAltegioWarning(event.altegio_warning)}>як виправити</button>}
               </span>
@@ -3016,8 +3035,8 @@ const EventDetailPage = () => {
             <div className="m-row">
               <span className={`m-dot${inCalendar ? "" : " m-dot--warn"}`} />
               <span style={{ flex: 1, minWidth: 0 }}>
-                <span className="m-b">Google Calendar</span>{" "}
-                <span className="m-c">{inCalendar ? "· у календарі" : "· не додано"}</span>
+                <span className="m-b" style={{ display: "block" }}>Google Calendar</span>
+                <span className="m-c">{inCalendar ? "у календарі" : "не додано"}</span>
               </span>
               <button type="button" className="m-txt" style={{ marginRight: -8 }} onClick={handleExportCalendar} disabled={exporting}>{exporting ? "додаю…" : inCalendar ? "оновити" : "додати"}</button>
             </div>
