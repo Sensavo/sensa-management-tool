@@ -315,3 +315,26 @@ button.m-row { border-left: 0; border-right: 0; border-top: 0; }
 
 /* === стан без синхронізації === */
 .m-dot--idle { background: var(--m-faint); }
+
+/* === контент-план (mr-content) === */
+.m-ct-month { position: relative; margin-top: 2px; height: 24px; border: 0; background: transparent; padding: 0; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; line-height: 18px; color: var(--m-muted); cursor: pointer; }
+.m-ct-month::after { content: ''; position: absolute; inset: -10px -8px; }
+.m-ct-month svg { width: 14px; height: 14px; }
+.m-ct-cal { margin-top: 20px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); row-gap: 2px; text-align: center; padding-bottom: 12px; border-bottom: 1px solid var(--m-line); }
+.m-ct-wd { padding-bottom: 6px; }
+.m-ct-day { cursor: pointer; }
+.m-ct-day .m-ev-day-num { margin-top: 0; }
+.m-ct-day .m-ev-day-dot { margin-top: 2px; }
+.m-ct-past { color: var(--m-muted); }
+.m-ct-filters { margin-top: 16px; }
+.m-ct-filters .m-ghost { cursor: pointer; }
+.m-ct-acc { margin-top: 28px; border-top: 1px solid var(--m-line); cursor: pointer; }
+.m-ct-types { margin-bottom: 4px; }
+.m-ct-fields { margin-top: 12px; }
+.m-ct-fields .m-task-calendar { margin-bottom: 8px; }
+.m-ct-title { margin-top: 8px; overflow-wrap: anywhere; }
+.m-ct-delete { margin-top: 10px; }
+.m-ct-year { display: flex; align-items: center; justify-content: space-between; margin: 4px -12px 12px; }
+.m-ct-months { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.m-ct-months .m-ghost { padding: 0 8px; min-width: 0; }
+.m-ct-now { margin-top: 12px; width: 100%; justify-content: center; font-weight: 400; color: var(--m-muted); }

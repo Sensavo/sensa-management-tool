@@ -4664,7 +4664,10 @@ const ContentPage = () => {
   const [completedPostsOpen, setCompletedPostsOpen] = useState(false);
   // Calendar legend filters
   const [showCalAnnouncements, setShowCalAnnouncements] = useState(true);
-  const [showCalStories, setShowCalStories] = useState(false);
+  const isMobile = useIsMobileLayout();
+  // На мобайлі календар і список — одне ціле, тож сторіс видно одразу
+  const [showCalStories, setShowCalStories] = useState(() => window.innerWidth < 1024);
+  const [mCompletedOpen, setMCompletedOpen] = useState(false);
   const [showCalInfoPosts, setShowCalInfoPosts] = useState(true);
   const [showCalMemes, setShowCalMemes] = useState(true);
 
@@ -4854,6 +4857,298 @@ const ContentPage = () => {
   const completedPosts = monthPosts.filter(p => p.completed);
 
   const todayFormatted = useMemo(() => formatDateWithWeekday(new Date()), []);
+
+  // ==================== MOBILE ====================
+  if (isMobile) {
+    const M_TYPE_LABEL = { announcement: 'анонс', story: 'сторіс', info: 'інфо-пост', meme: 'мем' };
+    const M_FILTERS = [
+      { type: 'announcement', label: 'анонси', on: showCalAnnouncements, set: setShowCalAnnouncements },
+      { type: 'story', label: 'сторіс', on: showCalStories, set: setShowCalStories },
+      { type: 'info', label: 'інфо', on: showCalInfoPosts, set: setShowCalInfoPosts },
+      { type: 'meme', label: 'меми', on: showCalMemes, set: setShowCalMemes },
+    ];
+    const M_POST_TYPES = [['info', 'інфо-пост'], ['meme', 'мем'], ['story', 'сторіс']];
+    const typeOn = { announcement: showCalAnnouncements, story: showCalStories, info: showCalInfoPosts, meme: showCalMemes };
+    const dayKey = (v) => String(v || '').slice(0, 10);
+
+    const allItems = [
+      ...monthAnnouncements.map(a => {
+        const done = a.tasks.filter(t => t.completed).length;
+        return { key: `a-${a.id}`, kind: 'announcement', type: 'announcement', date: dayKey(a.date), title: a.event_title, sub: a.tasks.length > 1 ? `анонс · ${done}/${a.tasks.length}` : 'анонс', completed: a.completed, src: a };
+      }),
+      ...monthStories.map(s => ({ key: `s-${s.id}`, kind: 'story', type: 'story', date: dayKey(s.date), title: s.task_name, sub: `сторіс · ${s.event_title}`, completed: s.completed, src: s })),
+      ...monthPosts.map(p => {
+        const t = p.post_type || 'info';
+        const label = t === 'story' ? 'сторіс · вручну' : (M_TYPE_LABEL[t] || 'пост');
+        return { key: `p-${p.id}`, kind: 'post', type: t, date: dayKey(p.date), title: p.title, sub: [label, p.notes].filter(Boolean).join(' · '), completed: !!p.completed, src: p };
+      }),
+    ].filter(i => typeOn[i.type] !== false).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    const activeItems = allItems.filter(i => !i.completed);
+    const doneItems = allItems.filter(i => i.completed);
+    const dotDates = new Set(allItems.map(i => i.date));
+    const groups = [];
+    activeItems.forEach(i => {
+      let g = groups.find(x => x.date === i.date);
+      if (!g) { g = { date: i.date, items: [] }; groups.push(g); }
+      g.items.push(i);
+    });
+
+    const y = currentMonth.getFullYear();
+    const mo = currentMonth.getMonth();
+    const lead = (new Date(y, mo, 1).getDay() + 6) % 7;
+    const daysIn = new Date(y, mo + 1, 0).getDate();
+    const cells = [...Array(lead).fill(null), ...Array.from({ length: daysIn }, (_, i) => i + 1)];
+    const shiftMonth = (n) => setCurrentMonth(new Date(y, mo + n));
+
+    const openNew = (date = todayStr) => {
+      setNewPost({ title: '', date, notes: '', post_type: 'info' });
+      setShowNewPostCalendar(false);
+      setShowNewPostDialog(true);
+    };
+    const openItem = (item) => {
+      if (item.kind === 'post') {
+        setEditingPost({ ...item.src });
+        setShowEditPostCalendar(false);
+        setShowPostDialog(true);
+      } else {
+        setEditingTask(item.kind === 'announcement' ? { ...item.src, type: 'announcement', task_name: item.src.event_title } : { ...item.src, type: 'story' });
+        setShowTaskEditCalendar(false);
+        setShowTaskEditDialog(true);
+      }
+    };
+    const toggleItem = (item) => {
+      if (item.kind === 'announcement') handleToggleSmmCompletion(item.src.event_id, item.src.tasks.map(t => t.task_id), item.completed);
+      else if (item.kind === 'story') handleToggleSmmCompletion(item.src.event_id, item.src.task_id, item.completed);
+      else handleTogglePostCompletion(item.src.id, item.completed);
+    };
+    const handleDayTap = (dateStr) => {
+      const el = document.querySelector(`[data-content-date="${dateStr}"]`);
+      if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('event-highlight'); setTimeout(() => el.classList.remove('event-highlight'), 2000); }
+      else openNew(dateStr);
+    };
+
+    const renderRow = (item) => {
+      const overdue = !item.completed && item.date < todayStr;
+      return (
+        <div key={item.key} className="m-row m-task-row" role="button" tabIndex={0} onClick={() => openItem(item)} onKeyDown={(e) => { if (e.key === 'Enter') openItem(item); }} data-testid={`content-item-${item.key}`}>
+          <button type="button" role="checkbox" aria-checked={item.completed} aria-label={item.completed ? 'повернути' : 'позначити виконаним'}
+            className={`m-chk${overdue ? ' m-chk--overdue' : ''}`} onClick={(e) => { e.stopPropagation(); toggleItem(item); }} data-testid={`content-toggle-${item.key}`}>
+            {item.completed && <Check className="m-ev-chk-icon" strokeWidth={3} aria-hidden="true" />}
+          </button>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span className={`m-b m-ellipsis${item.completed ? ' m-done' : ''}`} style={{ display: 'block' }}>{item.title}</span>
+            <span className="m-c m-ellipsis" style={{ display: 'block' }}>{item.sub}</span>
+          </span>
+          {item.completed && <span className="m-c" style={{ whiteSpace: 'nowrap' }}>{formatDateUkrainian(parseYmdLocal(item.date))}</span>}
+        </div>
+      );
+    };
+
+    const sheetHead = (title, onClose) => (
+      <div className="m-sheet-head">
+        <DialogTitle className="m-sec">{title}</DialogTitle>
+        <button type="button" className="m-ico" style={{ marginRight: -12 }} onClick={onClose} aria-label="закрити"><X strokeWidth={1.5} /></button>
+      </div>
+    );
+    const dateField = (value, open, setOpen, onPick, testId) => (
+      <>
+        <div className="m-field">
+          <span>дата</span>
+          <button type="button" className="m-ev-field-btn" aria-expanded={open} onClick={() => setOpen(!open)} data-testid={testId}>{formatDateUkrainian(parseYmdLocal(value))}</button>
+        </div>
+        {open && <Calendar mode="single" locale={uk} weekStartsOn={1} selected={parseYmdLocal(value)} defaultMonth={parseYmdLocal(value)} onSelect={(d) => { if (d) onPick(formatDateLocal(d)); setOpen(false); }} className="m-task-calendar" />}
+      </>
+    );
+    const typeChips = (value, onChange) => (
+      <div className="m-chips m-ct-types" role="group" aria-label="тип">
+        {M_POST_TYPES.map(([v, l]) => (
+          <button key={v} type="button" className="m-ghost" aria-pressed={(value || 'info') === v} onClick={() => onChange(v)}>{l}</button>
+        ))}
+      </div>
+    );
+    const isMonthToday = y === today.getFullYear() && mo === today.getMonth();
+
+    return (
+      <div className="m-ui" data-testid="content-page">
+        <div className="m-page">
+          <div className="m-ev-head">
+            <div>
+              <h1 className="m-d">контент</h1>
+              <button type="button" className="m-ct-month" onClick={() => setShowMonthPicker(true)} aria-haspopup="dialog" data-testid="content-month-btn">
+                {UK_MONTHS_NOMINATIVE[mo]} {y}<ChevronDown strokeWidth={1.5} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="m-ev-head-actions">
+              <button type="button" className="m-ico" aria-label="попередній місяць" onClick={() => shiftMonth(-1)} data-testid="content-prev-month"><ChevronLeft strokeWidth={1.5} /></button>
+              <button type="button" className="m-ico" aria-label="наступний місяць" onClick={() => shiftMonth(1)} data-testid="content-next-month"><ChevronRight strokeWidth={1.5} /></button>
+            </div>
+          </div>
+
+          <div className="m-ct-cal" role="grid" aria-label={`${UK_MONTHS_NOMINATIVE[mo]} ${y}`}>
+            {['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'нд'].map(w => <span key={w} className="m-c m-ct-wd">{w}</span>)}
+            {cells.map((d, i) => {
+              if (!d) return <span key={`e${i}`} />;
+              const key = `${y}-${String(mo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+              const has = dotDates.has(key);
+              return (
+                <button key={key} type="button" className="m-ev-day m-ct-day" onClick={() => handleDayTap(key)} aria-label={`${d} ${UK_MONTHS[mo]}${has ? ', є контент' : ''}`} data-testid={`content-day-${key}`}>
+                  <span className={`m-ev-day-num${key === todayStr ? ' is-today' : ''}${key < todayStr ? ' m-ct-past' : ''}`}>{d}</span>
+                  <span className={`m-ev-day-dot${has ? ' is-on' : ''}`} />
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="m-chips m-ct-filters" role="group" aria-label="що показувати">
+            {M_FILTERS.map(f => (
+              <button key={f.type} type="button" className="m-ghost" aria-pressed={f.on} onClick={() => f.set(!f.on)} data-testid={`content-filter-${f.type}`}>{f.label}</button>
+            ))}
+          </div>
+
+          {groups.length > 0 ? groups.map(g => {
+            const d = parseYmdLocal(g.date);
+            const rel = g.date === todayStr ? 'сьогодні' : g.date === shiftDateLocal(todayStr, 1) ? 'завтра' : UK_WEEKDAYS_SHORT[d.getDay()];
+            const past = g.date < todayStr;
+            return (
+              <section key={g.date} data-content-date={g.date}>
+                <div className="m-sec-head">
+                  <h2 className="m-sec">{d.getDate()} {UK_MONTHS[d.getMonth()]}</h2>
+                  <span className={`m-c${past ? ' m-red' : ''}`}>{past ? 'протерміновано' : rel}</span>
+                </div>
+                <div className="m-list">
+                  {g.items.map(item => renderRow(item))}
+                </div>
+              </section>
+            );
+          }) : (
+            <div className="m-ev-empty">
+              <p className="m-c">{allItems.length ? 'усе виконано' : 'у цьому місяці порожньо'}</p>
+              {!allItems.length && <button type="button" className="m-ghost" onClick={() => openNew(isMonthToday ? todayStr : `${y}-${String(mo + 1).padStart(2, '0')}-01`)}><Plus strokeWidth={1.5} className="w-4 h-4" />створити</button>}
+            </div>
+          )}
+
+          {doneItems.length > 0 && (
+            <section>
+              <button type="button" className="m-row m-ct-acc" aria-expanded={mCompletedOpen} onClick={() => setMCompletedOpen(o => !o)} data-testid="content-completed-toggle">
+                <span className="m-sec" style={{ flex: 1 }}>виконані</span>
+                <span className="m-c">{doneItems.length}</span>
+                <ChevronDown className="m-task-chev" strokeWidth={1.6} style={{ transform: mCompletedOpen ? 'rotate(180deg)' : 'none' }} />
+              </button>
+              {mCompletedOpen && <div>{doneItems.map(item => renderRow(item))}</div>}
+            </section>
+          )}
+        </div>
+
+        <button type="button" className="m-fab" aria-label="новий пост" onClick={() => openNew(isMonthToday ? todayStr : `${y}-${String(mo + 1).padStart(2, '0')}-01`)} data-testid="content-fab"><Plus strokeWidth={1.8} /></button>
+
+        {/* Вибір місяця */}
+        <Dialog open={showMonthPicker} onOpenChange={setShowMonthPicker}>
+          <DialogContent hideClose className="m-sheet sm:max-w-md" onOpenAutoFocus={(e) => e.preventDefault()}>
+            {sheetHead('місяць', () => setShowMonthPicker(false))}
+            <DialogDescription className="sr-only">вибір місяця контент-плану</DialogDescription>
+            <div className="m-ct-year">
+              <button type="button" className="m-ico" aria-label="попередній рік" onClick={() => setCurrentMonth(new Date(y - 1, mo))}><ChevronLeft strokeWidth={1.5} /></button>
+              <span className="m-n m-n-28">{y}</span>
+              <button type="button" className="m-ico" aria-label="наступний рік" onClick={() => setCurrentMonth(new Date(y + 1, mo))}><ChevronRight strokeWidth={1.5} /></button>
+            </div>
+            <div className="m-ct-months">
+              {UK_MONTHS_NOMINATIVE.map((m, i) => (
+                <button key={m} type="button" className="m-ghost" aria-pressed={i === mo} onClick={() => { setCurrentMonth(new Date(y, i)); setShowMonthPicker(false); }}>{m}</button>
+              ))}
+            </div>
+            <button type="button" className="m-txt m-ct-now" onClick={() => { setCurrentMonth(new Date()); setShowMonthPicker(false); }}>поточний місяць</button>
+          </DialogContent>
+        </Dialog>
+
+        {/* Новий пост / сторіс */}
+        <Dialog open={showNewPostDialog} onOpenChange={setShowNewPostDialog}>
+          <DialogContent hideClose className="m-sheet sm:max-w-md" onOpenAutoFocus={(e) => e.preventDefault()}>
+            {sheetHead(newPost.post_type === 'story' ? 'нова сторіс' : 'новий пост', () => setShowNewPostDialog(false))}
+            <DialogDescription className="sr-only">створення поста або сторіс</DialogDescription>
+            <textarea className="m-task-title" rows={2} autoFocus aria-label="назва" placeholder="про що?" value={newPost.title}
+              onChange={(e) => setNewPost({ ...newPost, title: e.target.value.replace(/\n/g, ' ') })}
+              onKeyDown={(e) => { if (e.key !== 'Enter') return; e.preventDefault(); if (e.ctrlKey || e.metaKey) handleCreatePost(); else e.currentTarget.blur(); }}
+              data-testid="content-new-title" />
+            <div className="m-c m-task-label">тип</div>
+            {typeChips(newPost.post_type, (t) => setNewPost({ ...newPost, post_type: t }))}
+            <div className="m-ct-fields">
+              {dateField(newPost.date, showNewPostCalendar, setShowNewPostCalendar, (v) => setNewPost({ ...newPost, date: v }), 'content-new-date')}
+              <label className="m-field">
+                <span>нотатки</span>
+                <textarea rows={3} value={newPost.notes} onChange={(e) => setNewPost({ ...newPost, notes: e.target.value })} placeholder="необовʼязково" />
+              </label>
+            </div>
+            <button type="button" className="m-btn m-task-submit" onClick={handleCreatePost} disabled={!newPost.title.trim()} data-testid="content-new-save">створити</button>
+          </DialogContent>
+        </Dialog>
+
+        {/* Редагування поста / сторіс вручну */}
+        {editingPost && (
+          <Dialog open={showPostDialog} onOpenChange={setShowPostDialog}>
+            <DialogContent hideClose className="m-sheet sm:max-w-md" onOpenAutoFocus={(e) => e.preventDefault()}>
+              {sheetHead(M_TYPE_LABEL[editingPost.post_type || 'info'] || 'пост', () => setShowPostDialog(false))}
+              <DialogDescription className="sr-only">редагування поста</DialogDescription>
+              <textarea className="m-task-title" rows={2} aria-label="назва" value={editingPost.title}
+                onChange={(e) => setEditingPost({ ...editingPost, title: e.target.value.replace(/\n/g, ' ') })}
+                onKeyDown={(e) => { if (e.key !== 'Enter') return; e.preventDefault(); if (e.ctrlKey || e.metaKey) handleSavePost(); else e.currentTarget.blur(); }}
+                data-testid="content-edit-title" />
+              <div className="m-c m-task-label">тип</div>
+              {typeChips(editingPost.post_type, (t) => setEditingPost({ ...editingPost, post_type: t }))}
+              <div className="m-ct-fields">
+                {dateField(editingPost.date, showEditPostCalendar, setShowEditPostCalendar, (v) => setEditingPost({ ...editingPost, date: v }), 'content-edit-date')}
+                <label className="m-field">
+                  <span>нотатки</span>
+                  <textarea rows={3} value={editingPost.notes || ''} onChange={(e) => setEditingPost({ ...editingPost, notes: e.target.value })} placeholder="необовʼязково" />
+                </label>
+              </div>
+              <button type="button" className="m-btn m-task-submit" onClick={handleSavePost} disabled={!String(editingPost.title || '').trim()} data-testid="content-edit-save">зберегти</button>
+              <button type="button" className="m-btn m-btn--danger m-ct-delete" onClick={handleDeletePost} data-testid="content-edit-delete"><Trash2 className="w-[18px] h-[18px]" strokeWidth={1.5} />видалити</button>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Анонс / сторіс з події: дата, подія, видалення */}
+        {editingTask && (
+          <Dialog open={showTaskEditDialog} onOpenChange={setShowTaskEditDialog}>
+            <DialogContent hideClose className="m-sheet sm:max-w-md" onOpenAutoFocus={(e) => e.preventDefault()}>
+              {sheetHead(editingTask.type === 'announcement' ? 'анонс' : 'сторіс', () => setShowTaskEditDialog(false))}
+              <DialogDescription className="sr-only">дата публікації</DialogDescription>
+              <h2 className="m-h m-ct-title">{editingTask.type === 'announcement' ? editingTask.event_title : editingTask.task_name}</h2>
+              {editingTask.type === 'announcement' && editingTask.tasks?.length > 1 && (
+                <p className="m-c">{editingTask.tasks.map(t => t.task_name).join(' · ')}</p>
+              )}
+              <div className="m-ct-fields">
+                {dateField(editingTask.date, showTaskEditCalendar, setShowTaskEditCalendar, (v) => setEditingTask({ ...editingTask, date: v }), 'content-task-date')}
+                {editingTask.type === 'announcement' && (
+                  <label className="m-field">
+                    <span>деталі анонсу</span>
+                    <textarea rows={3} value={editingTask.notes || ''} onChange={(e) => setEditingTask({ ...editingTask, notes: e.target.value })} placeholder="необовʼязково" />
+                  </label>
+                )}
+                {editingTask.event_id && (
+                  <button type="button" className="m-row m-task-row" onClick={() => { setShowTaskEditDialog(false); handleEventClick(editingTask.event_id); }} data-testid="content-task-open-event">
+                    <span className="m-b m-task-row-label">подія</span>
+                    <span className="m-c m-task-row-value m-ellipsis">{editingTask.event_title}</span>
+                    <ChevronRight className="m-task-chev" strokeWidth={1.6} />
+                  </button>
+                )}
+              </div>
+              <button type="button" className="m-btn m-task-submit" onClick={handleUpdateTaskDate} data-testid="content-task-save">зберегти</button>
+              <button type="button" className="m-btn m-btn--danger m-ct-delete" onClick={async () => {
+                try {
+                  if (editingTask.type === 'announcement') await Promise.all((editingTask.tasks || []).map(t => api.deleteEventTask(editingTask.event_id, t.task_id)));
+                  else await api.deleteEventTask(editingTask.event_id, editingTask.task_id);
+                  refreshEvents(); toast.success('видалено!'); setShowTaskEditDialog(false);
+                } catch { toast.error('помилка'); }
+              }} data-testid="content-task-delete"><Trash2 className="w-[18px] h-[18px]" strokeWidth={1.5} />видалити</button>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        <BottomNav />
+      </div>
+    );
+  }
 
   return (
     <div className="desktop-dashboard content-page" data-testid="content-page">
