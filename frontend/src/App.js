@@ -5132,10 +5132,10 @@ const ContentPage = () => {
   const PostTypeSelector = ({ value, onChange }) => (
     <div className="flex gap-2">
       <button onClick={() => onChange('info')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${value === 'info' ? 'bg-emerald-100 text-emerald-700 ring-2 ring-emerald-400' : 'bg-[rgba(0,0,0,0.05)]'}`}>
-        <Info className="w-3.5 h-3.5" style={{color: '#059669'}} />інфо
+        <Info className="w-3.5 h-3.5" style={{color: '#8B8B88'}} />інфо
       </button>
       <button onClick={() => onChange('meme')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${value === 'meme' ? 'bg-pink-100 text-pink-700 ring-2 ring-pink-400' : 'bg-[rgba(0,0,0,0.05)]'}`}>
-        <Smile className="w-3.5 h-3.5" style={{color: '#FF8370'}} />мем
+        <Smile className="w-3.5 h-3.5" style={{color: '#C4C4C1'}} />мем
       </button>
     </div>
   );
@@ -5507,10 +5507,10 @@ const ContentPage = () => {
                     <div className="calendar-day-content">
                       <span>{date.getDate()}</span>
                       <div style={{display:'flex', gap:'2px', justifyContent:'center', marginTop:'1px'}}>
-                        {hasAnnouncement && <span style={{width:'5px', height:'5px', borderRadius:'50%', background:'#E8913A', display:'block'}} />}
-                        {hasStory && <span style={{width:'5px', height:'5px', borderRadius:'50%', background:'#A78BFA', display:'block'}} />}
-                        {hasInfo && <span style={{width:'5px', height:'5px', borderRadius:'50%', background:'#059669', display:'block'}} />}
-                        {hasMeme && <span style={{width:'5px', height:'5px', borderRadius:'50%', background:'#FF8370', display:'block'}} />}
+                        {hasAnnouncement && <span style={{width:'5px', height:'5px', borderRadius:'50%', background:'#141414', display:'block'}} />}
+                        {hasStory && <span style={{width:'5px', height:'5px', borderRadius:'50%', background:'#8B8B88', display:'block'}} />}
+                        {hasInfo && <span style={{width:'5px', height:'5px', borderRadius:'50%', background:'#8B8B88', display:'block'}} />}
+                        {hasMeme && <span style={{width:'5px', height:'5px', borderRadius:'50%', background:'#C4C4C1', display:'block'}} />}
                       </div>
                     </div>
                   );
@@ -5519,19 +5519,19 @@ const ContentPage = () => {
             </div>
             <div className="px-3 pt-2 space-y-2">
               <label className="flex items-center gap-2 text-xs text-secondary cursor-pointer">
-                <span onClick={() => setShowCalAnnouncements(!showCalAnnouncements)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalAnnouncements ? '#E8913A' : 'transparent', border: '2px solid #E8913A'}}>{showCalAnnouncements && <Check className="w-2.5 h-2.5 text-[#F6F5F1]" />}</span>
+                <span onClick={() => setShowCalAnnouncements(!showCalAnnouncements)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalAnnouncements ? '#141414' : 'transparent', border: '2px solid #141414'}}>{showCalAnnouncements && <Check className="w-2.5 h-2.5 text-[#F6F5F1]" />}</span>
                 анонси
               </label>
               <label className="flex items-center gap-2 text-xs text-secondary cursor-pointer">
-                <span onClick={() => setShowCalStories(!showCalStories)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalStories ? '#A78BFA' : 'transparent', border: '2px solid #A78BFA'}}>{showCalStories && <Check className="w-2.5 h-2.5 text-[#F6F5F1]" />}</span>
+                <span onClick={() => setShowCalStories(!showCalStories)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalStories ? '#8B8B88' : 'transparent', border: '2px solid #8B8B88'}}>{showCalStories && <Check className="w-2.5 h-2.5 text-[#F6F5F1]" />}</span>
                 історії
               </label>
               <label className="flex items-center gap-2 text-xs text-secondary cursor-pointer">
-                <span onClick={() => setShowCalInfoPosts(!showCalInfoPosts)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalInfoPosts ? '#059669' : 'transparent', border: '2px solid #059669'}}>{showCalInfoPosts && <Check className="w-2.5 h-2.5 text-[#F6F5F1]" />}</span>
+                <span onClick={() => setShowCalInfoPosts(!showCalInfoPosts)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalInfoPosts ? '#8B8B88' : 'transparent', border: '2px solid #8B8B88'}}>{showCalInfoPosts && <Check className="w-2.5 h-2.5 text-[#F6F5F1]" />}</span>
                 інфо-пости
               </label>
               <label className="flex items-center gap-2 text-xs text-secondary cursor-pointer">
-                <span onClick={() => setShowCalMemes(!showCalMemes)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalMemes ? '#FF8370' : 'transparent', border: '2px solid #FF8370'}}>{showCalMemes && <Check className="w-2.5 h-2.5 text-[#F6F5F1]" />}</span>
+                <span onClick={() => setShowCalMemes(!showCalMemes)} className="flex items-center justify-center rounded-full shrink-0" style={{width:'16px', height:'16px', background: showCalMemes ? '#C4C4C1' : 'transparent', border: '2px solid #C4C4C1'}}>{showCalMemes && <Check className="w-2.5 h-2.5 text-[#F6F5F1]" />}</span>
                 меми
               </label>
             </div>
@@ -5552,7 +5552,7 @@ const ContentPage = () => {
                 </button>
                 {completedAnnouncementsOpen && completedAnnouncements.map(item => (
                   <div key={item.id} className="event-card-desktop opacity-40" data-testid={`completed-announcement-${item.id}`}>
-                    <div className="date-badge-desktop" style={{background: '#E8913A', color: 'white'}}>
+                    <div className="date-badge-desktop" style={{background: '#141414', color: 'white'}}>
                       <span className="date-badge-month" style={{color: 'rgba(255,255,255,0.8)'}}>{UK_MONTHS_SHORT[new Date(item.date).getMonth()]}</span>
                       <span className="date-badge-day">{new Date(item.date).getDate()}</span>
                     </div>
@@ -5573,7 +5573,7 @@ const ContentPage = () => {
                     <p className="text-xs text-secondary font-medium mb-1 px-1">{formatDateUkrainian(date)}</p>
                     {items.map(item => (
                       <div key={item.id} className="event-card-desktop cursor-pointer" onClick={() => { setEditingTask({ ...item, type: 'announcement', task_name: item.event_title }); setShowTaskEditCalendar(false); setShowTaskEditDialog(true); }} data-testid={`announcement-${item.id}`}>
-                        <div className="date-badge-desktop" style={{background: '#E8913A', color: 'white'}}>
+                        <div className="date-badge-desktop" style={{background: '#141414', color: 'white'}}>
                           <span className="date-badge-month" style={{color: 'rgba(255,255,255,0.8)'}}>{UK_MONTHS_SHORT[new Date(item.date).getMonth()]}</span>
                           <span className="date-badge-day">{new Date(item.date).getDate()}</span>
                         </div>
@@ -5613,7 +5613,7 @@ const ContentPage = () => {
                   </button>
                   {completedStoriesOpen && allCompleted.map(item => (
                     <div key={item.id} className="task-item opacity-40" data-testid={`completed-story-${item.id}`}>
-                      <div className="task-icon" style={{background: 'rgba(167,139,250,0.15)', color: '#A78BFA'}}><Camera className="w-4 h-4" /></div>
+                      <div className="task-icon" style={{background: '#F3F3F1', color: '#8B8B88'}}><Camera className="w-4 h-4" /></div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate line-through">{item.task_name}</p>
                         <p className="text-xs text-secondary truncate">{item.event_title}</p>
@@ -5629,7 +5629,7 @@ const ContentPage = () => {
             {/* Active user-created stories */}
             {posts.filter(p => p.post_type === 'story' && !p.completed && p.date.startsWith(monthStr)).map(post => (
               <div key={post.id} className="task-item cursor-pointer" onClick={() => { setEditingPost({...post}); setShowEditPostCalendar(false); setShowPostDialog(true); }} data-testid={`story-post-${post.id}`}>
-                <div className="task-icon" style={{background: 'rgba(167,139,250,0.15)', color: '#A78BFA'}}><Camera className="w-4 h-4" /></div>
+                <div className="task-icon" style={{background: '#F3F3F1', color: '#8B8B88'}}><Camera className="w-4 h-4" /></div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{post.title}</p>
                   <p className="text-xs text-secondary">вручну</p>
@@ -5647,7 +5647,7 @@ const ContentPage = () => {
                     <p className="text-xs text-secondary font-medium mb-1 px-1">{formatDateUkrainian(date)}</p>
                     {items.map(item => (
                       <div key={item.id} className="task-item cursor-pointer" onClick={() => { setEditingTask({ ...item, type: 'story' }); setShowTaskEditCalendar(false); setShowTaskEditDialog(true); }} data-testid={`story-${item.id}`}>
-                        <div className="task-icon" style={{background: 'rgba(167,139,250,0.15)', color: '#A78BFA'}}><Camera className="w-4 h-4" /></div>
+                        <div className="task-icon" style={{background: '#F3F3F1', color: '#8B8B88'}}><Camera className="w-4 h-4" /></div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">{item.task_name}</p>
                           <p className="text-xs text-secondary truncate">{item.event_title}</p>
@@ -5679,7 +5679,7 @@ const ContentPage = () => {
                 </button>
                 {completedPostsOpen && completedPosts.map(post => {
                   const isInfo = !post.post_type || post.post_type === 'info';
-                  const badgeColor = isInfo ? '#059669' : '#FF8370';
+                  const badgeColor = isInfo ? '#8B8B88' : '#C4C4C1';
                   return (
                     <div key={post.id} className="event-card-desktop opacity-40" data-testid={`completed-post-${post.id}`}>
                       <div className="date-badge-desktop" style={{background: badgeColor, color: 'white'}}>
@@ -5700,7 +5700,7 @@ const ContentPage = () => {
             )}
             {activePosts.length > 0 ? activePosts.map(post => {
               const isInfo = !post.post_type || post.post_type === 'info';
-              const badgeColor = isInfo ? '#059669' : '#FF8370';
+              const badgeColor = isInfo ? '#8B8B88' : '#C4C4C1';
               return (
                 <div key={post.id} className="event-card-desktop" data-testid={`post-${post.id}`}>
                   <div className="date-badge-desktop" style={{background: badgeColor, color: 'white'}}>
