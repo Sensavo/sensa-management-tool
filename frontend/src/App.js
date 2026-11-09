@@ -1007,6 +1007,7 @@ const SMMIcon = ({ className }) => (
 );
 
 // Ukrainian formatting
+const pluralUa = (n, one, few, many) => { const m10 = n % 10, m100 = n % 100; if (m10 === 1 && m100 !== 11) return one; if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few; return many; };
 const UK_MONTHS = ["січня", "лютого", "березня", "квітня", "травня", "червня", "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"];
 const UK_MONTHS_SHORT = ["січ", "лют", "бер", "кві", "тра", "чер", "лип", "сер", "вер", "жов", "лис", "гру"];
 const UK_MONTHS_NOMINATIVE = ["січень", "лютий", "березень", "квітень", "травень", "червень", "липень", "серпень", "вересень", "жовтень", "листопад", "грудень"];
@@ -4196,6 +4197,81 @@ const EventForm = () => {
 };
 
 // Statistics Page - Mobile with monthly analytics cards
+
+// Аналітика (Mobile v3)
+const MobileStats = ({ stats, loading }) => {
+  const monthName = (m) => { const [y, mo] = String(m).split('-').map(Number); return { name: UK_MONTHS_NOMINATIVE[(mo || 1) - 1] || m, year: y }; };
+  const money = (v) => `${Math.round(Number(v) || 0).toLocaleString('uk-UA')} ₴`;
+  const nowKey = formatDateLocal(new Date()).slice(0, 7);
+  const upToNow = stats.filter(m => String(m.month) <= nowKey);
+  const latest = upToNow.length ? upToNow[upToNow.length - 1] : (stats[0] || null);
+  const earlier = upToNow.filter(m => m !== latest).reverse();
+  const maxRev = Math.max(1, ...stats.map(m => Number(m.planned_revenue) || 0));
+  return (
+    <div className="m-ui">
+      <div className="animate-fade-in m-page">
+        <header className="m-dash-head">
+          <div><div className="m-c">по місяцях</div><h1 className="m-d">аналітика</h1></div>
+        </header>
+        {loading ? <p className="m-c" style={{ padding: '32px 6px' }}>завантажую…</p> : !latest ? <p className="m-c" style={{ padding: '32px 6px' }}>поки немає даних</p> : (
+          <>
+            <div className="m-hero m-stat-hero" style={{ cursor: 'default' }}>
+              <div className="m-hero-top">
+                <span className="m-hero-chip">{monthName(latest.month).name} {monthName(latest.month).year}</span>
+                {(latest.badges?.includes('perfect') || latest.badges?.includes('excellent')) && <span className="m-hero-sub">{latest.badges.includes('perfect') ? 'усі дедлайни вчасно' : 'дедлайни 90%+'}</span>}
+              </div>
+              <div className="m-hero-big" style={{ marginTop: 18, fontSize: 40, lineHeight: '44px' }}>{money(latest.planned_revenue)}</div>
+              <div className="m-hero-sub" style={{ marginTop: 4 }}>плановий дохід</div>
+              <div className="m-stat-trio">
+                <div><span>{latest.events_count ?? 0}</span><small>подій</small></div>
+                <div><span>{latest.deadlines_percent || 100}%</span><small>дедлайни</small></div>
+                <div><span className={(latest.cancelled_percent || 0) > 0 ? 'm-hero-zero' : ''}>{latest.cancelled_percent || 0}%</span><small>скасовано</small></div>
+              </div>
+            </div>
+
+            {stats.length > 1 && (
+              <>
+                <div className="m-sec-head"><h2 className="m-sec">дохід</h2><span className="m-c">{stats.length} міс.</span></div>
+                <div className="m-stat-bars" aria-label="плановий дохід по місяцях">
+                  {stats.map(m => {
+                    const h = Math.max(6, Math.round(((Number(m.planned_revenue) || 0) / maxRev) * 120));
+                    const isLast = m === latest;
+                    return (
+                      <div key={m.month} className="m-stat-bar">
+                        <span className="m-stat-bar-val">{Math.round((Number(m.planned_revenue) || 0) / 1000)}k</span>
+                        <i style={{ height: h }} className={isLast ? 'is-on' : ''} />
+                        <span className="m-stat-bar-lbl">{UK_MONTHS_SHORT[(Number(String(m.month).split('-')[1]) || 1) - 1]}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {earlier.length > 0 && (
+              <>
+                <div className="m-sec-head"><h2 className="m-sec">попередні місяці</h2></div>
+                <div className="m-list">
+                  {earlier.map(m => (
+                    <div key={m.month} className="m-row">
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span className="m-b" style={{ display: 'block' }}>{monthName(m.month).name} {monthName(m.month).year}</span>
+                        <span className="m-c">{m.events_count ?? 0} {pluralUa(m.events_count ?? 0, 'подія', 'події', 'подій')} · дедлайни {m.deadlines_percent || 100}% · скасовано <span className={(m.cancelled_percent || 0) > 0 ? 'm-red' : ''}>{m.cancelled_percent || 0}%</span></span>
+                      </span>
+                      <span className="m-set-num" style={{ fontWeight: 700 }}>{money(m.planned_revenue)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
+      <BottomNav />
+    </div>
+  );
+};
+
 const StatsPage = () => {
   const { events } = useApp();
   const [stats, setStats] = useState([]);
@@ -4203,20 +4279,16 @@ const StatsPage = () => {
 
   useEffect(() => {
     api.getStatistics().then(r => {
-      // Add demo data for previous months with proper analytics
-      const currentMonth = new Date();
-      const prev1 = new Date(currentMonth); prev1.setMonth(prev1.getMonth() - 1);
-      const prev2 = new Date(currentMonth); prev2.setMonth(prev2.getMonth() - 2);
-
-      const demoData = [
-        { month: `${prev2.getFullYear()}-${String(prev2.getMonth() + 1).padStart(2, '0')}`, events_count: 5, cancelled_count: 0, planned_revenue: 70000, actual_revenue: 70000, deadlines_percent: 100, cancelled_percent: 0, badges: ["perfect"] },
-        { month: `${prev1.getFullYear()}-${String(prev1.getMonth() + 1).padStart(2, '0')}`, events_count: 7, cancelled_count: 1, planned_revenue: 98000, actual_revenue: 84000, deadlines_percent: 92, cancelled_percent: 14, badges: ["excellent"] },
-        ...r.data.map(s => ({ ...s, deadlines_percent: 100 - s.missed_deadlines_percent, actual_revenue: s.planned_revenue }))
-      ];
-      setStats(demoData);
+      const real = r.data
+        .map(s => ({ ...s, deadlines_percent: 100 - s.missed_deadlines_percent, actual_revenue: s.planned_revenue }))
+        .sort((a, b) => String(a.month).localeCompare(String(b.month)));
+      setStats(real);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
+
+  const isMobileLayout = useIsMobileLayout();
+  if (isMobileLayout) return <MobileStats stats={stats} loading={loading} />;
 
   return (
     <div className="animate-fade-in">
@@ -4766,10 +4838,74 @@ const TelegramSettingsSection = ({ compact = false, mui = false }) => {
 
 // Settings Page with edit capability
 
+// Календар (Mobile v3) — місяць + події обраного дня
+const MobileCalendar = () => {
+  const { events } = useApp();
+  const navigate = useNavigate();
+  const todayStr = formatDateLocal(new Date());
+  const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const [selected, setSelected] = useState(todayStr);
+  const y = month.getFullYear(), mo = month.getMonth();
+  const key = (d) => `${y}-${String(mo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const live = useMemo(() => events.filter(e => !e.cancelled && !e.archived && e.date), [events]);
+  const byDay = useMemo(() => { const m = {}; live.forEach(e => { const k = String(e.date).slice(0, 10); (m[k] = m[k] || []).push(e); }); return m; }, [live]);
+  const lead = (new Date(y, mo, 1).getDay() + 6) % 7;
+  const days = new Date(y, mo + 1, 0).getDate();
+  const cells = [...Array(lead).fill(null), ...Array.from({ length: days }, (_, i) => i + 1)];
+  const shift = (n) => { const d = new Date(y, mo + n, 1); setMonth(d); setSelected(formatDateLocal(d.getMonth() === new Date().getMonth() && d.getFullYear() === new Date().getFullYear() ? new Date() : d)); };
+  const dayEvents = (byDay[selected] || []).slice().sort((a, b) => String(a.start_time || '').localeCompare(String(b.start_time || '')));
+  const monthCount = Object.keys(byDay).filter(k => k.startsWith(`${y}-${String(mo + 1).padStart(2, '0')}`)).reduce((n, k) => n + byDay[k].length, 0);
+  const sd = new Date(`${selected}T00:00:00`);
+  const selLabel = selected === todayStr ? 'сьогодні' : `${sd.getDate()} ${UK_MONTHS[sd.getMonth()]}`;
+  return (
+    <div className="m-ui">
+      <div className="animate-fade-in m-page">
+        <header className="m-ev-head">
+          <div><div className="m-c">{UK_MONTHS_NOMINATIVE[mo]} {y} · {monthCount} {pluralUa(monthCount, 'подія', 'події', 'подій')}</div><h1 className="m-d">календар</h1></div>
+          <div className="m-ev-head-actions">
+            <button type="button" className="m-ico" aria-label="попередній місяць" onClick={() => shift(-1)}><ChevronLeft strokeWidth={2} /></button>
+            <button type="button" className="m-ico" aria-label="наступний місяць" onClick={() => shift(1)}><ChevronRight strokeWidth={2} /></button>
+          </div>
+        </header>
+        <div className="m-ct-cal m-cal-grid" role="grid" aria-label="місяць">
+          {['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'нд'].map(w => <span key={w} className="m-c m-ct-wd">{w}</span>)}
+          {cells.map((d, i) => d === null ? <span key={`e${i}`} /> : (
+            <button key={d} type="button" className={`m-ev-day m-ct-day${key(d) < todayStr ? ' m-ct-past' : ''}`} aria-pressed={key(d) === selected} aria-label={`${d} ${UK_MONTHS[mo]}${byDay[key(d)] ? `, ${byDay[key(d)].length} ${pluralUa(byDay[key(d)].length, 'подія', 'події', 'подій')}` : ''}`} onClick={() => setSelected(key(d))}>
+              <span className={`m-ev-day-num${key(d) === todayStr ? ' is-today' : ''}${key(d) === selected ? ' is-selected' : ''}`}>{d}</span>
+              <span className={`m-ev-day-dot${byDay[key(d)] ? ' is-on' : ''}`} />
+            </button>
+          ))}
+        </div>
+        <div className="m-sec-head"><h2 className="m-sec">{selLabel}</h2><span className="m-c">{dayEvents.length ? `${dayEvents.length} ${pluralUa(dayEvents.length, 'подія', 'події', 'подій')}` : ''}</span></div>
+        {dayEvents.length ? (
+          <div className="m-list">
+            {dayEvents.map(e => {
+              const booked = getBookedCount(e); const spots = Number(e.spots) || 0; const hasB = e.altegio_booked_count != null;
+              return (
+                <button key={e.id} type="button" className="m-row" onClick={() => navigate(`/event/${e.id}/view`)}>
+                  <span className="m-cal-time">{e.start_time || '—'}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span className="m-b m-ellipsis" style={{ display: 'block' }}>{e.title}</span>
+                    <span className="m-c">{[e.end_time ? `до ${e.end_time}` : null, e.price ? `${e.price} ₴` : null].filter(Boolean).join(' · ')}</span>
+                  </span>
+                  <span className="m-set-num" style={{ fontWeight: 700 }}>{hasB ? <><span className={booked === 0 ? 'm-red' : ''}>{booked}</span><span className="m-faint">/{spots}</span></> : <span className="m-faint">—/{spots}</span>}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : <p className="m-c" style={{ padding: '4px 6px' }}>цього дня подій немає</p>}
+      </div>
+      <BottomNav />
+    </div>
+  );
+};
+
 // ==================== CALENDAR PAGE (/cal) ====================
 const CalendarFullPage = () => {
   const { events } = useApp();
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const isMobileLayout = useIsMobileLayout();
+  if (isMobileLayout) return <MobileCalendar />;
 
   return (
     <div style={{ background: '#0A0A0A', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px' }}>
