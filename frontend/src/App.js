@@ -4245,7 +4245,7 @@ const StatsPage = () => {
 };
 
 // Altegio Sync Section Component
-const AltegioSyncSection = () => {
+const AltegioSyncSection = ({ mui = false, children = null }) => {
   const { refreshEvents } = useApp();
   const [altegioStatus, setAltegioStatus] = useState({ connected: false });
   const [altegioEvents, setAltegioEvents] = useState([]);
@@ -4285,6 +4285,37 @@ const AltegioSyncSection = () => {
       setSyncing(false);
     }
   };
+
+  if (mui) {
+    const shown = altegioStatus.connected ? altegioEvents.slice(0, 5) : [];
+    return (
+      <section className="m-set-section">
+        <h2 className="m-sec">altegio</h2>
+        <div className="m-list m-set-list">
+          <div className="m-row">
+            <span className={`m-dot${!loading && altegioStatus.connected ? "" : " m-dot--idle"}`} aria-hidden="true" />
+            <span className="m-set-main">
+              <span className="m-b">Altegio</span>
+              <span className="m-c">{loading ? "завантажую…" : altegioStatus.connected ? `підключено · ${altegioEvents.length} подій` : "не підключено"}</span>
+            </span>
+            {!loading && altegioStatus.connected && (
+              <button type="button" className="m-txt m-set-edge" onClick={handleSync} disabled={syncing}>{syncing ? "оновлюю…" : "оновити"}</button>
+            )}
+          </div>
+          {shown.map(event => (
+            <div key={event.id} className="m-row">
+              <span className="m-set-main">
+                <span className="m-b m-ellipsis">{event.comment || event.title || event.service?.title}</span>
+                <span className="m-c">{formatDateUkrainian(event.date)} · {event.capacity} місць</span>
+              </span>
+              <span className="m-n m-set-num"><span className={event.records_count > 0 ? "" : "m-red"}>{event.records_count}</span><span className="m-faint">/{event.capacity}</span></span>
+            </div>
+          ))}
+          {children}
+        </div>
+      </section>
+    );
+  }
 
   if (loading) {
     return (
@@ -4344,7 +4375,7 @@ const AltegioSyncSection = () => {
   );
 };
 
-const TelegramSettingsSection = ({ compact = false }) => {
+const TelegramSettingsSection = ({ compact = false, mui = false }) => {
   const [currentUser, setCurrentUser] = useState(getActorUser());
   const [status, setStatus] = useState(null);
   const [linkData, setLinkData] = useState(null);
@@ -4480,6 +4511,110 @@ const TelegramSettingsSection = ({ compact = false }) => {
         : "не привʼязано";
   const preview = previewData?.previews?.[0];
   const previewMessage = preview?.message ? preview.message.replace(/<[^>]+>/g, "") : "";
+
+  if (mui) {
+    const linked = !!status?.linked;
+    const userLabel = TEAM_USER_OPTIONS.find(u => u.id === currentUser)?.label;
+    const timerText = secondsLeft > 0 ? `діє ще ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}` : "код протерміновано";
+    const STYLE_LABELS = { balanced: "balanced", serious: "serious", haha: "хі-ханьки" };
+    return (
+      <section className="m-set-section">
+        <h2 className="m-sec">telegram</h2>
+        <div className="m-list m-set-list">
+          <div className="m-row">
+            <span className={`m-dot${linked && !status?.muted ? "" : " m-dot--idle"}`} aria-hidden="true" />
+            <span className="m-set-main">
+              <span className="m-b">Telegram</span>
+              <span className="m-c m-ellipsis">{statusText}</span>
+            </span>
+          </div>
+          <label className="m-row m-task-row">
+            <span className="m-b m-task-row-label">хто я</span>
+            <span className="m-c m-task-row-value m-ellipsis">{userLabel || "обери"}</span>
+            <ChevronRight className="m-task-chev" strokeWidth={1.6} />
+            <select className="m-task-row-select" value={currentUser} onChange={(e) => handleUserChange(e.target.value)} aria-label="хто я">
+              <option value="">хто я</option>
+              {TEAM_USER_OPTIONS.map(user => <option key={user.id} value={user.id}>{user.label}</option>)}
+            </select>
+          </label>
+          {currentUser && status && (
+            <>
+              <label className="m-row m-task-row">
+                <span className="m-b m-task-row-label">ранковий пінг</span>
+                <span className="m-c m-task-row-value">{String(status.morning_hour || 9).padStart(2, "0")}:00</span>
+                <ChevronRight className="m-task-chev" strokeWidth={1.6} />
+                <select className="m-task-row-select" value={status.morning_hour || 9} disabled={prefsSaving} aria-label="ранковий пінг"
+                  onChange={(e) => handleUpdatePreferences({ morning_hour: Number(e.target.value) })}>
+                  {[7, 8, 9, 10, 11].map(hour => <option key={hour} value={hour}>{String(hour).padStart(2, "0")}:00</option>)}
+                </select>
+              </label>
+              <label className="m-row m-task-row">
+                <span className="m-b m-task-row-label">стиль</span>
+                <span className="m-c m-task-row-value">{STYLE_LABELS[status.communication_style || "balanced"] || status.communication_style}</span>
+                <ChevronRight className="m-task-chev" strokeWidth={1.6} />
+                <select className="m-task-row-select" value={status.communication_style || "balanced"} disabled={prefsSaving} aria-label="стиль"
+                  onChange={(e) => handleUpdatePreferences({ communication_style: e.target.value })}>
+                  <option value="balanced">balanced</option>
+                  <option value="serious">serious</option>
+                  <option value="haha">хі-ханьки</option>
+                </select>
+              </label>
+            </>
+          )}
+        </div>
+        {currentUser && status && (
+          <p className="m-c m-set-note">другий пінг: {String(status.second_ping_hour || 14).padStart(2, "0")}:00, тільки без реакції</p>
+        )}
+
+        <div className="m-set-actions">
+          <button type="button" className="m-ghost" onClick={handleCreateCode} disabled={!currentUser}>{linked ? "новий код" : "отримати код"}</button>
+          {linked && <button type="button" className="m-ghost" onClick={handleToggleMute}>{status?.muted ? "увімкнути" : "mute"}</button>}
+          {linked && <button type="button" className="m-txt m-txt--danger" onClick={handleUnlink}>відвʼязати</button>}
+        </div>
+
+        {linkData?.code && (
+          <div className="m-set-code">
+            {botUrl && (
+              <img alt="Telegram QR" src={`https://api.qrserver.com/v1/create-qr-code/?size=176x176&data=${encodeURIComponent(botUrl)}`} />
+            )}
+            <div className="m-set-main">
+              <span className="m-c">надішли боту код</span>
+              <span className="m-set-code-value m-ellipsis">{codeText}</span>
+              <span className="m-c">{timerText}</span>
+              {botUrl && <a className="m-txt m-set-link" href={botUrl} target="_blank" rel="noreferrer">відкрити бота</a>}
+            </div>
+          </div>
+        )}
+
+        <div className="m-sec-head">
+          <h3 className="m-sec">перегляд без відправки</h3>
+        </div>
+        <div className="m-chips m-set-chips">
+          {[
+            ["today", "сьогодні"],
+            ["morning", "ранок"],
+            ["second-ping", "другий"],
+          ].map(([kind, label]) => (
+            <button key={kind} type="button" className="m-ghost" aria-pressed={previewKind === kind && !!previewData}
+              onClick={() => handleLoadPreview(kind)} disabled={!currentUser || previewLoading}>{label}</button>
+          ))}
+          <button type="button" className="m-ghost m-ghost--icon" onClick={() => handleLoadPreview(previewKind)} disabled={!currentUser || previewLoading} aria-label="оновити перегляд">
+            <RefreshCw className={`w-[18px] h-[18px] ${previewLoading ? "animate-spin" : ""}`} strokeWidth={1.5} />
+          </button>
+        </div>
+        {preview && (
+          <>
+            <p className="m-c m-set-note">
+              {preview.would_send ? "надішле" : "не надішле"}
+              {preview.muted ? " · mute" : ""}
+              {!preview.linked ? " · не привʼязано" : ""}
+            </p>
+            <div className="m-set-preview">{previewMessage || "повідомлення немає"}</div>
+          </>
+        )}
+      </section>
+    );
+  }
 
   return (
     <div className={compact ? "space-y-2" : "section-card mt-4"}>
@@ -5238,7 +5373,7 @@ const ContentPage = () => {
 // closed the edit dialog and opened a separate confirm dialog in the same tick,
 // which left the confirm unreachable. Deletion is undoable (⌘Z / undo action):
 // hardcoded tasks are restored via revert, custom tasks are re-created.
-const DeleteTaskDefButton = ({ task, afterChange, onDeleted }) => {
+const DeleteTaskDefButton = ({ task, afterChange, onDeleted, mui = false }) => {
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const { pushUndo } = useUndo();
@@ -5272,6 +5407,14 @@ const DeleteTaskDefButton = ({ task, afterChange, onDeleted }) => {
       setArmed(false);
     } finally { setBusy(false); }
   };
+  if (mui) {
+    return (
+      <button type="button" disabled={busy} data-testid="task-def-delete" onClick={handleClick}
+        className={`m-btn m-btn--danger m-set-del${armed ? " is-armed" : ""}`}>
+        <Trash2 className="w-[18px] h-[18px]" strokeWidth={1.5} />{armed ? "точно видалити?" : "видалити"}
+      </button>
+    );
+  }
   return (
     <button type="button" disabled={busy} data-testid="task-def-delete" onClick={handleClick}
       className={`flex-1 h-11 rounded-full border transition-colors flex items-center justify-center gap-1.5 text-sm font-medium ${armed ? "bg-red-600 border-red-600 text-white hover:bg-red-700" : "border-red-200 text-red-600 hover:bg-red-50"}`}>
@@ -5282,7 +5425,7 @@ const DeleteTaskDefButton = ({ task, afterChange, onDeleted }) => {
 
 // Reusable editor block for a task definition.
 // Two task types: "event" (tied to event date) and "regular" (monthly/daily).
-const TaskDefEditor = ({ draft, setDraft }) => {
+const TaskDefEditor = ({ draft, setDraft, mui = false }) => {
   const [showDetails, setShowDetails] = useState(false);
   if (!draft) return null;
   const COLS = [
@@ -5316,6 +5459,95 @@ const TaskDefEditor = ({ draft, setDraft }) => {
     { v: "monthly", l: "щомісяця", hint: "за N днів від початку місяця" },
     { v: "daily",   l: "щоденно",  hint: "автоматично кожен день" },
   ];
+
+  if (mui) {
+    const M_COLS = [
+      { v: "management", l: "менеджер" },
+      { v: "smm",        l: "smm" },
+      { v: "marketing",  l: "маркетинг" },
+    ];
+    const flags = freq === "event" ? [
+      { f: "is_announcement",    l: "анонс",              hint: "зсув на постинговий день" },
+      { f: "is_teamwork",        l: "тімворк",            hint: "тільки студійні дні" },
+      { f: "series_master_only", l: "серія",                  hint: "лише на батьківській події серії" },
+    ] : [
+      { f: "is_teamwork",        l: "тімворк",            hint: "тільки студійні дні" },
+    ];
+    const curFreq = FREQS.find(f => f.v === freq);
+    return (
+      <div className="m-set-editor">
+        <label className="m-field">
+          <span>назва</span>
+          <input value={draft.name || ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="що треба зробити" />
+        </label>
+
+        <div className="m-c m-task-label">тип</div>
+        <div className="m-chips" role="radiogroup" aria-label="тип">
+          {FREQS.map(f => (
+            <button key={f.v} type="button" role="radio" className="m-ghost" aria-checked={freq === f.v} onClick={() => setFreq(f.v)}>{f.l}</button>
+          ))}
+        </div>
+        {curFreq && <div className="m-c m-set-hint">{curFreq.hint}</div>}
+
+        <div className="m-c m-task-label">виконавець</div>
+        <div className="m-chips" role="radiogroup" aria-label="виконавець">
+          {M_COLS.map(c => (
+            <button key={c.v} type="button" role="radio" className="m-ghost" aria-checked={draft.column === c.v} onClick={() => setDraft({ ...draft, column: c.v })}>{c.l}</button>
+          ))}
+        </div>
+
+        {freq !== "daily" && (
+          <label className="m-field m-set-days">
+            <span>{freq === "event" ? "за скільки днів до події" : "за скільки днів від початку місяця"}</span>
+            <input type="number" inputMode="numeric" value={draft.days_before ?? 0}
+              onChange={(e) => setDraft({ ...draft, days_before: parseInt(e.target.value) || 0 })} />
+          </label>
+        )}
+
+        <div className="m-list m-set-details-list">
+          <button type="button" className="m-row m-task-row" aria-expanded={showDetails} onClick={() => setShowDetails(s => !s)}>
+            <span className="m-b m-task-row-label">деталі</span>
+            <span className="m-c m-task-row-value m-ellipsis">{freq === "event" ? "умови, прапорці" : "тімворк"}</span>
+            <ChevronDown className="m-task-chev" strokeWidth={1.6} style={{ transform: showDetails ? "rotate(180deg)" : "none" }} />
+          </button>
+          {showDetails && (
+            <div className="m-set-details">
+              {freq === "event" && (
+                <div className="m-set-cond">
+                  <div className="m-c m-task-label">умова показу</div>
+                  <div className="m-chips" role="radiogroup" aria-label="умова показу">
+                    {[
+                      { v: "none", l: "завжди" },
+                      { v: "booking_below", l: "бронювань <" },
+                      { v: "booking_above", l: "бронювань >" },
+                    ].map(o => (
+                      <button key={o.v} type="button" role="radio" className="m-ghost" aria-checked={condType === o.v} onClick={() => setCondition(o.v, condThreshold)}>{o.l}</button>
+                    ))}
+                  </div>
+                  {condType !== "none" && (
+                    <label className="m-field m-set-days">
+                      <span>поріг, %</span>
+                      <input type="number" inputMode="numeric" value={condThreshold} onChange={(e) => setCondition(condType, e.target.value)} />
+                    </label>
+                  )}
+                </div>
+              )}
+              {flags.map(({ f, l, hint }) => (
+                <div key={f} className="m-ev-switch-row">
+                  <span className="m-set-main">
+                    <span className="m-b">{l}</span>
+                    <span className="m-c">{hint}</span>
+                  </span>
+                  <button type="button" role="switch" className="m-switch" aria-checked={!!draft[f]} aria-label={l}
+                    onClick={() => setDraft({ ...draft, [f]: !draft[f] })} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mt-4 space-y-4">
@@ -5436,6 +5668,7 @@ const SettingsPage = () => {
   const [showEditSMMDialog, setShowEditSMMDialog] = useState(false);
   // Google Calendar state
   const [exportingAll, setExportingAll] = useState(false);
+  const isMobile = useIsMobileLayout();
 
   useEffect(() => { if (settings?.reminder_types) setReminderTypes([...settings.reminder_types].sort((a, b) => b.days_before - a.days_before)); }, [settings]);
 
@@ -5501,6 +5734,153 @@ const SettingsPage = () => {
       setExportingAll(false);
     }
   };
+
+  if (isMobile) {
+    const M_TABS = [
+      { v: "management", l: "менеджмент" },
+      { v: "smm",        l: "smm" },
+      { v: "marketing",  l: "маркетинг" },
+      { v: "sync",       l: "інше" },
+    ];
+    const LEADS = {
+      management: "завдання менеджменту для кожної події",
+      smm: "автоматичні завдання для smm команди",
+      marketing: "завдання маркетингу для кожної події",
+    };
+    const freqLabel = (task) => {
+      const f = task.frequency || "event";
+      if (f === "daily") return "щоденно";
+      if (f === "monthly") return `щомісяця · за ${task.days_before} днів`;
+      return `за ${task.days_before} днів`;
+    };
+    const openEdit = (task) => {
+      if (activeTab === "management") { setEditingReminder({ ...task, column: task.column || "management" }); setShowEditDialog(true); }
+      else if (activeTab === "smm") { setEditingSMM({ ...task, column: task.column || "smm", icon: SMM_ICONS[task.id] || "instagram" }); setShowEditSMMDialog(true); }
+      else { setEditingSMM({ ...task, column: task.column || "marketing", icon: task.icon || "circle" }); setShowEditSMMDialog(true); }
+    };
+    const openAdd = () => { setNewReminder({ name: "", days_before: 7, column: activeTab, frequency: "event", is_announcement: false, is_teamwork: false, series_master_only: false, condition: null }); setShowAddDialog(true); };
+    const buildPayload = (d) => {
+      const freq = d.frequency || "event";
+      const payload = { name: d.name, days_before: parseInt(d.days_before) || 0, column: d.column || activeTab, frequency: freq, is_teamwork: !!d.is_teamwork };
+      if (freq === "event") {
+        payload.is_announcement = !!d.is_announcement;
+        payload.series_master_only = !!d.series_master_only;
+        payload.condition = d.condition || null;
+      }
+      return payload;
+    };
+    const handleCreateMobile = async () => {
+      if (!newReminder.name?.trim()) return;
+      try {
+        await api.createTaskDef(buildPayload(newReminder));
+        toast.success("додано!");
+        refreshSMMTasksDefinition();
+        refreshEvents();
+        setShowAddDialog(false);
+        setNewReminder({ name: "", days_before: 7, column: activeTab, frequency: "event", is_announcement: false, is_teamwork: false, series_master_only: false, condition: null });
+      } catch { toast.error("помилка"); }
+    };
+    const handleSaveSMMMobile = async () => {
+      if (!editingSMM) return;
+      try { await api.editTaskDef(editingSMM.id, buildPayload(editingSMM)); toast.success("збережено!"); refreshSMMTasksDefinition(); refreshEvents(); setShowEditSMMDialog(false); }
+      catch { toast.error("помилка"); }
+    };
+    const tasks = activeTab === "sync" ? [] : [...(allTaskDefs[activeTab] || [])].sort((a, b) => b.days_before - a.days_before);
+    const gConnected = googleCalendarStatus.connected;
+    const renderSheet = ({ open, onOpenChange, title, desc, draft, setDraft, submitLabel, onSubmit, deleteTask }) => (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent hideClose className="m-sheet m-set-sheet sm:max-w-md" onOpenAutoFocus={(e) => e.preventDefault()}>
+          <div className="m-sheet-head">
+            <DialogTitle className="m-sec">{title}</DialogTitle>
+            <button type="button" className="m-ico" style={{ marginRight: -12 }} onClick={() => onOpenChange(false)} aria-label="закрити"><X strokeWidth={1.5} /></button>
+          </div>
+          <DialogDescription className="m-c">{desc}</DialogDescription>
+          {draft && <TaskDefEditor mui draft={draft} setDraft={setDraft} />}
+          <div className="m-set-footer">
+            <button type="button" className="m-btn" onClick={onSubmit} disabled={!draft?.name?.trim()}>{submitLabel}</button>
+            {deleteTask && <DeleteTaskDefButton mui task={deleteTask} afterChange={afterTaskDefChange} onDeleted={() => onOpenChange(false)} />}
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+
+    return (
+      <div className="m-ui" data-testid="settings-mobile">
+        <div className="m-page">
+          <h1 className="m-d">налаштування</h1>
+          <div role="tablist" aria-label="розділи налаштувань" className="m-tabs m-set-tabs">
+            {M_TABS.map(t => (
+              <button key={t.v} type="button" role="tab" className="m-tab" aria-selected={activeTab === t.v} onClick={() => setActiveTab(t.v)}>{t.l}</button>
+            ))}
+          </div>
+
+          {activeTab !== "sync" && (
+            <>
+              <p className="m-c m-set-lead">{LEADS[activeTab]}</p>
+              <div className="m-list m-set-list">
+                {tasks.map(task => (
+                  <button key={task.id} type="button" className="m-row m-set-row" onClick={() => openEdit(task)}>
+                    <span className="m-set-main">
+                      <span className="m-b">{task.name}</span>
+                      <span className="m-c">
+                        {freqLabel(task)}
+                        {task.is_announcement ? " · анонс" : ""}
+                        {task.is_teamwork ? " · тімворк" : ""}
+                      </span>
+                    </span>
+                    <ChevronRight className="m-more-chev" strokeWidth={1.5} aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
+              {tasks.length === 0 && <p className="m-c m-set-empty">немає завдань</p>}
+              <button type="button" className="m-txt m-set-add" onClick={openAdd}>
+                <Plus strokeWidth={1.5} aria-hidden="true" />новий таск
+              </button>
+            </>
+          )}
+
+          {activeTab === "sync" && (
+            <>
+              <section className="m-set-section">
+                <h2 className="m-sec">google calendar</h2>
+                <div className="m-list m-set-list">
+                  <div className="m-row">
+                    <span className={`m-dot${gConnected ? "" : " m-dot--idle"}`} aria-hidden="true" />
+                    <span className="m-set-main">
+                      <span className="m-b">Google Calendar</span>
+                      <span className="m-c m-ellipsis">{gConnected ? (googleCalendarStatus.email || "підключено") : "не підключено"}</span>
+                    </span>
+                    {gConnected
+                      ? <button type="button" className="m-txt m-txt--danger m-set-edge" onClick={handleGoogleDisconnect}>відключити</button>
+                      : <button type="button" className="m-txt m-set-edge" onClick={handleGoogleConnect}>підключити</button>}
+                  </div>
+                  {gConnected && (
+                    <button type="button" className="m-row m-set-row" onClick={handleExportAllEvents} disabled={exportingAll}>
+                      <span className="m-b m-set-main">{exportingAll ? "експортую…" : "експортувати всі події"}</span>
+                      <ExternalLink className="m-more-chev" strokeWidth={1.5} aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
+                <p className="m-c m-set-note">{gConnected ? "нові події синхронізуються автоматично" : "після підключення події автоматично додаватимуться до твого календаря"}</p>
+              </section>
+
+              <AltegioSyncSection mui>
+                <AltegioHealthSection mui />
+              </AltegioSyncSection>
+
+              <TelegramSettingsSection mui />
+            </>
+          )}
+        </div>
+
+        {renderSheet({ open: showAddDialog, onOpenChange: setShowAddDialog, title: "новий таск", desc: "система створюватиме його автоматично для кожної події", draft: newReminder, setDraft: setNewReminder, submitLabel: "створити", onSubmit: handleCreateMobile })}
+        {renderSheet({ open: showEditDialog, onOpenChange: setShowEditDialog, title: "редагувати таск", desc: "зміни записуються в історію—можна відкотити", draft: editingReminder, setDraft: setEditingReminder, submitLabel: "зберегти", onSubmit: handleSaveTaskDef, deleteTask: editingReminder })}
+        {renderSheet({ open: showEditSMMDialog, onOpenChange: setShowEditSMMDialog, title: "редагувати таск", desc: "зміни записуються в історію—можна відкотити", draft: editingSMM, setDraft: setEditingSMM, submitLabel: "зберегти", onSubmit: handleSaveSMMMobile, deleteTask: editingSMM })}
+
+        <BottomNav />
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in">
@@ -8807,7 +9187,7 @@ const DesktopDashboard = () => {
 };
 
 // Settings Content for modals - with 4 columns layout
-const AltegioHealthSection = ({ mobile = false }) => {
+const AltegioHealthSection = ({ mobile = false, mui = false }) => {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -8827,6 +9207,39 @@ const AltegioHealthSection = ({ mobile = false }) => {
     not_group: "не групова / 0 місць",
     prepaid_off: "без передоплати",
   };
+
+  if (mui) {
+    const toggle = () => { const next = !open; setOpen(next); if (next && !data) load(); };
+    return (
+      <>
+        <button type="button" className="m-row m-task-row" aria-expanded={open} onClick={toggle} disabled={loading}>
+          <span className="m-b m-task-row-label">здоровʼя сервісів</span>
+          <span className="m-c m-task-row-value">{loading ? "перевіряю…" : ""}</span>
+          <ChevronDown className="m-task-chev" strokeWidth={1.6} style={{ transform: open ? "rotate(180deg)" : "none" }} />
+        </button>
+        {open && data && (
+          <>
+            {data.services.map(s => (
+              <div key={s.id} className="m-row">
+                <span className={`m-dot${s.ok ? "" : " m-dot--warn"}`} aria-label={s.ok ? "ок" : "є проблеми"} />
+                <span className="m-set-main">
+                  <span className="m-b m-ellipsis">{s.title}</span>
+                  {!s.ok && <span className="m-c m-red">{s.issues.map(i => ISSUE_LABELS[i] || i).join(" · ")}</span>}
+                </span>
+                <span className="m-c">{s.price > 0 ? `${s.price} ₴` : "free"}</span>
+              </div>
+            ))}
+            <div className="m-set-actions m-set-actions--row">
+              <button type="button" className="m-txt m-set-flush" onClick={load} disabled={loading}>оновити</button>
+              <a href={data.altegio_services_url} target="_blank" rel="noopener noreferrer" className="m-txt m-set-link">
+                <ExternalLink className="w-4 h-4" strokeWidth={1.5} />відкрити Altegio
+              </a>
+            </div>
+          </>
+        )}
+      </>
+    );
+  }
 
   return (
     <div className={mobile ? "" : "pt-2 border-t border-[#E8E5DC]"}>

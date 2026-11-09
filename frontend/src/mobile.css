@@ -315,3 +315,40 @@ button.m-row { border-left: 0; border-right: 0; border-top: 0; }
 
 /* === стан без синхронізації === */
 .m-dot--idle { background: var(--m-faint); }
+
+/* === налаштування: шаблони задач, інтеграції (mr-settings) === */
+.m-set-tabs { margin-top: 24px; }
+.m-set-lead { margin: 16px 0 0; }
+.m-set-list { margin-top: 8px; }
+.m-set-row { cursor: pointer; }
+.m-set-row:disabled { cursor: default; opacity: .5; }
+.m-set-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.m-set-add { padding: 0; margin-top: 4px; align-self: flex-start; }
+.m-set-add svg { width: 18px; height: 18px; }
+.m-set-empty { margin: 0; padding: 16px 0 4px; }
+.m-set-section { margin-top: 32px; }
+.m-set-section:first-of-type { margin-top: 28px; }
+.m-set-edge { margin-right: -8px; }
+.m-set-flush { padding-left: 0; }
+.m-set-note { margin: 8px 0 0; }
+.m-set-num { font-size: 17px; line-height: 22px; white-space: nowrap; }
+.m-set-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
+.m-set-actions--row { justify-content: space-between; margin-top: 4px; }
+.m-set-link { text-decoration: none; padding-left: 0; }
+.m-set-chips { margin-top: 8px; }
+.m-set-code { display: flex; align-items: center; gap: 16px; margin-top: 16px; padding: 12px 0; border-top: 1px solid var(--m-line); border-bottom: 1px solid var(--m-line); }
+.m-set-code img { width: 88px; height: 88px; flex-shrink: 0; }
+.m-set-code-value { font-size: 22px; line-height: 28px; font-weight: 500; letter-spacing: 0.12em; margin: 2px 0; }
+.m-set-preview { margin-top: 8px; padding: 12px 0; max-height: 280px; overflow: auto; border-top: 1px solid var(--m-line); border-bottom: 1px solid var(--m-line); font-size: 15px; line-height: 20px; color: var(--m-ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Шторка шаблону задачі */
+.m-sheet.m-set-sheet::before { position: static; inset: auto; }
+.m-sheet.m-set-sheet > p.m-c { margin: 0; }
+.m-set-editor { margin-top: 8px; display: flex; flex-direction: column; }
+.m-set-hint { margin-top: 6px; }
+.m-set-days { margin-top: 12px; }
+.m-set-details-list { margin-top: 20px; }
+.m-set-details .m-ev-switch-row { gap: 16px; }
+.m-set-cond { padding-bottom: 12px; border-bottom: 1px solid var(--m-line); }
+.m-set-footer { margin-top: 24px; display: flex; flex-direction: column; gap: 10px; }
+.m-set-del.is-armed { background: var(--m-red); border-color: var(--m-red); color: #FFFFFF; }
