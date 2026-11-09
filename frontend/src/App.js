@@ -1,6 +1,7 @@
 import { useState, useEffect, createContext, useContext, useCallback, useMemo, useRef } from "react";
 import "@/App.css";
 import "@/mobile.css";
+import "@/desktop.css";
 import { BrowserRouter, Routes, Route, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { Toaster, toast } from "sonner";
@@ -1038,6 +1039,15 @@ const formatDateUkrainian = (dateStr) => {
   return `${date.getDate()} ${UK_MONTHS[date.getMonth()]}`;
 };
 
+// «10 лис» — коротка дата для рядків задач на десктопі (рядок YYYY-MM-DD читаємо як локальну дату).
+const formatShortDateUk = (value) => {
+  const [y, m, d] = String(value || "").split("T")[0].split("-").map(Number);
+  if (!y || !m || !d) return "";
+  return `${d} ${UK_MONTHS_SHORT[m - 1]}`;
+};
+// Типографський апостроф для назв днів («пʼятниця»).
+const withUaApostrophe = (s) => String(s || "").replace(/'/g, "ʼ");
+
 const formatDateWithWeekday = (date) => {
   const d = date instanceof Date ? date : new Date(date);
   return {
@@ -1216,13 +1226,6 @@ const TaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, showDate = 
 // SMM Task Item
 // SMM Task Item with color support
 const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, onTaskEdit, onOverlapClick, showDate = false, smmTasksDefinition = [], mobile = false, isOverdue = false }) => {
-  // Determine icon - text work tasks get file icon
-  const isTextWork = TEXT_WORK_SMM_TASKS.has(task.task_id);
-  const iconName = task.icon || (task.is_standalone
-    ? "instagram"
-    : (isTextWork ? "file" : (SMM_ICONS[task.task_id] || "circle")));
-  const IconComponent = getIconComponent(iconName);
-
   // Get task color - directly from task object (set by getSMMTasks)
   const taskColor = task.color || "manager";
   const colorClass = getColorClass(taskColor);
@@ -1264,32 +1267,37 @@ const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, 
     );
   }
 
+  // Десктоп (v3): чекбокс ліворуч, назва 15/500, під нею подія, праворуч коротка дата.
+  const deskSub = [task.event_title, task.target_month ? UK_MONTHS_NOMINATIVE[parseInt(task.target_month.split('-')[1]) - 1] : ""].filter(Boolean).join(" · ");
   return (
-    <div className={`task-item cursor-pointer ${localCompleted ? "opacity-40" : ""}`} onClick={handleClick} data-testid={`task-item-${task.task_id || task.event_id}`}>
-      <div className={`task-icon ${colorClass}`}><IconComponent /></div>
-      <div className="flex-1 min-w-0 pr-2">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <p className="text-sm font-medium truncate">{task.task_name}</p>
-          {task.isOverlapping && (
-            onOverlapClick ? (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onOverlapClick(task); }}
-                className="task-overlap-badge text-[10px] bg-red-100 text-red-600 hover:bg-red-200 px-1.5 py-0.5 rounded-full whitespace-nowrap transition-colors"
-                title="клікни щоб перенести"
-              >перетин</button>
-            ) : (
-              <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full whitespace-nowrap" title="на цей день є інший анонс">перетин</span>
-            )
-          )}
-        </div>
-        {task.event_title && <p className="text-xs text-secondary lowercase truncate">{task.event_title}</p>}
-        {task.target_month && <p className="text-xs text-gray-400">{UK_MONTHS[parseInt(task.target_month.split('-')[1]) - 1]}</p>}
-      </div>
-      {showDate && <span className="text-secondary text-xs whitespace-nowrap ml-1">{formatDateUkrainian(task.task_date)}</span>}
-      <button className={`task-checkbox ${localCompleted ? "checked" : ""}`} onClick={(e) => { e.stopPropagation(); handleToggle(); }}>
-        <Check className="w-4 h-4" />
+    <div className={`dsk-task ${localCompleted ? "is-done" : ""}`} onClick={handleClick} data-testid={`task-item-${task.task_id || task.event_id}`}>
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={localCompleted}
+        aria-label={localCompleted ? "повернути" : "позначити виконаним"}
+        className={`dsk-chk ${localCompleted ? "is-done" : ""} ${isOverdue && !localCompleted ? "is-overdue" : ""} ${colorClass}`}
+        onClick={(e) => { e.stopPropagation(); handleToggle(); }}
+      >
+        {localCompleted && <Check color="#FFFFFF" strokeWidth={3.4} width={11} height={11} aria-hidden="true" />}
       </button>
+      <div className="dsk-task-main">
+        <p className="dsk-task-title" title={task.task_name}>{task.task_name}</p>
+        {deskSub && <p className="dsk-task-sub">{deskSub}</p>}
+      </div>
+      {task.isOverlapping && (
+        onOverlapClick ? (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onOverlapClick(task); }}
+            className="task-overlap-badge dsk-overlap"
+            title="на цей день є інший анонс—клікни, щоб перенести"
+          >перетин</button>
+        ) : (
+          <span className="dsk-overlap" title="на цей день є інший анонс">перетин</span>
+        )
+      )}
+      {showDate && <span className={`dsk-task-when ${isOverdue && !localCompleted ? "is-overdue" : ""}`}>{formatShortDateUk(task.task_date)}</span>}
     </div>
   );
 };
@@ -6836,20 +6844,20 @@ const DroppableTaskTarget = ({ task, children, isOver }) => {
     <div
       data-task-drop-type="task"
       data-task-key={getTaskDragKey(task)}
-      className={isOver ? "rounded-xl ring-2 ring-[#1A1717]/30" : ""}
+      className={isOver ? "is-drop-over" : ""}
     >
       {children}
     </div>
   );
 };
 
-const DroppableDateSection = ({ assignee, date, children, isOver }) => {
+const DroppableDateSection = ({ assignee, date, children, isOver, className = "" }) => {
   return (
     <div
       data-task-drop-type="date"
       data-assignee={assignee}
       data-date={date}
-      className={isOver ? "rounded-xl bg-[#1A1717]/[0.05]" : ""}
+      className={`${className} ${isOver ? "is-drop-over" : ""}`.trim()}
     >
       {children}
     </div>
@@ -6858,7 +6866,7 @@ const DroppableDateSection = ({ assignee, date, children, isOver }) => {
 
 // Team Column Component - reusable for SMM, Manager, Marketer
 const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick, onStandaloneClick, onTaskEdit, onAddClick, onCleanupClick, overdueExpanded, setOverdueExpanded, soonExpanded, setSoonExpanded, smmTasksDefinition, columnAssignee, announcementOverlaps = {}, onOverlapClick, todayStr, onTaskDragStart, onTaskDragMove, onTaskDragEnd, onTaskDrop, dragOver }) => {
-  const TaskRenderer = ({ task }) => {
+  const TaskRenderer = ({ task, showDate = false, isOverdue = false }) => {
     const colAssignee = columnAssignee || (colorClass === 'emerald' ? 'smm' : colorClass === 'orange' ? 'marketer' : 'manager');
     const taskDate = task.task_date || task.reminder_date;
     const isOverlapping = !!(taskDate && announcementOverlaps[taskDate]);
@@ -6884,79 +6892,75 @@ const TeamColumn = ({ name, tasks, colorClass, colorHex, onToggle, onEventClick,
             onTaskEdit={onTaskEdit}
             onOverlapClick={onOverlapClick}
             smmTasksDefinition={smmTasksDefinition}
+            showDate={showDate}
+            isOverdue={isOverdue}
           />
         </DraggableTask>
       </DroppableTaskTarget>
     );
   };
 
+  const todayDone = tasks.today.filter(t => t.completed).length;
+  const soonGroups = Object.entries(tasks.soon.reduce((groups, task) => {
+    const dateKey = task.task_date || task.reminder_date;
+    if (!groups[dateKey]) groups[dateKey] = [];
+    groups[dateKey].push(task);
+    return groups;
+  }, {}));
+
   return (
     <div
-      className={`desktop-column transition-all duration-150 ${dragOver?.type === "column" && dragOver.assignee === columnAssignee ? "ring-2 ring-[#1A1717]/20" : ""}`}
+      className={`desktop-column dsk-col ${dragOver?.type === "column" && dragOver.assignee === columnAssignee ? "is-drop-over" : ""}`}
       data-task-drop-type="column"
       data-assignee={columnAssignee}
     >
-      <div className="flex items-center justify-between px-4 py-3">
-        <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>{name}</span>
-        <button className="add-btn" onClick={onAddClick}><Plus className="w-4 h-4" /></button>
+      <div className="dsk-colhead">
+        <h2>{name}</h2>
+        <button type="button" className="dsk-plus" onClick={onAddClick} title="нова задача" aria-label={`нова задача: ${name}`}><Plus aria-hidden="true" /></button>
       </div>
-      <div className="column-content">
+      <div className="column-content dsk-col-body">
         {tasks.overdue.length > 0 && (
-          <div className="mb-3">
-            <div className="section-header-mini overdue-header">
-              <button className="section-header-toggle" onClick={() => setOverdueExpanded(!overdueExpanded)}>
-                <span>протерміновано ({tasks.overdue.length})</span>
-              </button>
-              {onCleanupClick && (
-                <button type="button" className="cleanup-icon-btn" onClick={onCleanupClick} title="почистити протерміновані таски" aria-label="почистити протерміновані таски">
-                  <Sparkles className="w-3 h-3" />
-                </button>
-              )}
-              <button type="button" className="section-header-chevron" onClick={() => setOverdueExpanded(!overdueExpanded)} aria-label="розгорнути протерміновані">
-                <ChevronDown className={`w-4 h-4 transition-transform ${overdueExpanded ? "rotate-180" : ""}`} />
-              </button>
-            </div>
-            {overdueExpanded && tasks.overdue.map((t, i) => <TaskRenderer key={i} task={t} />)}
+          <div className="dsk-od">
+            <button type="button" className="dsk-od-toggle" onClick={() => setOverdueExpanded(!overdueExpanded)} aria-expanded={overdueExpanded} title={overdueExpanded ? "згорнути протерміновані" : "показати протерміновані"}>
+              <span className="dsk-od-n">{tasks.overdue.length}</span>
+              <span className="dsk-od-t">протерміновано</span>
+              <ChevronDown className={`dsk-od-chev ${overdueExpanded ? "is-open" : ""}`} aria-hidden="true" />
+            </button>
+            {onCleanupClick && (
+              <button type="button" className="dsk-pill" onClick={onCleanupClick} title="почистити протерміновані таски">розібрати</button>
+            )}
+          </div>
+        )}
+        {tasks.overdue.length > 0 && overdueExpanded && (
+          <div className="dsk-list">
+            {tasks.overdue.map((t, i) => <TaskRenderer key={i} task={t} showDate isOverdue />)}
           </div>
         )}
 
-        <div className="mb-3">
-          <div className="section-header-mini"><span>сьогодні ({tasks.today.length})</span></div>
-          <DroppableDateSection assignee={columnAssignee} date={todayStr} isOver={dragOver?.type === "date" && dragOver.assignee === columnAssignee && dragOver.date === todayStr}>
+        <div className="dsk-cap"><span>сьогодні</span><span>{todayDone} з {tasks.today.length}</span></div>
+        <DroppableDateSection className="dsk-drop" assignee={columnAssignee} date={todayStr} isOver={dragOver?.type === "date" && dragOver.assignee === columnAssignee && dragOver.date === todayStr}>
+          <div className="dsk-list">
             {tasks.today.length > 0 ? [...tasks.today].sort((a, b) => getTaskOrder(a) - getTaskOrder(b) || (a.completed ? 1 : 0) - (b.completed ? 1 : 0)).map((t) => (
               <TaskRenderer key={getTaskDragKey({ ...t, task_id: t.task_id || t.reminder_id })} task={t} />
-            )) : <p className="text-center text-secondary text-sm py-2">все зроблено!</p>}
-          </DroppableDateSection>
-        </div>
+            )) : <p className="dsk-empty">все зроблено</p>}
+          </div>
+        </DroppableDateSection>
 
         {tasks.soon.length > 0 && (
-          <div>
-            <button className="section-header-mini" onClick={() => setSoonExpanded(!soonExpanded)}>
-              <span>незабаром ({tasks.soon.length})</span>
-              <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${soonExpanded ? "rotate-180" : ""}`} />
-            </button>
-            {soonExpanded && (
-              <div className="pt-2">
-                {Object.entries(tasks.soon.reduce((groups, task) => {
-                  const dateKey = task.task_date || task.reminder_date;
-                  if (!groups[dateKey]) groups[dateKey] = [];
-                  groups[dateKey].push(task);
-                  return groups;
-                }, {})).map(([date, dateTasks]) => (
-                  <div key={date} className="mb-2">
-                    <p className={`text-xs font-medium mb-1 ${announcementOverlaps[date] ? "text-red-500" : "text-secondary"}`}>
-                      {formatDateUkrainian(date)}
-                      {announcementOverlaps[date] && <span className="ml-1.5 text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">перетин</span>}
-                    </p>
-                    <DroppableDateSection assignee={columnAssignee} date={date} isOver={dragOver?.type === "date" && dragOver.assignee === columnAssignee && dragOver.date === date}>
-                      {dateTasks.map((t) => (
-                        <TaskRenderer key={getTaskDragKey({ ...t, task_id: t.task_id || t.reminder_id })} task={t} />
-                      ))}
-                    </DroppableDateSection>
-                  </div>
+          <button type="button" className="dsk-cap dsk-cap-btn" onClick={() => setSoonExpanded(!soonExpanded)} aria-expanded={soonExpanded}>
+            <span>незабаром</span>
+            <span>{tasks.soon.length}<ChevronDown className={`dsk-cap-chev ${soonExpanded ? "is-open" : ""}`} aria-hidden="true" /></span>
+          </button>
+        )}
+        {tasks.soon.length > 0 && soonExpanded && (
+          <div className="dsk-list">
+            {soonGroups.map(([date, dateTasks]) => (
+              <DroppableDateSection key={date} className="dsk-drop-group" assignee={columnAssignee} date={date} isOver={dragOver?.type === "date" && dragOver.assignee === columnAssignee && dragOver.date === date}>
+                {dateTasks.map((t) => (
+                  <TaskRenderer key={getTaskDragKey({ ...t, task_id: t.task_id || t.reminder_id })} task={t} showDate />
                 ))}
-              </div>
-            )}
+              </DroppableDateSection>
+            ))}
           </div>
         )}
       </div>
@@ -7998,6 +8002,30 @@ const DesktopDashboard = () => {
 
   const allEvents = getVisibleEventsForMonth(events, currentMonth, today);
 
+  // Темна картка найближчої події (та сама логіка, що й у мобільному «сьогодні»).
+  const nextEvent = [...events]
+    .filter(e => !e.cancelled && getEventDateKey(e) >= todayStr)
+    .sort((a, b) => getEventDateKey(a).localeCompare(getEventDateKey(b)) || String(a.start_time || '').localeCompare(String(b.start_time || '')))[0] || null;
+  const nextEventMeta = (() => {
+    if (!nextEvent) return null;
+    const key = getEventDateKey(nextEvent);
+    const d = new Date(`${key}T00:00:00`);
+    const f = formatDateWithWeekday(d);
+    const when = key === todayStr ? 'сьогодні' : key === shiftDateLocal(todayStr, 1) ? 'завтра' : `${withUaApostrophe(f.weekday)}, ${f.day} ${f.month}`;
+    const linked = [regularTasks, allSmmTasks].flatMap(g => [...g.overdue, ...g.today, ...g.soon])
+      .filter(t => !t.completed && (t.is_standalone ? t.event_id_link === nextEvent.id : t.event_id === nextEvent.id));
+    const open = new Set(linked.map(t => `${t.event_id}-${t.task_id || t.reminder_id}`)).size;
+    const chip = nextEvent.start_time ? `${when} · ${nextEvent.start_time}` : when;
+    const openText = open > 0 ? `ще ${open} ${pluralUa(open, 'задача', 'задачі', 'задач')}` : '';
+    const hasBooking = nextEvent.altegio_booked_count != null;
+    const booked = getBookedCount(nextEvent);
+    const spots = Number(nextEvent.spots) || 10;
+    return { chip, openText, hasBooking, booked, spots, pct: Math.min(100, Math.round((booked / spots) * 100)) };
+  })();
+  const deskActor = getActorUser();
+  const DESK_ACTOR_INITIALS = { manager: 'М', smm: 'S', marketer: 'Мк' };
+  const DESK_ACTOR_NAMES = { manager: 'менеджер', smm: 'smm', marketer: 'маркетинг' };
+
   const handleToggleTask = async (eventId, reminderId, completed, isStandalone) => {
     try {
       if (isStandalone) {
@@ -8521,78 +8549,96 @@ const DesktopDashboard = () => {
   }, [showEditStandaloneDialog, editingStandaloneTask, todayStr]);
 
   return (
-    <div className="desktop-dashboard">
-      <header className="desktop-header">
-        <div className="desktop-header-left gap-4">
-          <h1 className="logo" style={{ textTransform: 'none' }}>Poriadok</h1>
-          <span className="desktop-date-label text-sm text-secondary lowercase">{todayFormatted.weekday} • {todayFormatted.day} {todayFormatted.month}</span>
+    <div className="desktop-dashboard dsk-home">
+      <header className="desktop-header dsk-top">
+        <div className="desktop-header-left dsk-top-title">
+          <div className="dsk-date">{withUaApostrophe(todayFormatted.weekday)}, {todayFormatted.day} {todayFormatted.month}</div>
+          <h1 className="dsk-h1">сьогодні</h1>
         </div>
         <div className="desktop-header-right">
-          <button className="desktop-header-btn" onClick={() => openView("stats")} title="Аналітика" data-testid="analytics-btn"><BarChart3 className="w-5 h-5" /></button>
-          <button className="desktop-header-btn" onClick={() => navigate("/content")} title="Контент" data-testid="content-btn"><FileText className="w-5 h-5" /></button>
-          <button className="desktop-header-btn" onClick={() => setShowDayOffDialog(true)} title="Вихідний" data-testid="dayoff-btn"><Coffee className="w-5 h-5" /></button>
+          <button className="desktop-header-btn" onClick={() => openView("stats")} title="аналітика" aria-label="аналітика" data-testid="analytics-btn"><BarChart3 className="w-5 h-5" /></button>
+          <button className="desktop-header-btn" onClick={() => navigate("/content")} title="контент" aria-label="контент" data-testid="content-btn"><FileText className="w-5 h-5" /></button>
+          <button className="desktop-header-btn" onClick={() => setShowDayOffDialog(true)} title="вихідний" aria-label="вихідний" data-testid="dayoff-btn"><Coffee className="w-5 h-5" /></button>
+          <button className="desktop-header-btn" onClick={() => openView("settings")} title="налаштування" aria-label="налаштування"><Settings className="w-5 h-5" /></button>
           <button className="btn-dark" onClick={() => navigate("/event/new")}><Plus className="w-4 h-4" /><span>подія</span></button>
-          <button className="desktop-header-btn" onClick={() => openView("settings")} title="Налаштування"><Settings className="w-5 h-5" /></button>
+          {deskActor && (
+            <button type="button" className="dsk-avatar" onClick={() => openView("settings")} title="змінити в налаштуваннях" aria-label={`хто я: ${DESK_ACTOR_NAMES[deskActor] || deskActor}`} data-testid="desktop-actor-btn">{DESK_ACTOR_INITIALS[deskActor] || deskActor.slice(0, 2)}</button>
+          )}
         </div>
       </header>
 
       {/* Main Content - 4 columns */}
-      <div className="desktop-columns-4">
+      <div className="desktop-columns-4 dsk-grid">
           {/* Events Column */}
-          <div className="desktop-column">
-            <div className="flex items-center justify-between px-4 py-3">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold tracking-wide" style={{color:'#1A1717'}}>ПОДІЇ</span>
-                <div className="flex items-center gap-1">
-                  <button className="p-0.5 hover:bg-black/5 rounded-full transition-colors" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}><ChevronLeft className="w-3.5 h-3.5 text-secondary" /></button>
-                  <span className="text-xs font-medium text-secondary min-w-[60px] text-center">{UK_MONTHS_NOMINATIVE[currentMonth.getMonth()]}</span>
-                  <button className="p-0.5 hover:bg-black/5 rounded-full transition-colors" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}><ChevronRight className="w-3.5 h-3.5 text-secondary" /></button>
+          <div className="desktop-column dsk-col dsk-col-events">
+            <div className="column-content dsk-col-body">
+              {nextEvent && nextEventMeta && (
+                <button type="button" className="dsk-hero" onClick={() => handleEventClick(nextEvent.id)} data-testid={`desktop-next-event-${nextEvent.id}`}>
+                  <div className="dsk-hero-top">
+                    <span className="dsk-hero-chip">{nextEventMeta.chip}</span>
+                    {nextEventMeta.openText && <span className="dsk-hero-sub">{nextEventMeta.openText}</span>}
+                  </div>
+                  <div className="dsk-hero-title">{nextEvent.title}</div>
+                  {nextEventMeta.hasBooking && (
+                    <>
+                      <div className="dsk-hero-nums">
+                        <div className="dsk-hero-big"><span className={nextEventMeta.booked === 0 ? "is-zero" : ""}>{nextEventMeta.booked}</span><span className="dsk-hero-of">/{nextEventMeta.spots}</span></div>
+                        <span className="dsk-hero-sub">записались</span>
+                      </div>
+                      <div className="dsk-hero-seg" aria-hidden="true">
+                        {Array.from({ length: 10 }, (_, k) => <i key={k} className={k < Math.round(nextEventMeta.pct / 10) ? "is-on" : ""} />)}
+                      </div>
+                    </>
+                  )}
+                </button>
+              )}
+
+              <div className="dsk-card dsk-calcard">
+                <div className="dsk-calhead">
+                  <b>{UK_MONTHS_NOMINATIVE[currentMonth.getMonth()]} {currentMonth.getFullYear()}</b>
+                  <span className="dsk-calnav">
+                    <button type="button" className="dsk-mini" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))} title="попередній місяць" aria-label="попередній місяць"><ChevronLeft aria-hidden="true" /></button>
+                    <button type="button" className="dsk-mini" onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))} title="наступний місяць" aria-label="наступний місяць"><ChevronRight aria-hidden="true" /></button>
+                    <button type="button" className="dsk-mini" onClick={() => navigate("/events")} title="розгорнути на весь екран" aria-label="розгорнути події на весь екран" data-testid="events-expand-btn"><Maximize2 aria-hidden="true" /></button>
+                  </span>
                 </div>
-              </div>
-              <button
-                className="p-1.5 rounded-full hover:bg-black/5 transition-colors text-secondary"
-                onClick={() => navigate("/events")}
-                title="розгорнути на весь екран"
-                data-testid="events-expand-btn"
-              ><Maximize2 className="w-4 h-4" /></button>
-            </div>
-            <div className="column-content">
-              <div className="calendar-container-desktop">
-                <Calendar mode="single" locale={uk} weekStartsOn={1} month={currentMonth} onMonthChange={setCurrentMonth} onSelect={handleDateClick} className="w-full calendar-minimal calendar-wide !p-1"
-                  classNames={{ month: "space-y-0 w-full", caption: "hidden", row: "flex w-full", head_row: "flex w-full", table: "w-full border-collapse" }}
-                  modifiersClassNames={{ today: "calendar-today-visible" }}
+                <Calendar mode="single" locale={uk} weekStartsOn={1} month={currentMonth} onMonthChange={setCurrentMonth} onSelect={handleDateClick} className="dsk-cal"
+                  classNames={{ months: "dsk-cal-months", month: "dsk-cal-month", caption: "dsk-hidden", table: "dsk-cal-table", head_row: "dsk-cal-row", head_cell: "dsk-cal-w", row: "dsk-cal-row", cell: "dsk-cal-cell", day: "dsk-cal-d", day_today: "is-today", day_outside: "is-outside", day_selected: "is-selected", day_disabled: "is-disabled", day_hidden: "dsk-hidden" }}
+                  modifiers={{ past: (d) => d < today }}
+                  modifiersClassNames={{ past: "is-past" }}
                   components={{ DayContent: ({ date }) => {
                     return renderEventCalendarDay(date, events, currentMonth, today);
                   }}}
                 />
               </div>
-              <div className="events-list">{allEvents.slice(0, 10).map(event => {
-                const eventDate = new Date(event.date);
-                return (
-                  <div key={event.id} className={`event-card-desktop${getEventArchiveClass(event, today)}`} onClick={() => handleEventClick(event.id)} data-event-date={event.date.split('T')[0]}>
-                    <div className="date-badge-desktop">
-                      <span className="date-badge-month">{['нд','пн','вт','ср','чт','пт','сб'][eventDate.getDay()]}</span>
-                      <span className="date-badge-day">{eventDate.getDate()}</span>
+
+              <div className="dsk-cap"><span>{isArchiveMonth(currentMonth, today) ? `події · ${UK_MONTHS_NOMINATIVE[currentMonth.getMonth()]}` : "найближчі події"}</span><span>{allEvents.length}</span></div>
+              <div className="dsk-list dsk-evlist">
+                {allEvents.length === 0 && <p className="dsk-empty">подій немає</p>}
+                {allEvents.slice(0, 10).map(event => {
+                  const key = getEventDateKey(event);
+                  const [ey, em, ed] = key.split('-').map(Number);
+                  const evDate = new Date(ey, (em || 1) - 1, ed || 1);
+                  const booked = event.altegio_booked_count != null ? Number(event.altegio_booked_count) || 0 : 0;
+                  const spots = event.spots || 10;
+                  return (
+                    <div key={event.id} className={`dsk-ev${getEventArchiveClass(event, today)}`} onClick={() => handleEventClick(event.id)} data-event-date={key} data-testid={`desktop-event-${event.id}`}>
+                      <div className="dsk-ev-main">
+                        <p className="dsk-ev-title" title={event.title}>{event.title}</p>
+                        <p className="dsk-ev-sub">{UK_WEEKDAYS_SHORT[evDate.getDay()]}, {evDate.getDate()} {UK_MONTHS[evDate.getMonth()]}{event.start_time ? ` · ${event.start_time}` : ""}</p>
+                      </div>
+                      <EventArchiveIcon event={event} today={today} />
+                      <span className="dsk-ev-cnt"><span className={booked === 0 ? "is-zero" : ""}>{booked}</span><span className="dsk-ev-of">/{spots}</span></span>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate">{event.title}</p>
-                      <p className="text-xs text-secondary">{event.price} ₴</p>
-                    </div>
-                    <EventArchiveIcon event={event} today={today} />
-                    <div className="text-right">
-                      <span className={`text-sm font-bold ${getBookingColorClass(getBookingStatusColor(event))}`}>
-                        {event.altegio_booked_count != null ? event.altegio_booked_count : 0}/{event.spots || 10}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}</div>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
           {/* MANAGER + SMM + MARKETER — drag between days/columns */}
           <TeamColumn
-            name="MANAGER"
+            name="менеджер"
             tasks={tasksByTeam.manager}
             colorClass=""
             colorHex={null}
@@ -8624,7 +8670,7 @@ const DesktopDashboard = () => {
 
           {/* SMM Column - Second */}
           <TeamColumn
-            name="SMM"
+            name="smm"
             tasks={tasksByTeam.smm}
             colorClass=""
             colorHex={null}
@@ -8652,7 +8698,7 @@ const DesktopDashboard = () => {
 
           {/* MARKETER Column (orange) - Third */}
           <TeamColumn
-            name="MARKETER"
+            name="маркетинг"
             tasks={tasksByTeam.marketer}
             colorClass="orange"
             colorHex="#C4703D"
@@ -8677,7 +8723,7 @@ const DesktopDashboard = () => {
           />
           {activeDragTask && dragPosition && (
             <div
-              className="fixed z-[9999] pointer-events-none px-3 py-2 rounded-xl bg-[#F1EEE7] shadow-[0_16px_40px_-8px_rgba(0,0,0,0.25)] ring-1 ring-black/10 select-none max-w-xs"
+              className="dsk-drag-ghost fixed z-[9999] pointer-events-none select-none max-w-xs"
               style={{ left: dragPosition.x + 12, top: dragPosition.y + 12, transform: "rotate(-2deg)" }}
             >
               <p className="text-sm font-medium truncate">{activeDragTask.task_name || activeDragTask.reminder_name || "задача"}</p>
@@ -8687,55 +8733,6 @@ const DesktopDashboard = () => {
             </div>
           )}
         </div>
-      ) : (
-        <div className="desktop-columns">
-          {/* Events Tab - Full Calendar & Events List */}
-          <div className="desktop-column" style={{flex: 1}}>
-            <div className="column-content">
-              <div className="calendar-container-desktop">
-                <Calendar mode="single" locale={uk} weekStartsOn={1} month={currentMonth} onMonthChange={setCurrentMonth} onSelect={handleDateClick} className="w-full calendar-minimal calendar-wide !p-1"
-                  classNames={{ month: "space-y-0 w-full", caption: "hidden", row: "flex w-full", head_row: "flex w-full", table: "w-full border-collapse" }}
-                  modifiersClassNames={{ today: "calendar-today-visible" }}
-                  components={{ DayContent: ({ date }) => {
-                    return renderEventCalendarDay(date, events, currentMonth, today);
-                  }}}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="desktop-column" style={{flex: 2}}>
-            <div className="column-header">
-              <span className="column-title">всі події</span>
-              <button className="add-btn" onClick={() => navigate("/event/new")}><Plus className="w-4 h-4" /></button>
-            </div>
-            <div className="column-content">
-              <div className="events-list">{allEvents.map(event => {
-                const eventDate = new Date(event.date);
-                return (
-                  <div key={event.id} className={`event-card-desktop${getEventArchiveClass(event, today)}`} onClick={() => handleEventClick(event.id)} data-event-date={event.date.split('T')[0]}>
-                    <div className="date-badge-desktop">
-                      <span className="date-badge-month">{UK_MONTHS_SHORT[eventDate.getMonth()]}</span>
-                      <span className="date-badge-day">{eventDate.getDate()}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate">{event.title}</p>
-                      <p className="text-xs text-secondary">{event.price} ₴</p>
-                    </div>
-                    <EventArchiveIcon event={event} today={today} />
-                    {event.altegio_booked_count !== undefined && event.altegio_booked_count !== null && (
-                      <div className="text-right">
-                        <span className={`text-sm font-bold ${getBookingColorClass(getBookingStatusColor(event))}`}>
-                          {event.altegio_booked_count}/{event.spots}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}</div>
-            </div>
-          </div>
-      </div>
-
 
       <Dialog open={showOverdueCleanup} onOpenChange={setShowOverdueCleanup}>
         <DialogContent className="overdue-cleanup-dialog" onOpenAutoFocus={(e) => e.preventDefault()}>
@@ -9068,7 +9065,7 @@ const DesktopDashboard = () => {
             {/* Column 2 - MANAGER */}
             <div className="desktop-column">
               <div className="px-4 py-3">
-                <span className="text-sm font-semibold tracking-wide">MANAGER</span>
+                <span className="text-sm font-semibold tracking-wide">менеджер</span>
               </div>
               <div className="column-content">
                 <div className="space-y-2">
@@ -9102,7 +9099,7 @@ const DesktopDashboard = () => {
             {/* Column 3 - SMM */}
             <div className="desktop-column">
               <div className="px-4 py-3">
-                <span className="text-sm font-semibold tracking-wide">SMM</span>
+                <span className="text-sm font-semibold tracking-wide">smm</span>
               </div>
               <div className="column-content">
                 <div className="space-y-2">
@@ -9138,7 +9135,7 @@ const DesktopDashboard = () => {
             {/* Column 4 - MARKETER */}
             <div className="desktop-column">
               <div className="px-4 py-3">
-                <span className="text-sm font-semibold tracking-wide">MARKETER</span>
+                <span className="text-sm font-semibold tracking-wide">маркетинг</span>
               </div>
               <div className="column-content">
                 <div className="space-y-2">
@@ -9890,7 +9887,7 @@ const SettingsContent = () => {
       <div className="desktop-column">
         <div className="px-4 py-3 flex items-center justify-between">
           <div>
-            <span className="text-sm font-semibold tracking-wide">MANAGER</span>
+            <span className="text-sm font-semibold tracking-wide">менеджер</span>
             <span className="text-xs text-secondary ml-2">({allTasks.mgmt.length})</span>
           </div>
           <button className="add-btn" title="новий таск" onClick={() => { setNewTaskDraft({ name: "", days_before: 7, column: "management", is_announcement: false, is_teamwork: false, series_master_only: false }); setShowAddTaskDialog(true); }}>
@@ -9921,7 +9918,7 @@ const SettingsContent = () => {
       <div className="desktop-column">
         <div className="px-4 py-3 flex items-center justify-between">
           <div>
-            <span className="text-sm font-semibold tracking-wide">SMM</span>
+            <span className="text-sm font-semibold tracking-wide">smm</span>
             <span className="text-xs text-secondary ml-2">({allTasks.smm.length})</span>
           </div>
           <button className="add-btn" title="новий таск" onClick={() => { setNewTaskDraft({ name: "", days_before: 7, column: "smm", is_announcement: false, is_teamwork: false, series_master_only: false }); setShowAddTaskDialog(true); }}>
@@ -9952,7 +9949,7 @@ const SettingsContent = () => {
       <div className="desktop-column">
         <div className="px-4 py-3 flex items-center justify-between">
           <div>
-            <span className="text-sm font-semibold tracking-wide">MARKETER</span>
+            <span className="text-sm font-semibold tracking-wide">маркетинг</span>
             <span className="text-xs text-secondary ml-2">({allTasks.mktg.length})</span>
           </div>
           <button className="add-btn" title="новий таск" onClick={() => { setNewTaskDraft({ name: "", days_before: 7, column: "marketing", is_announcement: false, is_teamwork: false, series_master_only: false }); setShowAddTaskDialog(true); }}>
