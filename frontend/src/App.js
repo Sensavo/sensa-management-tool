@@ -4295,8 +4295,7 @@ const AltegioSyncSection = ({ mui = false, children = null }) => {
           <div className="m-row">
             <span className={`m-dot${!loading && altegioStatus.connected ? "" : " m-dot--idle"}`} aria-hidden="true" />
             <span className="m-set-main">
-              <span className="m-b">Altegio</span>
-              <span className="m-c">{loading ? "завантажую…" : altegioStatus.connected ? `підключено · ${altegioEvents.length} подій` : "не підключено"}</span>
+              <span className="m-b">{loading ? "завантажую…" : altegioStatus.connected ? `підключено · ${altegioEvents.length} подій` : "не підключено"}</span>
             </span>
             {!loading && altegioStatus.connected && (
               <button type="button" className="m-txt m-set-edge" onClick={handleSync} disabled={syncing}>{syncing ? "оновлюю…" : "оновити"}</button>
@@ -4524,8 +4523,7 @@ const TelegramSettingsSection = ({ compact = false, mui = false }) => {
           <div className="m-row">
             <span className={`m-dot${linked && !status?.muted ? "" : " m-dot--idle"}`} aria-hidden="true" />
             <span className="m-set-main">
-              <span className="m-b">Telegram</span>
-              <span className="m-c m-ellipsis">{statusText}</span>
+              <span className="m-b m-ellipsis">{statusText}</span>
             </span>
           </div>
           <label className="m-row m-task-row">
@@ -6142,8 +6140,7 @@ const SettingsPage = () => {
                   <div className="m-row">
                     <span className={`m-dot${gConnected ? "" : " m-dot--idle"}`} aria-hidden="true" />
                     <span className="m-set-main">
-                      <span className="m-b">Google Calendar</span>
-                      <span className="m-c m-ellipsis">{gConnected ? (googleCalendarStatus.email || "підключено") : "не підключено"}</span>
+                      <span className="m-b m-ellipsis">{gConnected ? (googleCalendarStatus.email || "підключено") : "не підключено"}</span>
                     </span>
                     {gConnected
                       ? <button type="button" className="m-txt m-txt--danger m-set-edge" onClick={handleGoogleDisconnect}>відключити</button>

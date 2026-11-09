@@ -374,3 +374,7 @@ button.m-row { border-left: 0; border-right: 0; border-top: 0; }
 .m-ct-months { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .m-ct-months .m-ghost { padding: 0 8px; min-width: 0; }
 .m-ct-now { margin-top: 12px; width: 100%; justify-content: center; font-weight: 400; color: var(--m-muted); }
+
+/* === контент: легкі фільтри типів === */
+.m-ui .m-ct-filters .m-ghost { background: #fff; border-color: var(--m-line); color: var(--m-faint); font-weight: 400; }
+.m-ui .m-ct-filters .m-ghost[aria-pressed="true"] { background: #fff; border-color: var(--m-ink); color: var(--m-ink); font-weight: 500; }
