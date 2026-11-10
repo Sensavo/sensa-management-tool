@@ -2,6 +2,7 @@ import { useState, useEffect, createContext, useContext, useCallback, useMemo, u
 import "@/App.css";
 import "@/mobile.css";
 import "@/desktop.css";
+import "@/sensa-skin.css";
 import { BrowserRouter, Routes, Route, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { Toaster, toast } from "sonner";
@@ -1226,6 +1227,11 @@ const TaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, showDate = 
 // SMM Task Item
 // SMM Task Item with color support
 const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, onTaskEdit, onOverlapClick, showDate = false, smmTasksDefinition = [], mobile = false, isOverdue = false }) => {
+  const { pathname } = useLocation();
+  const eventTitle = pathname === "/" && task.event_title &&
+    String(task.task_name || "").toLocaleLowerCase("uk-UA").includes(String(task.event_title).toLocaleLowerCase("uk-UA"))
+    ? "" : task.event_title;
+
   // Get task color - directly from task object (set by getSMMTasks)
   const taskColor = task.color || "manager";
   const colorClass = getColorClass(taskColor);
@@ -1247,7 +1253,7 @@ const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, 
   };
 
   if (mobile) {
-    const sub = [task.event_title, task.target_month ? UK_MONTHS_NOMINATIVE[parseInt(task.target_month.split('-')[1]) - 1] : ""].filter(Boolean).join(" · ");
+    const sub = [eventTitle, task.target_month ? UK_MONTHS_NOMINATIVE[parseInt(task.target_month.split('-')[1]) - 1] : ""].filter(Boolean).join(" · ");
     return (
       <div className="m-row m-task-row" role="button" tabIndex={0} onClick={handleClick} onKeyDown={(e) => { if (e.key === 'Enter') handleClick(); }} data-testid={`task-item-${task.task_id || task.event_id}`}>
         <button type="button" role="checkbox" aria-checked={localCompleted} aria-label={localCompleted ? "повернути" : "позначити виконаним"} className={`m-chk ${localCompleted ? "is-done" : ""} ${isOverdue && !localCompleted ? "m-chk--overdue" : ""}`} onClick={(e) => { e.stopPropagation(); handleToggle(); }}>
@@ -1268,7 +1274,7 @@ const SMMTaskItem = ({ task, onToggle, onEventClick, onStandaloneClick, onEdit, 
   }
 
   // Десктоп (v3): чекбокс ліворуч, назва 15/500, під нею подія, праворуч коротка дата.
-  const deskSub = [task.event_title, task.target_month ? UK_MONTHS_NOMINATIVE[parseInt(task.target_month.split('-')[1]) - 1] : ""].filter(Boolean).join(" · ");
+  const deskSub = [eventTitle, task.target_month ? UK_MONTHS_NOMINATIVE[parseInt(task.target_month.split('-')[1]) - 1] : ""].filter(Boolean).join(" · ");
   return (
     <div className={`dsk-task ${localCompleted ? "is-done" : ""}`} onClick={handleClick} data-testid={`task-item-${task.task_id || task.event_id}`}>
       <button
@@ -1937,7 +1943,7 @@ const Dashboard = ({ initialTab, footer = null }) => {
         </div>
       ) : (
         <>
-          {nextEvent && nextEventMeta && (
+          {location.pathname !== "/" && nextEvent && nextEventMeta && (
             <button type="button" className="m-hero" onClick={() => handleEventClick(nextEvent.id)} data-testid={`mobile-next-event-${nextEvent.id}`}>
               <div className="m-hero-top">
                 <span className="m-hero-chip">{nextEventMeta.chip}</span>
@@ -8572,7 +8578,7 @@ const DesktopDashboard = () => {
           {/* Events Column */}
           <div className="desktop-column dsk-col dsk-col-events">
             <div className="column-content dsk-col-body">
-              {nextEvent && nextEventMeta && (
+              {location.pathname !== "/" && nextEvent && nextEventMeta && (
                 <button type="button" className="dsk-hero" onClick={() => handleEventClick(nextEvent.id)} data-testid={`desktop-next-event-${nextEvent.id}`}>
                   <div className="dsk-hero-top">
                     <span className="dsk-hero-chip">{nextEventMeta.chip}</span>
@@ -11421,7 +11427,7 @@ function App() {
             <AltegioWarningHost />
             <ConfirmHost />
             <Routes>
-              <Route path="/" element={<ResponsiveWrapper><Dashboard /></ResponsiveWrapper>} />
+              <Route path="/" element={<div className="sensa-home"><ResponsiveWrapper><Dashboard /></ResponsiveWrapper></div>} />
               <Route path="/events" element={<ResponsiveWrapper desktop={<EventsDesktopExpanded />}><EventsPage /></ResponsiveWrapper>} />
               <Route path="/smm" element={<SMMPage />} />
               <Route path="/task/new" element={<NewTaskPage />} />

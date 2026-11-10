@@ -1,0 +1,177 @@
+@font-face { font-family: Geist; font-style: normal; font-weight: 400; font-display: swap; src: url('./assets/garden/geist-400.ttf') format('truetype'); }
+@font-face { font-family: Geist; font-style: normal; font-weight: 500; font-display: swap; src: url('./assets/garden/geist-500.ttf') format('truetype'); }
+@font-face { font-family: Geist; font-style: normal; font-weight: 600; font-display: swap; src: url('./assets/garden/geist-600.ttf') format('truetype'); }
+@font-face { font-family: Geist; font-style: normal; font-weight: 700; font-display: swap; src: url('./assets/garden/geist-700.ttf') format('truetype'); }
+/* Main garden → existing Sensa events screen. CSS only, original grid.
+   User-approved spacing and separate event cards are defined at the end.
+   Coal canvas + dark working surfaces, sand current work, moss upcoming work. */
+.sensa-home {
+  --garden-coal: #0e0d0b;
+  --garden-inner: #1c1a16;
+  --garden-sand: #e6dac4;
+  --garden-moss: #2f3a22;
+  --garden-moss-dim: #b9c2a4;
+  --garden-lime: #d4e040;
+  --garden-clay: #d9925c;
+  --garden-muted: #b1a58f;
+  --garden-check: #9c927f;
+  --d-bg: var(--garden-coal);
+  --d-card: var(--garden-inner);
+  --d-soft: #302c24;
+  --d-soft-2: #3d372b;
+  --d-ink: var(--garden-sand);
+  --d-ink-2: var(--garden-sand);
+  --d-muted: var(--garden-muted);
+  --d-faint: #90836e;
+  --d-line: transparent;
+  --d-chk: transparent;
+  --d-red: var(--garden-clay);
+  --d-red-soft: #d9925c14;
+  --d-green: var(--garden-lime);
+  --d-font: Geist, Arial, sans-serif;
+  --m-bg: var(--garden-coal);
+  --m-card: var(--garden-inner);
+  --m-soft: #302c24;
+  --m-ink: var(--garden-sand);
+  --m-ink-2: var(--garden-sand);
+  --m-muted: var(--garden-muted);
+  --m-faint: #90836e;
+  --m-line: transparent;
+  --m-line-strong: var(--garden-check);
+  --m-red: var(--garden-clay);
+  --m-green: var(--garden-lime);
+  --m-font: Geist, Arial, sans-serif;
+}
+body:has(.sensa-home), .app-container:has(.sensa-home) { background: #0e0d0b; color: #e6dac4; }
+.sensa-home .dsk-home, .sensa-home .dsk-home button, .sensa-home .m-ui, .sensa-home .m-ui button { font-family: Geist, Arial, sans-serif; }
+.sensa-home .dsk-h1, .sensa-home .m-d { font-weight: 700; letter-spacing: -0.035em; }
+.sensa-home .dsk-colhead h2, .sensa-home .m-h { font-weight: 700; }
+.sensa-home .dsk-task-title, .sensa-home .dsk-ev-title, .sensa-home .m-sec, .sensa-home .m-b { font-weight: 500; }
+.sensa-home .dsk-task-sub, .sensa-home .dsk-ev-sub, .sensa-home .dsk-task-when, .sensa-home .dsk-empty, .sensa-home .dsk-od-t, .sensa-home .m-c { font-weight: 400; }
+.sensa-home .dsk-od-n, .sensa-home .m-tile-num { font-weight: 600; }
+.sensa-home .dsk-card, .sensa-home .dsk-list, .sensa-home .dsk-od, .sensa-home .m-ui .m-list, .sensa-home .m-tile { background: var(--garden-inner); }
+.sensa-home .dsk-card, .sensa-home .dsk-list, .sensa-home .m-ui .m-list, .sensa-home .m-tile { border-radius: 32px; }
+.sensa-home .dsk-od { border-radius: 24px; }
+.sensa-home .dsk-task, .sensa-home .dsk-ev { box-shadow: none; }
+/* Warm sand is reserved for calendar and today's working lists. */
+.sensa-home .dsk-calcard, .sensa-home .dsk-drop > .dsk-list, .sensa-home .m-ui .m-list:has(.m-task-row) {
+  --d-ink: var(--garden-coal);
+  --d-muted: #4b4437;
+  --d-faint: #85745b;
+  --d-red: #995139;
+  --d-soft: #d8c9ae;
+  --m-ink: var(--garden-coal);
+  --m-muted: #4b4437;
+  --m-faint: #85745b;
+  --m-red: #995139;
+  --garden-check: #89785f;
+  background: var(--garden-sand);
+  color: var(--garden-coal);
+}
+/* The main garden practice panel supplies the complete moss/text relationship. */
+.sensa-home .dsk-col-body > .dsk-list:not(.dsk-evlist), .sensa-home .m-tiles > div.m-tile, .sensa-home .m-nav {
+  --d-muted: var(--garden-moss-dim);
+  --d-faint: #98a982;
+  --garden-check: #98a982;
+  background: var(--garden-moss);
+  color: var(--garden-sand);
+}
+.sensa-home .dsk-plus, .sensa-home .desktop-header-btn, .sensa-home .dsk-avatar, .sensa-home .m-avatar { background: var(--garden-inner); color: var(--garden-sand); }
+.sensa-home .dsk-pill, .sensa-home .dsk-mini, .sensa-home .m-ui .m-tile-arr { background: #302c24; color: var(--garden-sand); }
+.sensa-home .dsk-calcard .dsk-mini { background: #d8c9ae; color: var(--garden-coal); }
+.sensa-home .dsk-pill:hover, .sensa-home .desktop-header-btn:hover, .sensa-home .dsk-avatar:hover, .sensa-home .dsk-plus:hover {
+  background: #3d372b; color: var(--garden-sand); box-shadow: none;
+}
+.sensa-home .dsk-mini:hover { background: #cdbb9c; }
+.sensa-home .dsk-home .btn-dark, .sensa-home .m-fab { background: var(--garden-lime); color: var(--garden-coal); box-shadow: none; }
+.sensa-home .dsk-home .btn-dark:hover { background: #e0e969; }
+.sensa-home .dsk-cal-d.is-today, .sensa-home .dsk-cal-d.is-today:hover { background: var(--garden-coal); color: var(--garden-sand); }
+.sensa-home .m-ui .m-tab[aria-selected="true"], .sensa-home .m-ui .m-tab.is-active, .sensa-home .m-nav button[aria-current="page"] { background: var(--garden-sand); color: var(--garden-coal); }
+.sensa-home .m-ui .m-tab sup { background: #302c24; color: var(--garden-clay); }
+.sensa-home .m-ui .m-tab[aria-selected="true"] sup { background: #d8c9ae; color: #783b26; }
+.sensa-home .m-nav { box-shadow: none; }
+.sensa-home .m-nav button { color: var(--garden-moss-dim); }
+.sensa-home .m-tiles > div.m-tile .m-tile-num { color: var(--garden-sand); }
+.sensa-home .m-ui .m-list > .m-row:not(:last-child) { border-bottom-color: transparent; }
+.sensa-home .desktop-header-btn svg, .sensa-home .dsk-plus svg, .sensa-home .m-nav svg { stroke-width: 1.6; }
+/* Existing desktop22/mobile24 control boxes and mobile hit expansion retained. */
+.sensa-home .dsk-home .dsk-chk, .sensa-home .m-ui .m-chk, .sensa-home .dsk-home .dsk-chk.is-done, .sensa-home .m-ui .m-chk[aria-checked="true"], .sensa-home .m-ui .m-chk.is-done {
+  position: relative; background: transparent; border-color: transparent;
+}
+.sensa-home .dsk-home .dsk-chk::before, .sensa-home .m-ui .m-chk::before {
+  content: ''; position: absolute;
+  width: 14px; height: 14px; left: 50%; top: 50%;
+  transform: translate(-50%, -50%); box-sizing: border-box;
+  border: 1px solid var(--garden-check); border-radius: 50%; pointer-events: none;
+}
+.sensa-home .dsk-home .dsk-chk:hover::before, .sensa-home .m-ui .m-chk:hover::before { border-color: currentColor; background: #e6dac414; }
+.sensa-home .dsk-home .dsk-chk.is-overdue::before, .sensa-home .m-ui .m-chk--overdue::before { border-color: var(--d-red); }
+.sensa-home .dsk-home .dsk-chk.is-done::before, .sensa-home .m-ui .m-chk[aria-checked="true"]::before, .sensa-home .m-ui .m-chk.is-done::before {
+  background: #56742e; border-color: #56742e;
+}
+.sensa-home .dsk-home .dsk-chk svg, .sensa-home .m-ui .m-chk svg { position: relative; width: 9px; height: 9px; color: var(--garden-sand); stroke: currentColor; }
+.sensa-home .dsk-home :focus-visible, .sensa-home .m-ui :focus-visible, .sensa-home .m-nav :focus-visible { outline-color: currentColor; }
+
+/* On moss, selected tasks use the source sand-on-moss active-control pair. */
+.sensa-home .dsk-col-body > .dsk-list:not(.dsk-evlist) .dsk-chk.is-done::before { background: var(--garden-sand); border-color: var(--garden-sand); }
+.sensa-home .dsk-col-body > .dsk-list:not(.dsk-evlist) .dsk-chk.is-done svg { color: var(--garden-coal); }
+
+/* Approved refinement: let the original text breathe without changing the grid. */
+.sensa-home .dsk-list:not(.dsk-evlist) { padding: 6px 24px; }
+.sensa-home .dsk-task { align-items: flex-start; gap: 14px; min-height: 70px; padding: 18px 0; }
+.sensa-home .dsk-task-title, .sensa-home .dsk-task-sub, .sensa-home .dsk-ev-title, .sensa-home .dsk-ev-sub {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: break-word;
+  letter-spacing: 0;
+}
+.sensa-home .dsk-task-title, .sensa-home .dsk-ev-title { line-height: 1.5; }
+.sensa-home .dsk-task-sub, .sensa-home .dsk-ev-sub { line-height: 1.5; margin-top: 6px; }
+.sensa-home .dsk-task-when { padding-top: 2px; }
+/* Each existing event row becomes its own card; content and order stay intact. */
+.sensa-home .dsk-list.dsk-evlist {
+  display: flex; flex-direction: column; gap: 10px;
+  background: transparent; border-radius: 0; padding: 0; overflow: visible;
+}
+.sensa-home .dsk-ev {
+  background: var(--garden-inner); border-radius: 24px;
+  min-height: 86px; padding: 18px 20px; align-items: flex-start; gap: 16px;
+}
+.sensa-home .dsk-ev-cnt { padding-top: 2px; }
+.sensa-home .m-ui .m-list:has(.m-task-row) { padding: 6px 22px; }
+.sensa-home .m-ui .m-task-row { min-height: 76px; padding-top: 18px; padding-bottom: 18px; align-items: flex-start; }
+.sensa-home .m-task-row .m-ellipsis {
+  white-space: normal; overflow: visible; text-overflow: clip;
+  overflow-wrap: break-word; letter-spacing: 0;
+}
+.sensa-home .m-task-row .m-b { line-height: 1.5; }
+.sensa-home .m-task-row .m-c { line-height: 1.5; margin-top: 6px; }
+
+.sensa-home .dsk-ev.event-highlight { margin: 0; padding: 18px 20px; background: #302c24; }
+
+/* Efficient text layout: full action titles, less repetitive vertical space. */
+.sensa-home .dsk-list:not(.dsk-evlist) { padding: 4px 18px; }
+.sensa-home .dsk-task { gap: 10px; min-height: 50px; padding: 10px 0; }
+.sensa-home .dsk-task-title { line-height: 1.35; }
+.sensa-home .dsk-task-sub { line-height: 1.3; margin-top: 3px; }
+.sensa-home .m-ui .m-list:has(.m-task-row) { padding: 4px 16px; }
+.sensa-home .m-ui .m-task-row { gap: 10px; min-height: 54px; padding-top: 10px; padding-bottom: 10px; }
+.sensa-home .m-task-row .m-b { line-height: 1.35; }
+.sensa-home .m-task-row .m-c { line-height: 1.3; margin-top: 3px; }
+/* Orange garden calendar; event dates carry the strongest emphasis. */
+.sensa-home .dsk-card.dsk-calcard {
+  --d-ink: var(--garden-coal);
+  --d-muted: #4c3321;
+  --d-faint: #765034;
+  background: var(--garden-clay); color: var(--garden-coal);
+}
+.sensa-home .dsk-calcard .dsk-mini { background: #c78450; color: var(--garden-coal); }
+.sensa-home .dsk-calcard .dsk-mini:hover { background: #bc7744; }
+.sensa-home .dsk-cal-d { width: calc(100% - 6px); margin-inline: auto; }
+.sensa-home .dsk-cal-d:hover { background: #0e0d0b12; }
+.sensa-home .dsk-cal-d.is-today, .sensa-home .dsk-cal-d.is-today:hover { background: #bc7744; color: var(--garden-coal); }
+.sensa-home .dsk-cal-d:has(.event-dot), .sensa-home .dsk-cal-d:has(.event-dot):hover {
+  background: var(--garden-coal); color: var(--garden-sand); font-weight: 700;
+}
+.sensa-home .dsk-calcard .event-dot { display: none; }
