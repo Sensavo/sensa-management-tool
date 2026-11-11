@@ -175,3 +175,162 @@ body:has(.sensa-home), .app-container:has(.sensa-home) { background: #0e0d0b; co
   background: var(--garden-coal); color: var(--garden-sand); font-weight: 700;
 }
 .sensa-home .dsk-calcard .event-dot { display: none; }
+
+/* Mobile home screen. The existing dashboard and navigation supply all controls. */
+@media (max-width: 1023px) {
+  .sensa-home .m-dash {
+    --mobile-edge: max(16px, calc((100% - 520px) / 2));
+    max-width: 552px;
+    margin-inline: auto;
+  }
+
+  .sensa-home .m-dash > .m-dash-head {
+    align-items: center;
+    padding-inline: 2px;
+  }
+
+  .sensa-home .m-dash-head .m-d {
+    margin-top: 2px;
+    font-size: 38px;
+    line-height: 1.08;
+  }
+
+  .sensa-home .m-dash > .m-tabs {
+    gap: 4px;
+    padding: 4px;
+    border-radius: 24px;
+    background: var(--garden-inner);
+  }
+
+  .sensa-home .m-dash > .m-tabs .m-tab {
+    flex: 1 0 auto;
+    justify-content: center;
+    gap: 5px;
+    height: 44px;
+    padding-inline: 8px;
+    font-size: 14px;
+    border-radius: 20px;
+  }
+
+  .sensa-home .m-dash > .m-tabs .m-tab sup {
+    min-width: 18px;
+    height: 18px;
+    padding-inline: 4px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sensa-home .m-dash .m-tiles {
+    margin-top: 10px;
+  }
+
+  .sensa-home .m-dash .m-tile {
+    justify-content: space-between;
+    min-height: 79px;
+    gap: 6px;
+    padding: 12px 14px;
+    border-radius: 21px;
+  }
+
+  .sensa-home .m-dash .m-tile-num {
+    font-size: 27px;
+    line-height: 29px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sensa-home .m-dash .m-tile-arr {
+    width: 24px;
+    height: 24px;
+  }
+
+  .sensa-home .m-dash .m-tile-label {
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .sensa-home .m-dash .m-sec-head {
+    margin-top: 20px;
+    padding-inline: 3px;
+  }
+
+  .sensa-home .m-dash .m-list:has(.m-task-row) {
+    border-radius: 22px;
+    padding-inline: 13px;
+  }
+
+  .sensa-home .m-dash .m-list > .m-task-row:not(:last-child) {
+    border-bottom-color: #0e0d0b19;
+  }
+
+  .sensa-home .m-dash .m-sec-head:has(.m-dash-toggle) {
+    position: relative;
+    min-height: 48px;
+    padding-bottom: 0;
+    margin-top: 12px;
+    border-bottom: 1px solid #e6dac41a;
+  }
+
+  .sensa-home .m-dash .m-dash-toggle {
+    height: 44px;
+  }
+
+  .sensa-home .m-dash .m-dash-toggle::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
+  body:has(.sensa-home .m-dash .m-fab) .sensa-home .m-dash .m-nav {
+    left: var(--mobile-edge);
+    right: calc(var(--mobile-edge) + 66px);
+    height: 58px;
+    padding: 4px;
+    border-radius: 29px;
+  }
+
+  .sensa-home .m-dash .m-nav button {
+    flex: 1 1 0;
+    width: auto;
+    height: 50px;
+    min-width: 0;
+    gap: 3px;
+    border-radius: 25px;
+  }
+
+  .sensa-home .m-dash .m-nav button svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .sensa-home .m-dash .m-nav button span {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+    font-size: 10px;
+    line-height: 12px;
+    font-weight: 600;
+  }
+
+  .sensa-home .m-dash .m-fab {
+    right: var(--mobile-edge);
+    width: 58px;
+    height: 58px;
+    border-radius: 29px;
+  }
+}
+
+@media (max-width: 359px) {
+  .sensa-home .m-dash > .m-tabs .m-tab {
+    gap: 4px;
+    padding-inline: 5px;
+    font-size: 12px;
+  }
+
+  .sensa-home .m-dash > .m-tabs .m-tab sup {
+    min-width: 16px;
+    padding-inline: 3px;
+    font-size: 10px;
+  }
+}
