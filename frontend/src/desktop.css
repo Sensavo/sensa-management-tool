@@ -6,6 +6,7 @@
    ========================================================================== */
 :root {
   --d-bg: #EFEFED;
+  --d-on-ink: #FFFFFF;
   --d-card: #FFFFFF;
   --d-soft: #F3F3F1;
   --d-soft-2: #EAEAE7;
@@ -72,7 +73,7 @@
   .text-secondary, .text-muted-foreground { color: var(--d-muted); }
   .text-gray-400, .text-gray-500 { color: var(--d-muted); }
   .text-\[\#1A1717\] { color: var(--d-ink); }
-  .text-\[\#F6F5F1\], .text-\[\#F5F5F0\] { color: #FFFFFF; }
+  .text-\[\#F6F5F1\], .text-\[\#F5F5F0\] { color: var(--d-on-ink); }
   .text-\[\#FF8370\] { color: var(--d-red); }
   .bg-\[\#1A1717\] { background-color: var(--d-ink); }
   .bg-\[\#F6F5F1\] { background-color: var(--d-bg); }
@@ -114,7 +115,7 @@
 
   .btn-dark {
     height: 48px; padding: 0 22px; border-radius: 24px;
-    background: var(--d-ink); color: #FFFFFF;
+    background: var(--d-ink); color: var(--d-on-ink);
     font-size: 15px; font-weight: 600; letter-spacing: -0.01em;
   }
   .btn-dark:hover { background: #2B2B2A; }
@@ -143,7 +144,7 @@
   .add-btn svg { width: 15px; height: 15px; stroke-width: 2.4; }
 
   .icon-btn { border-radius: 14px; background: var(--d-soft); }
-  .icon-btn.active { background: var(--d-ink); color: #FFFFFF; }
+  .icon-btn.active { background: var(--d-ink); color: var(--d-on-ink); }
   .icon-btn:hover:not(.active) { background: var(--d-soft-2); }
   .restore-btn { background: var(--d-soft); color: var(--d-muted); }
   .restore-btn:hover { background: var(--d-soft-2); color: var(--d-ink); }
@@ -205,7 +206,7 @@
   .task-checkbox.checked,
   .task-checkbox.red.checked, .task-checkbox.orange.checked { background: var(--d-ink); border-color: var(--d-ink); }
   .task-checkbox.checked svg,
-  .task-checkbox.red.checked svg, .task-checkbox.orange.checked svg { display: block; color: #FFFFFF; width: 11px; height: 11px; stroke-width: 3.4; }
+  .task-checkbox.red.checked svg, .task-checkbox.orange.checked svg { display: block; color: var(--d-on-ink); width: 11px; height: 11px; stroke-width: 3.4; }
 
   /* поля */
   .form-input {
@@ -228,11 +229,11 @@
   .calendar-minimal .rdp-day_selected,
   .calendar-container-desktop .rdp-day_selected { background: transparent !important; color: var(--d-ink) !important; box-shadow: inset 0 0 0 2px var(--d-ink) !important; }
   .dialog-content .rdp-day_selected,
-  .dialog-content .calendar-today-visible { background: var(--d-ink) !important; color: #FFFFFF !important; }
-  .calendar-today-visible { background: var(--d-ink) !important; color: #FFFFFF !important; border-radius: 11px !important; }
-  .calendar-today-visible .event-dot { background: #FFFFFF; }
-  .rdp { --rdp-accent-color: #141414; --rdp-background-color: #F3F3F1; }
-  .rdp-day_selected { background-color: var(--d-ink) !important; color: #FFFFFF !important; }
+  .dialog-content .calendar-today-visible { background: var(--d-ink) !important; color: var(--d-on-ink) !important; }
+  .calendar-today-visible { background: var(--d-ink) !important; color: var(--d-on-ink) !important; border-radius: 11px !important; }
+  .calendar-today-visible .event-dot { background: var(--d-on-ink); }
+  .rdp { --rdp-accent-color: var(--d-ink); --rdp-background-color: var(--d-soft); }
+  .rdp-day_selected { background-color: var(--d-ink) !important; color: var(--d-on-ink) !important; }
 
   .calendar-container-desktop { border: 0; padding: 12px 10px 10px; margin-bottom: 8px; }
   .calendar-container-desktop .rdp-cell { height: 34px !important; }
@@ -283,7 +284,7 @@
     font-size: 15px; font-weight: 600; letter-spacing: -0.01em;
     display: inline-flex; align-items: center; justify-content: center;
   }
-  .settings-tab.active { background: var(--d-ink); color: #FFFFFF; }
+  .settings-tab.active { background: var(--d-ink); color: var(--d-on-ink); }
 
   .analytics-card { background: var(--d-card); border-radius: 24px; box-shadow: none; }
   .desktop-column .analytics-card { background: var(--d-soft); }
@@ -319,11 +320,11 @@
   .teamwork-hint, .teamwork-time-row span { color: var(--d-muted); text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 600; }
   .teamwork-checkbox, .teamwork-member-checkbox { border-color: var(--d-chk); background: var(--d-card); }
   .teamwork-checkbox[data-state="checked"],
-  .teamwork-member-checkbox[data-state="checked"] { border-color: var(--d-ink); background: var(--d-ink); color: #FFFFFF; }
+  .teamwork-member-checkbox[data-state="checked"] { border-color: var(--d-ink); background: var(--d-ink); color: var(--d-on-ink); }
   .teamwork-time-row label { background: var(--d-card); box-shadow: none; }
   .teamwork-time-row input { color: var(--d-ink); }
   .teamwork-member-pill { background: var(--d-card); color: var(--d-muted); font-weight: 600; letter-spacing: 0; font-size: 13px; }
-  .teamwork-member-pill.selected { background: var(--d-ink); color: #FFFFFF; box-shadow: none; }
+  .teamwork-member-pill.selected { background: var(--d-ink); color: var(--d-on-ink); box-shadow: none; }
 
   /* --- розбір протермінованих --------------------------------------------- */
   .overdue-cleanup-dialog, .overdue-cleanup-dialog[role="dialog"] { background: var(--d-bg) !important; }
@@ -461,7 +462,7 @@
     background: var(--d-soft); color: var(--d-ink);
     font-size: 13px; font-weight: 600; display: inline-flex; align-items: center;
   }
-  .dsk-pill:hover { background: var(--d-ink); color: #FFFFFF; }
+  .dsk-pill:hover { background: var(--d-ink); color: var(--d-on-ink); }
 
   /* темна картка найближчої події */
   .dsk-hero {
@@ -508,11 +509,11 @@
   }
   .dsk-cal-d:hover { background: var(--d-soft); }
   .dsk-cal-d.is-past, .dsk-cal-d.is-outside { color: var(--d-faint); }
-  .dsk-cal-d.is-today, .dsk-cal-d.is-today:hover { background: var(--d-ink); color: #FFFFFF; }
+  .dsk-cal-d.is-today, .dsk-cal-d.is-today:hover { background: var(--d-ink); color: var(--d-on-ink); }
   .dsk-cal-d.is-selected:not(.is-today) { box-shadow: inset 0 0 0 2px var(--d-ink); }
   .dsk-cal .calendar-day-content { position: relative; width: 100%; height: 100%; font-size: 14px; font-weight: 600; line-height: 1; }
   .dsk-cal .calendar-day-content .event-dot { bottom: 4px; width: 4px; height: 4px; border-radius: 2px; background: var(--d-ink); }
-  .dsk-cal .is-today .calendar-day-content .event-dot { background: #FFFFFF; }
+  .dsk-cal .is-today .calendar-day-content .event-dot { background: var(--d-on-ink); }
   .dsk-cal .archive-day-icon { bottom: 2px; width: 8px; height: 8px; }
 
   /* список найближчих подій */
@@ -549,16 +550,16 @@
 
 /* форма події та інші форми на сірій підкладці bg-black/5 → біла плашка з м’якими полями */
 @media (min-width: 1024px) {
-  .desktop-dashboard .bg-black\/5 { background: #FFFFFF !important; border-radius: 24px !important; }
+  .desktop-dashboard .bg-black\/5 { background: var(--d-card) !important; border-radius: 24px !important; }
   .desktop-dashboard .bg-black\/5 input:not([type="checkbox"]):not([type="radio"]),
   .desktop-dashboard .bg-black\/5 textarea,
   .desktop-dashboard .bg-black\/5 button[role="combobox"] {
-    background: #F3F3F1 !important; border: 0 !important; box-shadow: none !important;
-    border-radius: 14px !important; min-height: 44px; font-size: 15px; font-weight: 500; color: #141414;
+    background: var(--d-soft) !important; border: 0 !important; box-shadow: none !important;
+    border-radius: 14px !important; min-height: 44px; font-size: 15px; font-weight: 500; color: var(--d-ink);
   }
-  .desktop-dashboard .bg-black\/5 input:focus, .desktop-dashboard .bg-black\/5 textarea:focus { box-shadow: inset 0 0 0 1.5px #141414 !important; }
-  .desktop-dashboard .bg-black\/5 label, .desktop-dashboard .bg-black\/5 .form-field > span { font-size: 13px; font-weight: 600; color: #8B8B88; }
+  .desktop-dashboard .bg-black\/5 input:focus, .desktop-dashboard .bg-black\/5 textarea:focus { box-shadow: inset 0 0 0 1.5px var(--d-ink) !important; }
+  .desktop-dashboard .bg-black\/5 label, .desktop-dashboard .bg-black\/5 .form-field > span { font-size: 13px; font-weight: 600; color: var(--d-muted); }
 }
 @media (min-width: 1024px) {
-  .desktop-dashboard .bg-black\/5 button.form-input { background: #F3F3F1 !important; border: 0 !important; box-shadow: none !important; border-radius: 14px !important; min-height: 44px; font-size: 15px; font-weight: 500; }
+  .desktop-dashboard .bg-black\/5 button.form-input { background: var(--d-soft) !important; border: 0 !important; box-shadow: none !important; border-radius: 14px !important; min-height: 44px; font-size: 15px; font-weight: 500; }
 }

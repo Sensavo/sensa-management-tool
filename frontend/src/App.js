@@ -81,10 +81,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { uk } from "date-fns/locale";
 import { MoreHorizontal, Search, ArrowUpRight } from "lucide-react";
 
-// Garden-тема (затверджена 10.11 для головної) — на всьому мобільному застосунку (<1024px).
+// Garden-тема (затверджена 10.11 для головної) — на всьому застосунку, мобайл і десктоп.
 // Клас на <html>, щоб тема діставала й до шторок і діалогів, які рендеряться в портал поза маршрутом.
-const syncGardenTheme = () => document.documentElement.classList.toggle('sensa-home', window.innerWidth < 1024);
-if (typeof window !== 'undefined') { syncGardenTheme(); window.addEventListener('resize', syncGardenTheme); }
+if (typeof document !== 'undefined') document.documentElement.classList.add('sensa-home');
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -119,9 +118,9 @@ const anyOverlayOpen = () => {
 };
 
 const TEAM_USER_OPTIONS = [
-  { id: "manager", label: "Manager" },
-  { id: "smm", label: "SMM" },
-  { id: "marketer", label: "Marketer" },
+  { id: "manager", label: "менеджер" },
+  { id: "smm", label: "smm" },
+  { id: "marketer", label: "маркетинг" },
 ];
 const ASSIGNEE_OPTIONS = TEAM_USER_OPTIONS;
 const ASSIGNEE_LABELS = Object.fromEntries(ASSIGNEE_OPTIONS.map(({ id, label }) => [id, label]));
@@ -1026,7 +1025,7 @@ const formatTaskCondition = (cond) => {
   if (cond.type === 'booking_above') return `>${cond.threshold}%`;
   return null;
 };
-const UK_WEEKDAYS = ["неділя", "понеділок", "вівторок", "середа", "четвер", "п'ятниця", "субота"];
+const UK_WEEKDAYS = ["неділя", "понеділок", "вівторок", "середа", "четвер", "пʼятниця", "субота"];
 // Accusative weekday phrases with eufonic preposition (в / у picked to avoid
 // awkward consonant stacking like "в вівторок"). Reads as a date prefix:
 // "Poriadok у вівторок 19 травня".
@@ -1036,7 +1035,7 @@ const UK_WEEKDAY_PHRASE = [
   "у вівторок",
   "в середу",
   "у четвер",
-  "в п'ятницю",
+  "в пʼятницю",
   "в суботу",
 ];
 
@@ -3155,7 +3154,7 @@ const EventDetailPage = () => {
         <div className="desktop-header-right">
           <button className="desktop-header-btn" onClick={() => navigate(`/event/${eventId}`)} title="редагувати"><Edit className="w-4 h-4" /></button>
           {!event.cancelled ? (
-            <button className="btn-dark h-10 px-4 text-sm" onClick={handleCancel} title="скасувати і залишити в архіві"><X className="w-4 h-4" /><span>скасувати</span></button>
+            <button className="btn-dark btn-danger-soft h-10 px-4 text-sm" onClick={handleCancel} title="скасувати і залишити в архіві"><X className="w-4 h-4" /><span>скасувати</span></button>
           ) : (
             <button className="desktop-header-btn text-green-500" onClick={handleRestore} title="відновити"><RotateCcw className="w-4 h-4" /></button>
           )}
@@ -3211,13 +3210,13 @@ const EventDetailPage = () => {
         </div>
 
         {/* Column 2: MANAGER */}
-        <TaskColumn title="MANAGER" tasks={managementTasks} colorCls="" onToggle={handleToggleTask} />
+        <TaskColumn title="менеджер" tasks={managementTasks} colorCls="" onToggle={handleToggleTask} />
 
         {/* Column 3: SMM */}
-        <TaskColumn title="SMM" tasks={smmTasks} colorCls="emerald" onToggle={handleToggleSMMTask} />
+        <TaskColumn title="smm" tasks={smmTasks} colorCls="emerald" onToggle={handleToggleSMMTask} />
 
         {/* Column 4: MARKETER */}
-        <TaskColumn title="MARKETER" tasks={marketingTasks} colorCls="orange" onToggle={handleToggleMarketingTask} />
+        <TaskColumn title="маркетинг" tasks={marketingTasks} colorCls="orange" onToggle={handleToggleMarketingTask} />
       </div>
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -6747,7 +6746,7 @@ const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, sta
       ))}
 
       {/* MANAGER */}
-      {renderArchiveColumn("MANAGER", null, managerByWeek, "manager", (item, idx) => {
+      {renderArchiveColumn("менеджер", null, managerByWeek, "manager", (item, idx) => {
         const IconComponent = getIconComponent(item.icon || "check");
         return (
           <div key={idx} className="task-item">
@@ -6764,7 +6763,7 @@ const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, sta
       })}
 
       {/* SMM */}
-      {renderArchiveColumn("SMM", null, smmByWeek, "smm", (item, idx) => {
+      {renderArchiveColumn("smm", null, smmByWeek, "smm", (item, idx) => {
         const IconComponent = getIconComponent(item.icon || "instagram");
         return (
           <div key={idx} className="task-item">
@@ -6787,7 +6786,7 @@ const ArchiveContent = ({ archive, completedSMMTasksDesktop, archivedEvents, sta
       })}
 
       {/* Marketer */}
-      {renderArchiveColumn("MARKETER", "#C4703D", marketerByWeek, "marketer", (item, idx) => {
+      {renderArchiveColumn("маркетинг", null, marketerByWeek, "marketer", (item, idx) => {
         const IconComponent = getIconComponent(item.icon || "instagram");
         return (
           <div key={idx} className="task-item">
@@ -7649,7 +7648,7 @@ const DayOffDialog = ({ open, onOpenChange, mobile = false }) => {
               <div>
                 <div className="text-[11px] font-medium uppercase tracking-wider text-[#1A1717]/50 mb-2">хто</div>
                 <div className="grid grid-cols-3 gap-2">
-                  {[{v:'manager',l:'Manager'},{v:'smm',l:'SMM'},{v:'marketer',l:'Marketer'}].map(opt => (
+                  {[{v:'manager',l:'менеджер'},{v:'smm',l:'smm'},{v:'marketer',l:'маркетинг'}].map(opt => (
                     <button
                       key={opt.v}
                       type="button"
@@ -7703,7 +7702,7 @@ const DayOffDialog = ({ open, onOpenChange, mobile = false }) => {
             <DialogHeader>
               <DialogTitle>перерозподіл задач</DialogTitle>
               <DialogDescription>
-                вихідний {formatDateUkrainian(dayOffPlan.day_off.date)} • {dayOffPlan.day_off.assignee === "manager" ? "Manager" : dayOffPlan.day_off.assignee === "smm" ? "SMM" : "Marketer"}
+                вихідний {formatDateUkrainian(dayOffPlan.day_off.date)} • {dayOffPlan.day_off.assignee === "manager" ? "менеджер" : dayOffPlan.day_off.assignee === "smm" ? "smm" : "маркетинг"}
               </DialogDescription>
             </DialogHeader>
             <div className="mt-5 space-y-4 max-h-[60vh] overflow-y-auto pr-1">
@@ -8294,7 +8293,7 @@ const DesktopDashboard = () => {
       }
       return;
     }
-    const labels = { manager: "Manager", smm: "SMM", marketer: "Marketer" };
+    const labels = { manager: "менеджер", smm: "smm", marketer: "маркетинг" };
     if (task.assignee === newAssignee) return;
     try {
       if (task.is_standalone) {
@@ -10060,7 +10059,11 @@ const SettingsContent = () => {
   );
 };
 const StatsContent = ({ onClose, settings }) => {
-  const { events, standaloneTasks, smmTasksDefinition, refreshEvents } = useApp();
+  const { events, standaloneTasks, smmTasksDefinition, refreshEvents, allTaskDefs } = useApp();
+  // Назва автозадачі менеджера: спершу з налаштувань, далі з дефолтних визначень, і лише тоді id.
+  const managerTaskName = (id) => settings?.reminder_types?.find(r => r.id === id)?.name
+    || [...(allTaskDefs?.management || []), ...(allTaskDefs?.monthly || []), ...(allTaskDefs?.daily || [])].find(d => d.id === id)?.name
+    || id;
   const [periodType, setPeriodType] = useState('week'); // 'week' or 'month'
   const [currentPeriod, setCurrentPeriod] = useState(new Date());
   const [selectedTask, setSelectedTask] = useState(null);
@@ -10327,8 +10330,7 @@ const StatsContent = ({ onClose, settings }) => {
             const dueDate = new Date(reminderDate);
             dueDate.setHours(23, 59, 59, 999);
             if (completedDate <= dueDate) {
-              const rt = settings?.reminder_types?.find(r => r.id === reminderId);
-              results.push({ id: `${event.id}-${reminderId}`, date: reminderDate, completedAt: typeof isCompleted === 'string' ? isCompleted : reminderDate, name: rt?.name || reminderId, event: event.title, type: 'reminder' });
+              results.push({ id: `${event.id}-${reminderId}`, date: reminderDate, completedAt: typeof isCompleted === 'string' ? isCompleted : reminderDate, name: managerTaskName(reminderId), event: event.title, type: 'reminder' });
             }
           }
         }
@@ -10360,8 +10362,7 @@ const StatsContent = ({ onClose, settings }) => {
             const dueDate = new Date(reminderDate);
             dueDate.setHours(23, 59, 59, 999);
             if (completedDate > dueDate) {
-              const rt = settings?.reminder_types?.find(r => r.id === reminderId);
-              results.push({ id: `${event.id}-${reminderId}`, date: reminderDate, completedAt: typeof isCompleted === 'string' ? isCompleted : reminderDate, name: rt?.name || reminderId, event: event.title, type: 'reminder' });
+              results.push({ id: `${event.id}-${reminderId}`, date: reminderDate, completedAt: typeof isCompleted === 'string' ? isCompleted : reminderDate, name: managerTaskName(reminderId), event: event.title, type: 'reminder' });
             }
           }
         }
@@ -10390,8 +10391,7 @@ const StatsContent = ({ onClose, settings }) => {
         if (date >= periodStart && date <= periodEnd && date < today) {
           const isCompleted = event.completed_tasks?.[reminderId];
           if (!isCompleted) {
-            const rt = settings?.reminder_types?.find(r => r.id === reminderId);
-            uncompleted.push({ id: `${event.id}-${reminderId}`, date: reminderDate, name: rt?.name || reminderId, event: event.title, type: 'reminder' });
+            uncompleted.push({ id: `${event.id}-${reminderId}`, date: reminderDate, name: managerTaskName(reminderId), event: event.title, type: 'reminder' });
           }
         }
       });
@@ -10536,13 +10536,13 @@ const StatsContent = ({ onClose, settings }) => {
             className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${periodType === 'week' ? 'bg-[#1A1717] text-[#F6F5F1]' : 'bg-black/5 text-[#1A1717] hover:bg-black/10'}`}
             onClick={() => setPeriodType('week')}
           >
-            ТИЖДЕНЬ
+            тиждень
           </button>
           <button
             className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${periodType === 'month' ? 'bg-[#1A1717] text-[#F6F5F1]' : 'bg-black/5 text-[#1A1717] hover:bg-black/10'}`}
             onClick={() => setPeriodType('month')}
           >
-            МІСЯЦЬ
+            місяць
           </button>
           <div className="flex items-center gap-1 ml-1">
             <button onClick={goToPrevPeriod} className="p-1.5 hover:bg-black/5 rounded-full transition-colors">
@@ -10626,13 +10626,13 @@ const StatsContent = ({ onClose, settings }) => {
         </div>
 
         {/* MANAGER */}
-        {renderStatsColumn("MANAGER", managerOnTime, managerLate, managerUncompleted)}
+        {renderStatsColumn("менеджер", managerOnTime, managerLate, managerUncompleted)}
 
         {/* SMM */}
-        {renderStatsColumn("SMM", smmOnTime, smmLate, smmUncompleted)}
+        {renderStatsColumn("smm", smmOnTime, smmLate, smmUncompleted)}
 
         {/* MARKETER */}
-        {renderStatsColumn("MARKETER", marketerOnTime, marketerLate, marketerUncompleted)}
+        {renderStatsColumn("маркетинг", marketerOnTime, marketerLate, marketerUncompleted)}
       </div>
 
       {/* Task Detail Dialog */}
@@ -11192,7 +11192,7 @@ const AltegioWarningHost = () => {
           : "Подію створено, але вона прихована в Altegio";
 
   const lead = w.type === "no_service"
-    ? `Для «${svc}» в Altegio немає активної послуги, тож подія не з'явиться в записі, поки ти її не створиш і не увімкнеш.`
+    ? `Для «${svc}» в Altegio немає активної послуги, тож подія не зʼявиться в записі, поки ти її не створиш і не увімкнеш.`
     : w.type === "push_error"
       ? `Подію збережено в Poriadok, але синхронізація з Altegio не пройшла${w.detail ? `: ${w.detail}` : "."}`
       : w.type === "no_staff"

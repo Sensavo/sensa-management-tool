@@ -43,6 +43,7 @@
   --m-font: Geist, Arial, sans-serif;
   --m-sheet: var(--garden-inner);
   --m-on-ink: var(--garden-coal);
+  --d-on-ink: var(--garden-coal);
 }
 html.sensa-home, html.sensa-home body, html.sensa-home .app-container, body:has(.sensa-home), .app-container:has(.sensa-home) { background: #0e0d0b; color: #e6dac4; }
 .sensa-home .dsk-home, .sensa-home .dsk-home button, .sensa-home .m-ui, .sensa-home .m-ui button { font-family: Geist, Arial, sans-serif; }
@@ -445,7 +446,7 @@ html.sensa-home, html.sensa-home body, html.sensa-home .app-container, body:has(
 }
 
 /* shadcn-токени (поповери, діалоги, календарі вибору дати) під garden на мобайлі */
-@media (max-width: 1023px) {
+@media all {
   html.sensa-home {
     --background: 40 12% 5%;
     --foreground: 39 43% 83%;
@@ -523,4 +524,71 @@ html.sensa-home, html.sensa-home body, html.sensa-home .app-container, body:has(
   .sensa-home [role="dialog"] .bg-black\/5 { background: #302c24; color: var(--garden-sand); }
   .sensa-home [role="alertdialog"] .bg-\[\#1A1717\] { background: var(--garden-lime); color: var(--garden-coal); }
   .sensa-home [role="alertdialog"] .border-\[\#1A1717\]\/15 { border-color: #3d372b; }
+}
+
+/* ==========================================================================
+   Garden на десктопі (17.11): ті самі ролі кольорів, що й на мобайлі.
+   desktop.css уже на токенах --d-*, тут лише те, що там прописано жорстко.
+   ========================================================================== */
+@media (min-width: 1024px) {
+  html.sensa-home body { background: var(--garden-coal); color: var(--garden-sand); }
+
+  /* найближча подія → мох */
+  .sensa-home .dsk-hero { background: var(--garden-moss); color: var(--garden-sand); }
+  .sensa-home .dsk-hero:hover { background: #36432a; }
+  .sensa-home .dsk-hero-chip { background: #e6dac41f; }
+  .sensa-home .dsk-hero-sub { color: var(--garden-moss-dim); }
+  .sensa-home .dsk-hero-big .dsk-hero-of { color: #98a982; }
+  .sensa-home .dsk-hero-big .is-zero { color: var(--garden-clay); }
+  .sensa-home .dsk-hero-seg i { background: #e6dac424; }
+  .sensa-home .dsk-hero-seg i.is-on { background: var(--garden-sand); }
+
+  /* головна дія—лайм */
+  .sensa-home .btn-dark { background: var(--garden-lime); color: var(--garden-coal); }
+  .sensa-home .btn-dark:hover { background: #e0e969; }
+
+  /* легасі-кольори аналітики й архіву */
+  .sensa-home .text-emerald-600, .sensa-home .text-green-600 { color: var(--garden-lime); }
+  .sensa-home .bg-emerald-600 { background-color: #56742e; }
+  .sensa-home .bg-emerald-50 { background-color: #56742e26; }
+  .sensa-home .hover\:bg-emerald-100:hover { background-color: #56742e40; }
+  .sensa-home .text-emerald-800, .sensa-home .text-orange-800, .sensa-home .text-red-800 { color: var(--garden-sand) !important; }
+  .sensa-home .text-orange-500 { color: var(--garden-clay); }
+  .sensa-home .bg-orange-500 { background-color: var(--garden-clay); }
+  .sensa-home .bg-orange-50 { background-color: #d9925c1f; }
+  .sensa-home .hover\:bg-orange-100:hover { background-color: #d9925c33; }
+  .sensa-home .bg-red-500 { background-color: var(--garden-clay) !important; }
+  .sensa-home .bg-red-50 { background-color: #d9925c14 !important; }
+  .sensa-home .hover\:bg-red-100:hover { background-color: #d9925c26 !important; }
+  .sensa-home .bg-gray-50 { background-color: #302c24; }
+  .sensa-home .bg-black\/5 { background-color: #302c24; }
+  .sensa-home .hover\:bg-black\/5:hover, .sensa-home .hover\:bg-black\/10:hover { background-color: #3d372b; }
+  .sensa-home .bg-\[\#1A1717\] { background-color: var(--garden-sand); }
+  .sensa-home .text-\[\#F6F5F1\], .sensa-home .text-\[\#F5F5F0\] { color: var(--garden-coal); }
+  .sensa-home .bg-white { background-color: var(--garden-inner); }
+  .sensa-home .opacity-40 { opacity: .45; }
+
+  /* діалоги */
+  .sensa-home [role="dialog"], .sensa-home [role="alertdialog"] { color: var(--garden-sand); }
+  .sensa-home .dialog-content, .sensa-home [role="dialog"].bg-background { background: var(--garden-inner); }
+  .sensa-home input, .sensa-home textarea, .sensa-home select { color-scheme: dark; }
+  .sensa-home .form-input, .sensa-home input.form-input, .sensa-home textarea.form-input { background: #302c24; color: var(--garden-sand); }
+  .sensa-home input::placeholder, .sensa-home textarea::placeholder { color: #90836e; }
+  .sensa-home kbd { background: #302c24 !important; color: var(--garden-muted); }
+}
+@media (min-width: 1024px) {
+  /* велика кнопка дії в діалогах—лайм, як «+ подія» */
+  .sensa-home [role="dialog"] button.h-12.bg-\[\#1A1717\] { background: var(--garden-lime); color: var(--garden-coal); }
+  .sensa-home [role="dialog"] button.h-12.bg-\[\#1A1717\]:hover { background: #e0e969; }
+  .sensa-home .text-\[\#1A1717\]\/50, .sensa-home .text-\[\#1A1717\]\/60, .sensa-home .text-\[\#1A1717\]\/65 { color: var(--garden-muted); }
+  .sensa-home .hover\:bg-\[\#2a2424\]:hover { background-color: #3d372b; }
+}
+/* небезпечна дія—не лайм */
+.sensa-home .btn-dark.btn-danger-soft { background: #302c24; color: var(--garden-clay); }
+.sensa-home .btn-dark.btn-danger-soft:hover { background: #3d372b; }
+@media (min-width: 1024px) {
+  .sensa-home .task-checkbox, .sensa-home .task-checkbox.red, .sensa-home .task-checkbox.orange { border: 1px solid var(--garden-check); background: transparent !important; }
+  .sensa-home .task-checkbox:hover { border-color: var(--garden-sand); }
+  .sensa-home .task-checkbox.checked, .sensa-home .task-checkbox.red.checked, .sensa-home .task-checkbox.orange.checked { background: #56742e !important; border-color: #56742e; }
+  .sensa-home .task-checkbox.checked svg { color: var(--garden-sand); }
 }
