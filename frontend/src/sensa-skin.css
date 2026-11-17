@@ -41,8 +41,10 @@
   --m-red: var(--garden-clay);
   --m-green: var(--garden-lime);
   --m-font: Geist, Arial, sans-serif;
+  --m-sheet: var(--garden-inner);
+  --m-on-ink: var(--garden-coal);
 }
-body:has(.sensa-home), .app-container:has(.sensa-home) { background: #0e0d0b; color: #e6dac4; }
+html.sensa-home, html.sensa-home body, html.sensa-home .app-container, body:has(.sensa-home), .app-container:has(.sensa-home) { background: #0e0d0b; color: #e6dac4; }
 .sensa-home .dsk-home, .sensa-home .dsk-home button, .sensa-home .m-ui, .sensa-home .m-ui button { font-family: Geist, Arial, sans-serif; }
 .sensa-home .dsk-h1, .sensa-home .m-d { font-weight: 700; letter-spacing: -0.035em; }
 .sensa-home .dsk-colhead h2, .sensa-home .m-h { font-weight: 700; }
@@ -178,8 +180,11 @@ body:has(.sensa-home), .app-container:has(.sensa-home) { background: #0e0d0b; co
 
 /* Mobile home screen. The existing dashboard and navigation supply all controls. */
 @media (max-width: 1023px) {
-  .sensa-home .m-dash {
+  .sensa-home {
     --mobile-edge: max(16px, calc((100% - 520px) / 2));
+  }
+
+  .sensa-home .m-page {
     max-width: 552px;
     margin-inline: auto;
   }
@@ -280,15 +285,19 @@ body:has(.sensa-home), .app-container:has(.sensa-home) { background: #0e0d0b; co
     inset: 0;
   }
 
-  body:has(.sensa-home .m-dash .m-fab) .sensa-home .m-dash .m-nav {
+  .sensa-home .m-nav {
     left: var(--mobile-edge);
-    right: calc(var(--mobile-edge) + 66px);
+    right: var(--mobile-edge);
     height: 58px;
     padding: 4px;
     border-radius: 29px;
   }
 
-  .sensa-home .m-dash .m-nav button {
+  .sensa-home body:has(.m-fab) .m-nav {
+    right: calc(var(--mobile-edge) + 66px);
+  }
+
+  .sensa-home .m-nav button {
     flex: 1 1 0;
     width: auto;
     height: 50px;
@@ -297,12 +306,12 @@ body:has(.sensa-home), .app-container:has(.sensa-home) { background: #0e0d0b; co
     border-radius: 25px;
   }
 
-  .sensa-home .m-dash .m-nav button svg {
+  .sensa-home .m-nav button svg {
     width: 19px;
     height: 19px;
   }
 
-  .sensa-home .m-dash .m-nav button span {
+  .sensa-home .m-nav button span {
     position: static;
     width: auto;
     height: auto;
@@ -313,7 +322,7 @@ body:has(.sensa-home), .app-container:has(.sensa-home) { background: #0e0d0b; co
     font-weight: 600;
   }
 
-  .sensa-home .m-dash .m-fab {
+  .sensa-home .m-fab {
     right: var(--mobile-edge);
     width: 58px;
     height: 58px;
@@ -333,4 +342,185 @@ body:has(.sensa-home), .app-container:has(.sensa-home) { background: #0e0d0b; co
     padding-inline: 3px;
     font-size: 10px;
   }
+}
+
+/* ==========================================================================
+   Garden на всьому мобільному застосунку (17.11).
+   html.sensa-home вмикається <1024px, тож правила нижче діють на кожному
+   екрані й у шторках-порталах. Ролі кольорів ті самі, що на головній:
+   вугільний фон, темні робочі плашки, пісок—поточне й активне, мох—майбутнє.
+   ========================================================================== */
+@media (max-width: 1023px) {
+  .sensa-home .m-ui, .sensa-home .m-sheet, .sensa-home .m-ui button, .sensa-home .m-sheet button,
+  .sensa-home .m-ui input, .sensa-home .m-sheet input, .sensa-home .m-ui textarea, .sensa-home .m-sheet textarea,
+  .sensa-home .m-ui select, .sensa-home .m-sheet select { font-family: Geist, Arial, sans-serif; }
+
+  /* заголовок екрана—один розмір скрізь, як на «сьогодні» */
+  .sensa-home .m-ui .m-d { font-size: 38px; line-height: 1.08; font-weight: 700; letter-spacing: -0.035em; }
+  .sensa-home .m-ui .m-ev-head, .sensa-home .m-ui .m-dash-head { align-items: center; }
+
+  /* темна картка → мох (найближче, підсумок місяця) */
+  .sensa-home .m-hero { background: var(--garden-moss); color: var(--garden-sand); }
+  .sensa-home .m-hero-chip { background: #e6dac41f; color: var(--garden-sand); }
+  .sensa-home .m-hero-sub, .sensa-home .m-stat-trio small { color: var(--garden-moss-dim); }
+  .sensa-home .m-hero-big .m-hero-of { color: #98a982; }
+  .sensa-home .m-hero-big .m-hero-zero, .sensa-home .m-stat-trio .m-hero-zero { color: var(--garden-clay); }
+  .sensa-home .m-hero-seg i { background: #e6dac424; }
+  .sensa-home .m-hero-seg i.is-on { background: var(--garden-sand); }
+  .sensa-home .m-stat-trio > div { background: #e6dac414; }
+  .sensa-home .m-stat-bar i { background: #302c24; }
+  .sensa-home .m-stat-bar i.is-on { background: var(--garden-sand); }
+
+  /* іконкові кнопки в шапках */
+  .sensa-home .m-ui .m-topbar .m-ico, .sensa-home .m-ui .m-ev-head-actions .m-ico, .sensa-home .m-ui .m-ct-nav .m-ico,
+  .sensa-home .m-cleanup-top .m-ico { background: var(--garden-inner); color: var(--garden-sand); }
+  .sensa-home .m-ui .m-ico[aria-pressed="true"] { background: var(--garden-sand); color: var(--garden-coal); }
+
+  /* календарі: сьогодні—пісок, обраний—контур, крапка події—лайм */
+  .sensa-home .m-ui .m-ev-week, .sensa-home .m-ui .m-ct-cal, .sensa-home .m-ui .m-ev-cal { background: var(--garden-inner); }
+  .sensa-home .m-ev-day-num.is-today { background: var(--garden-sand); color: var(--garden-coal); }
+  .sensa-home .m-ev-day-num.is-selected:not(.is-today) { box-shadow: inset 0 0 0 1.5px var(--garden-sand); }
+  .sensa-home .m-ev-day-dot.is-on { background: var(--garden-lime); }
+  .sensa-home .m-ct-past { color: #6f6656; }
+
+  /* перемикач */
+  .sensa-home .m-switch { background: #3d372b; }
+  .sensa-home .m-switch::after { background: var(--garden-sand); box-shadow: none; }
+  .sensa-home .m-switch[aria-checked="true"] { background: var(--garden-lime); }
+  .sensa-home .m-switch[aria-checked="true"]::after { background: var(--garden-coal); }
+
+  /* кнопки: головна дія—лайм, як «+» */
+  .sensa-home .m-btn { background: var(--garden-lime); color: var(--garden-coal); }
+  .sensa-home .m-btn:disabled { background: #302c24; color: var(--garden-faint, #90836e); }
+  .sensa-home .m-btn--danger, .sensa-home .m-sheet .m-btn--danger { background: #302c24; color: var(--garden-clay); border: 0; }
+  .sensa-home .m-confirm-actions .m-btn--plain { background: #302c24; color: var(--garden-sand); border: 0; }
+  .sensa-home .m-set-del.is-armed { background: var(--garden-clay); border-color: var(--garden-clay); color: var(--garden-coal); }
+  .sensa-home .m-tab sup { background: #302c24; color: var(--garden-clay); }
+
+  /* шторки й діалоги */
+  .sensa-home .m-sheet { color: var(--garden-sand); }
+  .sensa-home .m-sheet::before { background: #3d372b; }
+  .sensa-home .m-sheet .m-list > *, .sensa-home .m-sheet .m-row { border-bottom-color: #e6dac41a; }
+  .sensa-home .m-sticky-cta { background: var(--garden-coal); }
+  .sensa-home .m-ev-suggest { background: var(--garden-inner); border-color: #3d372b; }
+  .sensa-home .m-ui .m-list > .m-row:not(:last-child) { border-bottom-color: #e6dac412; }
+  .sensa-home .m-ui .m-list:has(.m-task-row) > .m-row:not(:last-child) { border-bottom-color: #0e0d0b19; }
+
+  /* поля */
+  .sensa-home .m-field input::placeholder, .sensa-home .m-field textarea::placeholder { color: #90836e; }
+  .sensa-home .m-field input, .sensa-home .m-field textarea, .sensa-home .m-field select { color: var(--garden-sand); color-scheme: dark; }
+
+  /* чекбокси поза пісковими списками—той самий тонкий круг */
+  .sensa-home .m-sheet .m-chk, .sensa-home .m-cleanup .m-chk { position: relative; background: transparent; border-color: transparent; }
+  .sensa-home .m-sheet .m-chk::before, .sensa-home .m-cleanup .m-chk::before {
+    content: ''; position: absolute; width: 14px; height: 14px; left: 50%; top: 50%;
+    transform: translate(-50%, -50%); box-sizing: border-box; border: 1px solid var(--garden-check); border-radius: 50%; pointer-events: none;
+  }
+  .sensa-home .m-sheet .m-chk.is-done::before, .sensa-home .m-sheet .m-chk[aria-checked="true"]::before,
+  .sensa-home .m-cleanup .m-chk.is-done::before, .sensa-home .m-cleanup .m-chk[aria-checked="true"]::before { background: #56742e; border-color: #56742e; }
+  .sensa-home .m-sheet .m-chk svg, .sensa-home .m-cleanup .m-chk svg { position: relative; width: 9px; height: 9px; color: var(--garden-sand); }
+  .sensa-home .m-cleanup .m-chk--overdue::before { border-color: var(--garden-clay); }
+
+  /* протерміновані на весь екран */
+  .sensa-home .overdue-cleanup-dialog.overdue-cleanup-mobile:has(.m-cleanup) { background: var(--garden-coal) !important; color: var(--garden-sand); }
+  .sensa-home .m-cleanup .m-list, .sensa-home .m-cleanup-swipe > .m-row { background: var(--garden-inner); }
+  .sensa-home .m-cleanup .m-cleanup-swipe { border-bottom-color: #e6dac412; }
+  .sensa-home .m-cleanup .m-ghost { background: var(--garden-inner); }
+  .sensa-home .m-cleanup-row > .m-txt { background: #302c24; }
+
+  /* тости */
+  .sensa-home [data-sonner-toast] { font-family: Geist, Arial, sans-serif; }
+}
+
+/* вкладки ролей скрізь як на «сьогодні»: темна підкладка, рівні пігулки */
+@media (max-width: 1023px) {
+  .sensa-home .m-ui .m-tabs[role="tablist"] {
+    display: flex; gap: 4px; padding: 4px; border-radius: 24px; background: var(--garden-inner); overflow-x: auto; scrollbar-width: none;
+  }
+  .sensa-home .m-ui .m-tabs[role="tablist"]::-webkit-scrollbar { display: none; }
+  .sensa-home .m-ui .m-tabs[role="tablist"] .m-tab {
+    flex: 1 0 auto; justify-content: center; gap: 5px; height: 44px; padding-inline: 10px; font-size: 14px; border-radius: 20px;
+  }
+  .sensa-home .m-ui .m-tabs[role="tablist"] .m-tab .m-tab-count { font-size: 12px; font-variant-numeric: tabular-nums; }
+}
+
+/* shadcn-токени (поповери, діалоги, календарі вибору дати) під garden на мобайлі */
+@media (max-width: 1023px) {
+  html.sensa-home {
+    --background: 40 12% 5%;
+    --foreground: 39 43% 83%;
+    --card: 40 12% 10%;
+    --card-foreground: 39 43% 83%;
+    --popover: 40 12% 10%;
+    --popover-foreground: 39 43% 83%;
+    --primary: 39 43% 83%;
+    --primary-foreground: 40 12% 5%;
+    --secondary: 40 14% 16%;
+    --secondary-foreground: 39 43% 83%;
+    --muted: 40 14% 16%;
+    --muted-foreground: 39 19% 63%;
+    --accent: 40 14% 16%;
+    --accent-foreground: 39 43% 83%;
+    --border: 40 14% 16%;
+    --input: 40 14% 16%;
+    --ring: 39 43% 83%;
+  }
+  .sensa-home [data-radix-popper-content-wrapper] > div { border-radius: 20px; border: 0; box-shadow: 0 12px 32px -12px #000c; font-family: Geist, Arial, sans-serif; }
+  .sensa-home .calendar-minimal .rdp-head_cell { color: var(--garden-muted); }
+  .sensa-home .calendar-minimal .rdp-day { color: var(--garden-sand); }
+  .sensa-home .calendar-minimal .rdp-day:hover { background: #302c24 !important; }
+  .sensa-home .calendar-minimal .rdp-day_outside, .sensa-home .calendar-minimal .rdp-day_disabled { color: #6f6656; }
+  /* у виборі дати головне—обрана дата (пісок), сьогодні—лише контур */
+  .sensa-home .calendar-minimal .rdp-day_selected, .sensa-home .calendar-minimal .rdp-day[aria-selected="true"] { background: var(--garden-sand) !important; color: var(--garden-coal) !important; }
+  .sensa-home .calendar-today-visible:not([aria-selected="true"]) { background: transparent !important; color: var(--garden-sand) !important; box-shadow: inset 0 0 0 1.5px #e6dac466; }
+  .sensa-home .calendar-minimal .rdp-nav_button { color: var(--garden-sand); }
+}
+@media (max-width: 1023px) {
+  .sensa-home .m-sheet { box-shadow: 0 -1px 0 #e6dac41a !important; }
+}
+@media (max-width: 1023px) {
+  .sensa-home .m-cleanup h2.m-d { font-size: 38px; line-height: 1.08; }
+}
+@media (max-width: 1023px) {
+  .sensa-home .m-ct-month { margin-top: 0; height: 19px; font-size: 14px; line-height: 19px; color: var(--m-muted); }
+}
+
+/* teamwork у формі задачі: та сама плашка-поле, без капсу */
+@media (max-width: 1023px) {
+  .sensa-home .teamwork-fields, .sensa-home .teamwork-fields.active { background: var(--garden-inner); box-shadow: none; border-radius: 16px; }
+  .sensa-home .m-sheet .teamwork-fields, .sensa-home .m-sheet .teamwork-fields.active { background: #302c24; }
+  .sensa-home .teamwork-toggle { min-height: 56px; padding: 10px 16px; column-gap: 12px; }
+  .sensa-home .teamwork-label { color: var(--garden-sand); font-size: 16px; font-weight: 500; line-height: 22px; }
+  .sensa-home .teamwork-hint, .sensa-home .teamwork-time-row span { color: var(--garden-muted); font-size: 13px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+  .sensa-home .teamwork-checkbox, .sensa-home .teamwork-member-checkbox { width: 20px; height: 20px; border-radius: 6px; border: 1px solid var(--garden-check); background: transparent; }
+  .sensa-home .teamwork-checkbox[data-state="checked"], .sensa-home .teamwork-member-checkbox[data-state="checked"] { border-color: var(--garden-sand); background: var(--garden-sand); color: var(--garden-coal); }
+  .sensa-home .teamwork-time-row label { height: 44px; border-radius: 22px; background: #302c24; box-shadow: none; }
+  .sensa-home .teamwork-time-row input { color: var(--garden-sand); font-size: 15px; font-weight: 600; color-scheme: dark; }
+  .sensa-home .teamwork-member-pill { height: 40px; border-radius: 20px; background: #302c24; color: var(--garden-sand); font-size: 14px; font-weight: 600; letter-spacing: 0; }
+  .sensa-home .teamwork-member-pill.selected { background: var(--garden-sand); color: var(--garden-coal); box-shadow: none; }
+  .sensa-home .m-new-task-teamwork { border-bottom: 0; }
+}
+
+/* вхід і завантаження на мобайлі */
+@media (max-width: 1023px) {
+  .sensa-home .access-gate { background: var(--garden-inner) !important; box-shadow: none; font-family: Geist, Arial, sans-serif; }
+  .sensa-home .access-gate .logo, .sensa-home .app-container .logo { color: var(--garden-sand); font-family: Geist, Arial, sans-serif; }
+  .sensa-home .access-gate .text-secondary, .sensa-home .app-container .text-secondary { color: var(--garden-muted); }
+  .sensa-home .access-gate input { background: #302c24; border-color: transparent; color: var(--garden-sand); }
+  .sensa-home .access-gate input:focus { border-color: var(--garden-sand); }
+  .sensa-home .access-gate .btn-dark { background: var(--garden-lime); color: var(--garden-coal); }
+}
+@media (max-width: 1023px) {
+  .sensa-home .m-sheet, .sensa-home .m-sheet[role="dialog"] { background: var(--garden-inner) !important; border: 0 !important; }
+}
+
+/* жорсткі кольори з shadcn-обгорток діалогів */
+@media (max-width: 1023px) {
+  .sensa-home [role="dialog"] .text-\[\#1A1717\], .sensa-home [role="alertdialog"] .text-\[\#1A1717\],
+  .sensa-home [role="dialog"].text-\[\#1A1717\], .sensa-home [role="alertdialog"].text-\[\#1A1717\] { color: var(--garden-sand); }
+  .sensa-home .text-\[\#1A1717\]\/65, .sensa-home .text-\[\#1A1717\]\/60 { color: var(--garden-muted); }
+  .sensa-home .bg-\[\#F5F5F0\] { background: var(--garden-inner); }
+  .sensa-home [role="dialog"] .bg-black\/5 { background: #302c24; color: var(--garden-sand); }
+  .sensa-home [role="alertdialog"] .bg-\[\#1A1717\] { background: var(--garden-lime); color: var(--garden-coal); }
+  .sensa-home [role="alertdialog"] .border-\[\#1A1717\]\/15 { border-color: #3d372b; }
 }

@@ -81,6 +81,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { uk } from "date-fns/locale";
 import { MoreHorizontal, Search, ArrowUpRight } from "lucide-react";
 
+// Garden-тема (затверджена 10.11 для головної) — на всьому мобільному застосунку (<1024px).
+// Клас на <html>, щоб тема діставала й до шторок і діалогів, які рендеряться в портал поза маршрутом.
+const syncGardenTheme = () => document.documentElement.classList.toggle('sensa-home', window.innerWidth < 1024);
+if (typeof window !== 'undefined') { syncGardenTheme(); window.addEventListener('resize', syncGardenTheme); }
+
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 const ACTOR_USER_STORAGE_KEY = "poriadok_actor_user";
@@ -2399,6 +2404,9 @@ const EventsPage = () => {
   const [showArchive, setShowArchive] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [calOpen, setCalOpen] = useState(false);
+  const [calMonth, setCalMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const [selectedDay, setSelectedDay] = useState(null);
   const [searchParams] = useSearchParams();
   const deepLinkEventId = searchParams.get("event");
   useEffect(() => { if (deepLinkEventId) navigate(`/event/${deepLinkEventId}/view`, { replace: true }); }, [deepLinkEventId, navigate]);
@@ -2416,9 +2424,20 @@ const EventsPage = () => {
     return e.cancelled || e.archived || eventDate < today;
   }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  // Тижнева стрічка: 7 днів від сьогодні, крапка—є активні події.
-  const activeDays = new Set(upcoming.map(getEventDateKey));
+  // Календар: згорнутий—7 днів від сьогодні, розгорнутий—весь місяць з перемиканням.
+  // Тап по дню показує події цього дня (зокрема минулі), повторний тап—знову всі.
+  const liveByDay = useMemo(() => {
+    const m = {};
+    events.filter(e => !e.cancelled && !e.archived && e.date).forEach(e => { const k = getEventDateKey(e); (m[k] = m[k] || []).push(e); });
+    return m;
+  }, [events]);
   const weekDays = Array.from({ length: 7 }, (_, i) => { const d = new Date(today); d.setDate(d.getDate() + i); return d; });
+  const cy = calMonth.getFullYear(), cmo = calMonth.getMonth();
+  const monthLead = (new Date(cy, cmo, 1).getDay() + 6) % 7;
+  const monthCells = [...Array(monthLead).fill(null), ...Array.from({ length: new Date(cy, cmo + 1, 0).getDate() }, (_, i) => new Date(cy, cmo, i + 1))];
+  const shiftCalMonth = (n) => setCalMonth(new Date(cy, cmo + n, 1));
+  const toggleCal = () => { setCalOpen(o => !o); setCalMonth(new Date(today.getFullYear(), today.getMonth(), 1)); };
+  const selectDay = (key) => setSelectedDay(d => (d === key ? null : key));
 
   // Агенда: цей тиждень (0–6 днів), наступний (7–13), далі—по місяцях.
   const groups = [];
@@ -2437,10 +2456,25 @@ const EventsPage = () => {
     g.items.push(event);
   });
 
-  const handleDaySelect = (date) => {
-    const dateStr = formatDateLocal(date);
-    const element = document.querySelector(`[data-event-date="${dateStr}"]`);
-    if (element) { element.scrollIntoView({ behavior: 'smooth', block: 'center' }); element.classList.add('event-highlight'); setTimeout(() => element.classList.remove('event-highlight'), 2000); }
+  const selectedEvents = selectedDay ? (liveByDay[selectedDay] || []).slice().sort((a, b) => String(a.start_time || '').localeCompare(String(b.start_time || ''))) : [];
+  const selectedLabel = (() => {
+    if (!selectedDay) return '';
+    if (selectedDay === todayStr) return 'сьогодні';
+    const d = parseYmdLocal(selectedDay);
+    return `${d.getDate()} ${UK_MONTHS[d.getMonth()]}${d.getFullYear() !== today.getFullYear() ? ` ${d.getFullYear()}` : ''}`;
+  })();
+  const shownGroups = selectedDay && !q ? [{ key: 'day', label: selectedLabel, items: selectedEvents }] : groups;
+
+  const renderCalDay = (d, { week = false } = {}) => {
+    const key = formatDateLocal(d);
+    const n = (liveByDay[key] || []).length;
+    return (
+      <button key={key} type="button" className={`m-ev-day${week ? '' : ' m-ct-day'}${!week && key < todayStr ? ' m-ct-past' : ''}`} aria-pressed={selectedDay === key} onClick={() => selectDay(key)} aria-label={`${d.getDate()} ${UK_MONTHS[d.getMonth()]}${n ? `, ${n} ${pluralUa(n, 'подія', 'події', 'подій')}` : ''}`} data-testid={`events-cal-day-${key}`}>
+        {week && <span className="m-c">{UK_WEEKDAYS_SHORT[d.getDay()]}</span>}
+        <span className={`m-ev-day-num${key === todayStr ? ' is-today' : ''}${selectedDay === key ? ' is-selected' : ''}`}>{d.getDate()}</span>
+        <span className={`m-ev-day-dot${n ? ' is-on' : ''}`} />
+      </button>
+    );
   };
 
   const handleRestoreEvent = async (eventId) => {
@@ -2482,8 +2516,8 @@ const EventsPage = () => {
     <div className="m-page" data-testid="events-page">
       <div className="m-ev-head">
         <div>
+          <div className="m-c">{UK_MONTHS_NOMINATIVE[now.getMonth()]} {now.getFullYear()}</div>
           <h1 className="m-d">події</h1>
-          <div className="m-c" style={{ marginTop: 2 }}>{UK_MONTHS_NOMINATIVE[now.getMonth()]} {now.getFullYear()}</div>
         </div>
         <div className="m-ev-head-actions">
           <button type="button" className="m-ico" aria-label="пошук" aria-pressed={searchOpen} onClick={() => { setSearchOpen(o => !o); if (searchOpen) setQuery(""); }}><Search strokeWidth={1.5} /></button>
@@ -2499,24 +2533,30 @@ const EventsPage = () => {
       )}
 
       {!q && (
-        <div className="m-ev-week" role="list" aria-label="найближчі 7 днів">
-          {weekDays.map((d, i) => {
-            const key = formatDateLocal(d);
-            const has = activeDays.has(key);
-            return (
-              <button key={key} type="button" role="listitem" className="m-ev-day" onClick={() => handleDaySelect(d)} aria-label={`${d.getDate()} ${UK_MONTHS[d.getMonth()]}${has ? ", є події" : ""}`}>
-                <span className="m-c">{UK_WEEKDAYS_SHORT[d.getDay()]}</span>
-                <span className={`m-ev-day-num${i === 0 ? " is-today" : ""}`}>{d.getDate()}</span>
-                <span className={`m-ev-day-dot${has ? " is-on" : ""}`} />
-              </button>
-            );
-          })}
+        <div className={`m-ev-cal${calOpen ? ' is-open' : ''}`} data-testid="events-calendar">
+          {calOpen && (
+            <div className="m-ev-cal-head">
+              <button type="button" className="m-ico" aria-label="попередній місяць" onClick={() => shiftCalMonth(-1)} data-testid="events-cal-prev"><ChevronLeft strokeWidth={2} /></button>
+              <span className="m-b">{UK_MONTHS_NOMINATIVE[cmo]}{cy !== today.getFullYear() ? ` ${cy}` : ''}</span>
+              <button type="button" className="m-ico" aria-label="наступний місяць" onClick={() => shiftCalMonth(1)} data-testid="events-cal-next"><ChevronRight strokeWidth={2} /></button>
+            </div>
+          )}
+          <div className="m-ev-cal-grid" role="group" aria-label={calOpen ? `${UK_MONTHS_NOMINATIVE[cmo]} ${cy}` : 'найближчі 7 днів'}>
+            {calOpen
+              ? <>{['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'нд'].map(w => <span key={w} className="m-c m-ct-wd">{w}</span>)}{monthCells.map((d, i) => d ? renderCalDay(d) : <span key={`e${i}`} />)}</>
+              : weekDays.map(d => renderCalDay(d, { week: true }))}
+          </div>
+          <button type="button" className="m-ev-cal-toggle" aria-expanded={calOpen} aria-label={calOpen ? 'згорнути календар' : 'розгорнути календар на місяць'} onClick={toggleCal} data-testid="events-cal-toggle">
+            <ChevronDown strokeWidth={2} aria-hidden="true" />
+          </button>
         </div>
       )}
 
-      {groups.length > 0 ? groups.map(g => (
+      {shownGroups.some(g => g.items.length) ? shownGroups.map(g => (
         <section key={g.key}>
-          <h2 className="m-sec m-ev-sec">{g.label}</h2>
+          {g.key === 'day' ? (
+            <div className="m-sec-head m-ev-sec-row"><h2 className="m-sec">{g.label}</h2><button type="button" className="m-txt" onClick={() => setSelectedDay(null)} data-testid="events-day-reset">усі події</button></div>
+          ) : <h2 className="m-sec m-ev-sec">{g.label}</h2>}
           <div className="m-list">
             {g.items.map(event => {
               const d = parseYmdLocal(event.date);
@@ -2537,10 +2577,15 @@ const EventsPage = () => {
           </div>
         </section>
       )) : (
+        <>
+        {selectedDay && !q ? (
+          <div className="m-sec-head m-ev-sec-row"><h2 className="m-sec">{selectedLabel}</h2><button type="button" className="m-txt" onClick={() => setSelectedDay(null)} data-testid="events-day-reset">усі події</button></div>
+        ) : null}
         <div className="m-ev-empty">
-          <p className="m-c">{q ? "нічого не знайдено" : "поки подій немає"}</p>
-          {!q && <button type="button" className="m-ghost" onClick={() => navigate("/event/new")}><Plus strokeWidth={1.5} className="w-4 h-4" />створити</button>}
+          <p className="m-c">{q ? "нічого не знайдено" : selectedDay ? "цього дня подій немає" : "поки подій немає"}</p>
+          {!q && !selectedDay && <button type="button" className="m-ghost" onClick={() => navigate("/event/new")}><Plus strokeWidth={1.5} className="w-4 h-4" />створити</button>}
         </div>
+        </>
       )}
 
       <button type="button" className="m-fab" aria-label="нова подія" onClick={() => navigate("/event/new")} data-testid="events-fab"><Plus strokeWidth={1.8} /></button>
@@ -3007,7 +3052,7 @@ const EventDetailPage = () => {
                 task.assignee ? getAssigneeLabel(task.assignee) : null,
               ].filter(Boolean).join(" · ");
               return (
-                <div key={task.id} className="m-row" data-testid={`detail-task-${task.id}`}>
+                <div key={task.id} className="m-row m-task-row" data-testid={`detail-task-${task.id}`}>
                   <button type="button" role="checkbox" aria-checked={task.completed}
                     className={`m-chk${overdue ? " m-chk--overdue" : ""}`}
                     onClick={() => role.onToggle(task.id, !task.completed)}
@@ -5275,10 +5320,10 @@ const ContentPage = () => {
         <div className="m-page">
           <div className="m-ev-head">
             <div>
-              <h1 className="m-d">контент</h1>
               <button type="button" className="m-ct-month" onClick={() => setShowMonthPicker(true)} aria-haspopup="dialog" data-testid="content-month-btn">
                 {UK_MONTHS_NOMINATIVE[mo]} {y}<ChevronDown strokeWidth={1.5} aria-hidden="true" />
               </button>
+              <h1 className="m-d">контент</h1>
             </div>
             <div className="m-ev-head-actions">
               <button type="button" className="m-ico" aria-label="попередній місяць" onClick={() => shiftMonth(-1)} data-testid="content-prev-month"><ChevronLeft strokeWidth={1.5} /></button>
@@ -6212,8 +6257,8 @@ const SettingsPage = () => {
     const freqLabel = (task) => {
       const f = task.frequency || "event";
       if (f === "daily") return "щоденно";
-      if (f === "monthly") return `щомісяця · за ${task.days_before} днів`;
-      return `за ${task.days_before} днів`;
+      if (f === "monthly") return `щомісяця · за ${task.days_before} ${pluralUa(Number(task.days_before) || 0, "день", "дні", "днів")}`;
+      return `за ${task.days_before} ${pluralUa(Number(task.days_before) || 0, "день", "дні", "днів")}`;
     };
     const openEdit = (task) => {
       if (activeTab === "management") { setEditingReminder({ ...task, column: task.column || "management" }); setShowEditDialog(true); }
@@ -6416,7 +6461,7 @@ const SettingsPage = () => {
                 <div key={task.id} className="reminder-item" onClick={() => { setEditingReminder({ ...task, column: task.column || "management" }); setShowEditDialog(true); }}>
                   <div className="flex items-center gap-3">
                     <div className="task-icon"><IconComponent /></div>
-                    <div><p className="text-sm font-medium">{task.name}</p><p className="text-xs text-secondary">за {task.days_before} днів</p></div>
+                    <div><p className="text-sm font-medium">{task.name}</p><p className="text-xs text-secondary">за {task.days_before} {pluralUa(Number(task.days_before) || 0, "день", "дні", "днів")}</p></div>
                   </div>
                   <Edit className="w-4 h-4 text-secondary" />
                 </div>
@@ -6438,7 +6483,7 @@ const SettingsPage = () => {
                 <div key={task.id} className="reminder-item" onClick={() => { setEditingSMM({ ...task, column: task.column || "smm", icon: SMM_ICONS[task.id] || "instagram" }); setShowEditSMMDialog(true); }}>
                   <div className="flex items-center gap-3">
                     <div className="task-icon"><IconComponent /></div>
-                    <div><p className="text-sm font-medium">{task.name}</p><p className="text-xs text-secondary">за {task.days_before} днів</p></div>
+                    <div><p className="text-sm font-medium">{task.name}</p><p className="text-xs text-secondary">за {task.days_before} {pluralUa(Number(task.days_before) || 0, "день", "дні", "днів")}</p></div>
                   </div>
                   <div className="flex items-center gap-2">
                     {task.is_announcement && <span className="text-xs text-secondary">анонс</span>}
@@ -6464,7 +6509,7 @@ const SettingsPage = () => {
                 <div key={task.id} className="reminder-item" onClick={() => { setEditingSMM({ ...task, column: task.column || "marketing", icon: task.icon || "circle" }); setShowEditSMMDialog(true); }}>
                   <div className="flex items-center gap-3">
                     <div className="task-icon"><IconComponent /></div>
-                    <div><p className="text-sm font-medium">{task.name}</p><p className="text-xs text-secondary">за {task.days_before} днів</p></div>
+                    <div><p className="text-sm font-medium">{task.name}</p><p className="text-xs text-secondary">за {task.days_before} {pluralUa(Number(task.days_before) || 0, "день", "дні", "днів")}</p></div>
                   </div>
                   <Edit className="w-4 h-4 text-secondary" />
                 </div>
@@ -11068,9 +11113,9 @@ const AccessGate = ({ onUnlock }) => {
   return (
     <div className="app-container min-h-screen flex items-center justify-center px-6">
       <Toaster position="top-center" richColors />
-      <form onSubmit={handleSubmit} className="w-full max-w-sm rounded-[32px] p-8 shadow-sm" style={{ background: 'var(--panel-bg, #F1EEE7)' }}>
+      <form onSubmit={handleSubmit} className="access-gate w-full max-w-sm rounded-[32px] p-8 shadow-sm" style={{ background: 'var(--panel-bg, #F1EEE7)' }}>
         <h1 className="logo mb-8 text-center" style={{ textTransform: 'none' }}>Poriadok</h1>
-        <label className="block text-xs font-semibold uppercase tracking-wide text-secondary mb-2">код доступу</label>
+        <label className="block text-sm font-semibold text-secondary mb-2">код доступу</label>
         <input
           autoFocus
           inputMode="numeric"
