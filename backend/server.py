@@ -652,6 +652,12 @@ class Event(BaseModel):
     altegio_last_sync: Optional[str] = None
     altegio_last_error: Optional[str] = None
     altegio_last_status_code: Optional[int] = None
+    # Price reconciliation is independent of booking/count synchronization.
+    altegio_price_sync_pending: bool = False
+    altegio_price_sync_error: Optional[str] = None
+    altegio_price_sync_attempted_at: Optional[str] = None
+    altegio_price_synced_at: Optional[str] = None
+    altegio_price_synced: Optional[float] = None
     # Set when the event pushed to Altegio but its service is disabled/offline,
     # so the activity exists yet stays invisible/unbookable. Frontend surfaces
     # this as an actionable warning. None = healthy.
@@ -2440,7 +2446,11 @@ def _google_calendar_event_id(event: Optional[dict]) -> Optional[str]:
 
 
 
-async def _ensure_altegio_service_price_matches(service_id: int, expected_price: float, event_id: Optional[str] = None, min_capacity: Optional[int] = None) -> dict:
+async def _ensure_altegio_service_price_matches(service_id: int, expected_price: float, event_id: Optional[str] = None, min_capacity: Optional[int] = None, expected_event_snapshot: Optional[dict] = None) -> dict:
+    async def check_event_snapshot():
+        if expected_event_snapshot is not None and not await db.events.find_one(expected_event_snapshot, {"_id": 0, "id": 1}):
+            raise HTTPException(status_code=409, detail="подію змінено під час синхронізації ціни; застаріле оновлення пропущено")
+
     expected = int(round(float(expected_price or 0)))
     services = await _get_altegio_services_cached(ttl_seconds=0)
     service = next((item for item in services if str(item.get("id")) == str(int(service_id))), None)
@@ -2473,7 +2483,8 @@ async def _ensure_altegio_service_price_matches(service_id: int, expected_price:
     # group appointment"). Make sure it is live and group-capable regardless.
     if price_ok:
         if not service.get("active") or not service.get("is_online") or capacity_missing:
-            live = await altegio_client.update_service_price_result(int(service_id), expected, ensure_live=True, min_capacity=min_capacity)
+            await check_event_snapshot()
+            live = await altegio_client.update_service_price_result(int(service_id), expected, ensure_live=True, min_capacity=min_capacity, expected_event_snapshot=expected_event_snapshot)
             if live.get("ok"):
                 _altegio_services_cache["fetched_at"] = 0.0
                 merged = live.get("data") or dict(service)
@@ -2505,7 +2516,8 @@ async def _ensure_altegio_service_price_matches(service_id: int, expected_price:
             ),
         )
 
-    update_result = await altegio_client.update_service_price_result(int(service_id), expected, min_capacity=min_capacity)
+    await check_event_snapshot()
+    update_result = await altegio_client.update_service_price_result(int(service_id), expected, min_capacity=min_capacity, expected_event_snapshot=expected_event_snapshot)
     if update_result.get("ok"):
         _altegio_services_cache["fetched_at"] = 0.0
         updated = update_result.get("data") or dict(service)
@@ -3010,7 +3022,7 @@ def _apply_event_defaults(event_data: EventCreate) -> EventCreate:
 def _effective_price(base_price, price_tiers, today_str: Optional[str] = None):
     """Effective price today = the still-valid early-bird tier whose `until` is
     soonest (current discount window); if none valid → regular base_price."""
-    today = today_str or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = today_str or datetime.now(ZoneInfo("Europe/Kyiv")).strftime("%Y-%m-%d")
     valid = []
     for t in (price_tiers or []):
         t = t.model_dump() if hasattr(t, "model_dump") else dict(t)
@@ -3031,19 +3043,21 @@ def _apply_pricing(event_dict: dict) -> Optional[float]:
     if base is None:
         base = event_dict.get("price")
     event_dict["base_price"] = float(base) if base is not None else None
-    if tiers:
-        event_dict["price"] = _effective_price(event_dict["base_price"], tiers)
+    event_dict["price"] = _effective_price(event_dict["base_price"], tiers)
     return event_dict.get("price")
 
 
 async def _advance_early_bird_prices():
-    """For every active event with early-bird tiers, recompute today's tier; if
-    the price changed (an early-bird window closed), persist the new price and
-    push it to the Altegio service so NEW bookings pay the current price.
-    Already-sold tickets keep their paid price in Altegio."""
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    """Reconcile active tier prices, including previously failed remote writes.
+
+    Local price equality is not evidence of Altegio equality. Recheck the actual
+    service every pass and keep failures pending until a fresh read confirms it.
+    Existing bookings retain their paid price; only the service price changes.
+    """
+    today = datetime.now(ZoneInfo("Europe/Kyiv")).strftime("%Y-%m-%d")
     events = await db.events.find(
-        {"price_tiers.0": {"$exists": True}, "cancelled": {"$ne": True}, "archived": {"$ne": True}},
+        {"$or": [{"price_tiers.0": {"$exists": True}}, {"altegio_price_sync_pending": True}],
+         "cancelled": {"$ne": True}, "archived": {"$ne": True}},
         {"_id": 0},
     ).to_list(1000)
     for ev in events:
@@ -3053,20 +3067,61 @@ async def _advance_early_bird_prices():
         new_price = _effective_price(base, ev.get("price_tiers") or [], today)
         if new_price is None:
             continue
-        if abs(float(ev.get("price") or 0) - float(new_price)) < 0.01:
-            continue  # already current
-        await db.events.update_one({"id": ev["id"]}, {"$set": {"price": new_price}})
-        logging.info(f"early-bird: '{ev.get('title')}' price {ev.get('price')} -> {new_price}")
-        sid = ev.get("altegio_service_id")
-        if sid and ALTEGIO_PARTNER_TOKEN:
-            try:
-                await _ensure_altegio_service_price_matches(int(sid), new_price, ev["id"], min_capacity=ev.get("spots") or 10)
-            except Exception as e:
-                logging.error(f"early-bird Altegio sync failed for {ev['id']}: {e}")
+        # Do not overwrite a concurrent form edit, cancellation or service move.
+        snapshot = {"id": ev["id"], "price": ev.get("price"),
+                    "base_price": ev.get("base_price"), "price_tiers": ev.get("price_tiers"),
+                    "altegio_service_id": ev.get("altegio_service_id"),
+                    "cancelled": {"$ne": True}, "archived": {"$ne": True}}
+        marked = await db.events.update_one(snapshot, {"$set": {
+            "price": new_price,
+            "altegio_price_sync_pending": True,
+            "altegio_price_sync_attempted_at": datetime.now(timezone.utc).isoformat(),
+        }})
+        if not marked.matched_count:
+            continue
+        snapshot["price"] = new_price
+        try:
+            sid = ev.get("altegio_service_id")
+            if not sid or not ALTEGIO_PARTNER_TOKEN:
+                raise HTTPException(status_code=503, detail="не налаштовано сервіс або доступ до Altegio для оновлення ціни")
+            # This endpoint returns an explicit result; the catalogue cache can
+            # fall back to stale data and cannot establish successful syncing.
+            result = await altegio_client.get_service_detail_result(int(sid))
+            if not result.get("ok") or not result.get("data"):
+                raise HTTPException(status_code=502, detail="не вдалося перевірити ціну сервісу Altegio")
+            service = result["data"]
+            expected = int(round(float(new_price)))
+            def price_matches(value):
+                try:
+                    return float(value.get("price_min")) == expected and float(value.get("price_max")) == expected
+                except (TypeError, ValueError):
+                    return False
+            if not price_matches(service):
+                if not await db.events.find_one(snapshot, {"_id": 0, "id": 1}):
+                    continue
+                await _ensure_altegio_service_price_matches(
+                    int(sid), new_price, ev["id"], min_capacity=ev.get("spots") or 10,
+                    expected_event_snapshot=snapshot,
+                )
+                result = await altegio_client.get_service_detail_result(int(sid))
+                if not result.get("ok") or not price_matches(result.get("data") or {}):
+                    raise HTTPException(status_code=502, detail="Altegio не підтвердив оновлену ціну; оновлення буде повторено")
+            await db.events.update_one(snapshot, {"$set": {
+                "altegio_price_sync_pending": False,
+                "altegio_price_sync_error": None,
+                "altegio_price_synced": float(expected),
+                "altegio_price_synced_at": datetime.now(timezone.utc).isoformat(),
+            }})
+        except Exception as e:
+            detail = str(e.detail if isinstance(e, HTTPException) else e)[:1000]
+            await db.events.update_one(snapshot, {"$set": {
+                "altegio_price_sync_pending": True, "altegio_price_sync_error": detail,
+            }})
+            logging.error(f"early-bird Altegio sync failed for {ev['id']}: {detail}")
 
 
 async def early_bird_tier_loop():
-    """Hourly background task advancing early-bird prices by date."""
+    """Check Kyiv price windows and retry pending updates every five minutes."""
     await asyncio.sleep(15)
     while True:
         try:
@@ -3075,7 +3130,7 @@ async def early_bird_tier_loop():
             break
         except Exception as e:
             logging.error(f"early-bird tier loop error: {e}")
-        await asyncio.sleep(3600)
+        await asyncio.sleep(300)
 
 async def _persist_event(event_data: EventCreate, settings, source_event_id: str = "", sync_external: bool = True) -> Event:
     """Insert one event into DB; optionally push to Google Calendar + Altegio.
@@ -6187,7 +6242,7 @@ class AltegioClient:
             logging.error(f"Altegio service detail error: {response.status_code} - {response.text[:200]}")
             return {"ok": False, "status_code": response.status_code, "data": None, "body": response.text[:1000]}
 
-    async def update_service_price_result(self, service_id: int, price: float, ensure_live: bool = True, min_capacity: Optional[int] = None):
+    async def update_service_price_result(self, service_id: int, price: float, ensure_live: bool = True, min_capacity: Optional[int] = None, expected_event_snapshot: Optional[dict] = None):
         """Update an Altegio service price (and, by default, make it live) via the
         full PATCH payload Altegio requires.
 
@@ -6237,6 +6292,8 @@ class AltegioClient:
 
         url = f"{self.base_url}/company/{self.company_id}/services/{int(service_id)}"
         async with httpx.AsyncClient(timeout=30.0) as client:
+            if expected_event_snapshot is not None and not await db.events.find_one(expected_event_snapshot, {"_id": 0, "id": 1}):
+                raise HTTPException(status_code=409, detail="подію змінено під час синхронізації ціни; застаріле оновлення пропущено")
             response = await client.patch(url, headers=self.get_v2_push_headers(), json=payload)
             if response.status_code in (200, 201):
                 data = response.json()
@@ -6319,11 +6376,16 @@ class AltegioClient:
         return self.get_v2_headers(self.push_user_token)
     
     def _calc_length_seconds(self, start_time: str, end_time: str) -> int:
-        """Calculate event length in seconds from HH:MM strings"""
+        """Altegio requires a duration divisible by 300 seconds.
+
+        Round up only the external duration so an event is never shortened.
+        The original start/end times stored in Poriadok remain unchanged.
+        """
         try:
             sh, sm = map(int, start_time.split(':'))
             eh, em = map(int, end_time.split(':'))
-            return max((eh * 60 + em - sh * 60 - sm) * 60, 3600)
+            length = max((eh * 60 + em - sh * 60 - sm) * 60, 3600)
+            return ((length + 299) // 300) * 300
         except:
             return 3600  # default 1 hour
 
