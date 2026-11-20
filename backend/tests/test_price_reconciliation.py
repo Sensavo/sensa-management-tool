@@ -65,10 +65,12 @@ def pricing(monkeypatch):
     rows = [event()]
     remote = {123: 650}
     writes = []
+    reads = []
     monkeypatch.setattr(server, "db", SimpleNamespace(events=Events(rows)))
     monkeypatch.setattr(server, "ALTEGIO_PARTNER_TOKEN", "isolated-test")
 
     async def detail(sid):
+        reads.append(sid)
         return {"ok": True, "data": {"price_min": remote[sid], "price_max": remote[sid]}}
 
     async def ensure(sid, price, *args, **kwargs):
@@ -78,7 +80,7 @@ def pricing(monkeypatch):
 
     monkeypatch.setattr(server.altegio_client, "get_service_detail_result", detail)
     monkeypatch.setattr(server, "_ensure_altegio_service_price_matches", ensure)
-    return SimpleNamespace(rows=rows, remote=remote, writes=writes, ensure=ensure)
+    return SimpleNamespace(rows=rows, remote=remote, writes=writes, reads=reads, ensure=ensure)
 
 
 def tick():
@@ -104,14 +106,21 @@ def test_failed_update_retries_after_restart_when_local_price_already_current(pr
     assert row["altegio_price_synced_at"]
 
 
-def test_remote_drift_is_repaired_even_without_a_local_price_change(pricing):
+def test_unchanged_nonpending_price_makes_no_remote_requests(pricing):
     pricing.rows[0]["price"] = 750
     pricing.remote[123] = 699
     tick()
-    assert pricing.remote[123] == 750
-    assert pricing.writes == [(123, 750)]
     tick()
-    assert len(pricing.writes) == 1  # fresh confirmation does not rewrite a matching price
+    assert not pricing.reads and not pricing.writes
+    assert pricing.remote[123] == 699  # no periodic catalogue inspection or overwrite
+
+
+def test_requests_stop_after_price_is_confirmed(pricing):
+    tick()
+    assert pricing.rows[0]["altegio_price_sync_pending"] is False
+    reads, writes = len(pricing.reads), len(pricing.writes)
+    tick()
+    assert len(pricing.reads) == reads and len(pricing.writes) == writes
 
 
 def test_success_response_without_confirmed_remote_price_stays_pending(pricing, monkeypatch):
@@ -239,6 +248,122 @@ def test_tier_expires_at_kyiv_midnight(monkeypatch):
     tiers = [{"price": 650, "until": "2026-10-23"}]
     assert server._effective_price(750, tiers) == 750
     assert server._effective_price(750, tiers, "2026-10-23") == 650
+
+
+def test_next_run_is_the_next_tier_deadline_not_a_polling_interval(pricing, monkeypatch):
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 11, 21, 12, tzinfo=tz)
+    monkeypatch.setattr(server, "datetime", FixedDateTime)
+    pricing.rows[0]["price_tiers"] = [{"price": 650, "until": "2026-11-23"}]
+    assert asyncio.run(server._next_early_bird_run_delay()) == 60 * 3600
+    pricing.rows[0]["altegio_price_sync_pending"] = True
+    assert asyncio.run(server._next_early_bird_run_delay()) == 300
+
+
+def test_no_deadline_or_pending_update_means_no_scheduled_check(pricing):
+    pricing.rows[0]["price"] = 750
+    assert asyncio.run(server._next_early_bird_run_delay()) is None
+
+
+def test_a_deadline_before_retry_time_wins(pricing, monkeypatch):
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 11, 21, 23, 58, tzinfo=tz)
+    monkeypatch.setattr(server, "datetime", FixedDateTime)
+    pricing.rows[0].update(price_tiers=[{"price": 650, "until": "2026-11-21"}], altegio_price_sync_pending=True)
+    assert asyncio.run(server._next_early_bird_run_delay()) == 120
+
+
+@pytest.mark.parametrize("change_during_scan", [False, True])
+def test_schedule_change_wakes_idle_worker_without_losing_notification(monkeypatch, change_during_scan):
+    async def run():
+        changed, first, second = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        monkeypatch.setattr(server, "early_bird_schedule_changed", changed)
+        calls = []
+        async def advance():
+            calls.append(1)
+            (first if len(calls) == 1 else second).set()
+        async def delay():
+            if change_during_scan and len(calls) == 1:
+                changed.set()  # edit between scan and wait must not disappear
+            return None
+        async def start_without_delay(seconds):
+            assert seconds == 15
+        monkeypatch.setattr(server, "_advance_early_bird_prices", advance)
+        monkeypatch.setattr(server, "_next_early_bird_run_delay", delay)
+        monkeypatch.setattr(server.asyncio, "sleep", start_without_delay)
+        task = asyncio.create_task(server.early_bird_tier_loop())
+        try:
+            await asyncio.wait_for(first.wait(), timeout=1)
+            if not change_during_scan:
+                assert len(calls) == 1
+                changed.set()
+            await asyncio.wait_for(second.wait(), timeout=1)
+            assert len(calls) == 2
+        finally:
+            task.cancel()
+            await task
+    asyncio.run(run())
+
+
+def test_failed_creation_remains_pending_and_wakes_scheduler(pricing, monkeypatch):
+    pricing.rows.clear()
+    changed = asyncio.Event()
+    monkeypatch.setattr(server, "early_bird_schedule_changed", changed)
+    async def insert(row):
+        pricing.rows.append(copy.deepcopy(row))
+    async def failed_sync(event):
+        return {"altegio_ok": False, "altegio_error": "temporary failure"}
+    monkeypatch.setattr(server.db.events, "insert_one", insert, raising=False)
+    monkeypatch.setattr(server, "_sync_event_to_external", failed_sync)
+    for name in ("calculate_reminder_dates", "calculate_smm_dates", "calculate_marketing_dates"):
+        monkeypatch.setattr(server, name, lambda *args, **kwargs: {})
+    payload = server.EventCreate(title="Ігри розуму", date="2027-01-20", price=750,
+                                 price_tiers=[{"price": 650, "until": "2027-01-10"}])
+    created = asyncio.run(server._persist_event(payload, SimpleNamespace(reminder_types=[])))
+    assert created.altegio_price_sync_pending is True
+    assert pricing.rows[0]["altegio_price_sync_pending"] is True
+    assert changed.is_set()
+    assert asyncio.run(server._next_early_bird_run_delay()) == 300
+
+
+def test_tier_edit_queues_confirmation_and_wakes_scheduler(pricing, monkeypatch):
+    changed = asyncio.Event()
+    monkeypatch.setattr(server, "early_bird_schedule_changed", changed)
+    result = asyncio.run(server.update_event("price-test", server.EventUpdate(
+        price_tiers=[{"price": 600, "until": "2027-01-10"}],
+    )))
+    assert result["price"] == 600
+    assert result["altegio_price_sync_pending"] is True
+    assert changed.is_set()
+    tick()
+    assert pricing.remote[123] == 600
+    assert pricing.rows[0]["altegio_price_sync_pending"] is False
+
+
+def test_restoring_event_wakes_worker_and_applies_overdue_price(pricing, monkeypatch):
+    pricing.rows[0].update(cancelled=True, date="2027-01-20")
+    changed = asyncio.Event()
+    monkeypatch.setattr(server, "early_bird_schedule_changed", changed)
+    monkeypatch.setattr(server, "ALTEGIO_PARTNER_TOKEN", "")
+    monkeypatch.setattr(server, "_actor_from_request", lambda request: "isolated-test")
+    monkeypatch.setattr(server, "_notify_team", lambda *args: None)
+    async def settings():
+        return SimpleNamespace(reminder_types=[])
+    monkeypatch.setattr(server, "get_settings", settings)
+    for name in ("calculate_reminder_dates", "calculate_smm_dates"):
+        monkeypatch.setattr(server, name, lambda *args, **kwargs: {})
+    assert asyncio.run(server._next_early_bird_run_delay()) is None
+    restored = asyncio.run(server.patch_event("price-test", {"cancelled": False}, None))
+    assert restored["cancelled"] is False
+    assert changed.is_set() and restored["altegio_price_sync_pending"] is True
+    monkeypatch.setattr(server, "ALTEGIO_PARTNER_TOKEN", "isolated-test")
+    tick()
+    assert pricing.rows[0]["price"] == pricing.remote[123] == 750
+    assert asyncio.run(server._next_early_bird_run_delay()) is None
 
 
 def test_shibari_duration_payloads_are_valid_for_both_create_and_update(monkeypatch):

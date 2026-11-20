@@ -60,6 +60,7 @@ ALTEGIO_DEFAULT_STAFF_ID = int(os.environ.get("ALTEGIO_DEFAULT_STAFF_ID", "0"))
 
 # Background task for Altegio auto-sync
 altegio_sync_task = None
+early_bird_schedule_changed = asyncio.Event()
 
 # Telegram notifications
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -3048,12 +3049,7 @@ def _apply_pricing(event_dict: dict) -> Optional[float]:
 
 
 async def _advance_early_bird_prices():
-    """Reconcile active tier prices, including previously failed remote writes.
-
-    Local price equality is not evidence of Altegio equality. Recheck the actual
-    service every pass and keep failures pending until a fresh read confirms it.
-    Existing bookings retain their paid price; only the service price changes.
-    """
+    """Sync a price transition or retry an explicitly pending update only."""
     today = datetime.now(ZoneInfo("Europe/Kyiv")).strftime("%Y-%m-%d")
     events = await db.events.find(
         {"$or": [{"price_tiers.0": {"$exists": True}}, {"altegio_price_sync_pending": True}],
@@ -3067,6 +3063,8 @@ async def _advance_early_bird_prices():
         new_price = _effective_price(base, ev.get("price_tiers") or [], today)
         if new_price is None:
             continue
+        if float(ev.get("price") or 0) == float(new_price) and not ev.get("altegio_price_sync_pending"):
+            continue  # no transition or unfinished update: no remote request
         # Do not overwrite a concurrent form edit, cancellation or service move.
         snapshot = {"id": ev["id"], "price": ev.get("price"),
                     "base_price": ev.get("base_price"), "price_tiers": ev.get("price_tiers"),
@@ -3120,17 +3118,53 @@ async def _advance_early_bird_prices():
             logging.error(f"early-bird Altegio sync failed for {ev['id']}: {detail}")
 
 
+async def _next_early_bird_run_delay() -> Optional[float]:
+    """Sleep until the next Kyiv deadline, or retry only unfinished work."""
+    now = datetime.now(ZoneInfo("Europe/Kyiv"))
+    events = await db.events.find(
+        {"$or": [{"price_tiers.0": {"$exists": True}}, {"altegio_price_sync_pending": True}],
+         "cancelled": {"$ne": True}, "archived": {"$ne": True}},
+        {"_id": 0, "price_tiers": 1, "altegio_price_sync_pending": 1},
+    ).to_list(1000)
+    delays = []
+    for ev in events:
+        if ev.get("altegio_price_sync_pending"):
+            delays.append(300.0)
+        for tier in ev.get("price_tiers") or []:
+            try:
+                # `until` is inclusive. Timestamp subtraction respects DST.
+                boundary = datetime.strptime(str(tier.get("until") or "")[:10], "%Y-%m-%d").replace(tzinfo=now.tzinfo) + timedelta(days=1)
+            except ValueError:
+                continue
+            seconds = boundary.timestamp() - now.timestamp()
+            if seconds > 0:
+                delays.append(seconds)
+    return min(delays) if delays else None
+
+
 async def early_bird_tier_loop():
-    """Check Kyiv price windows and retry pending updates every five minutes."""
+    """Wake on a tier deadline, a configuration change, or a failed update."""
     await asyncio.sleep(15)
     while True:
+        # Clear before reading state so a change during processing is not lost.
+        early_bird_schedule_changed.clear()
         try:
             await _advance_early_bird_prices()
+            delay = await _next_early_bird_run_delay()
         except asyncio.CancelledError:
             break
         except Exception as e:
             logging.error(f"early-bird tier loop error: {e}")
-        await asyncio.sleep(300)
+            delay = 300.0  # database/job failure, rather than healthy-price polling
+        try:
+            if delay is None:
+                await early_bird_schedule_changed.wait()
+            else:
+                await asyncio.wait_for(early_bird_schedule_changed.wait(), timeout=delay)
+        except asyncio.TimeoutError:
+            pass
+        except asyncio.CancelledError:
+            break
 
 async def _persist_event(event_data: EventCreate, settings, source_event_id: str = "", sync_external: bool = True) -> Event:
     """Insert one event into DB; optionally push to Google Calendar + Altegio.
@@ -3151,6 +3185,9 @@ async def _persist_event(event_data: EventCreate, settings, source_event_id: str
         payload["source_event_id"] = source_event_id
     # Early-bird: keep regular price in base_price, set price to today's effective.
     _apply_pricing(payload)
+    # Creation already stores today's effective price. Explicitly queue its
+    # confirmation so a failed initial external sync is not mistaken for idle.
+    payload["altegio_price_sync_pending"] = bool(payload.get("price_tiers"))
 
     event = Event(
         **payload,
@@ -3184,8 +3221,10 @@ async def _persist_event(event_data: EventCreate, settings, source_event_id: str
             await db.events.update_one({"id": event.id}, {"$set": {"altegio_warning": generic}})
         updated = await db.events.find_one({"id": event.id}, {"_id": 0})
         if updated:
+            early_bird_schedule_changed.set()
             return Event(**updated)
 
+    early_bird_schedule_changed.set()
     return event
 
 
@@ -3671,7 +3710,12 @@ async def update_event(event_id: str, event_data: EventUpdate):
             logging.error(f"Failed to update Google Calendar event {gcal_id}: {e}")
             raise HTTPException(status_code=502, detail="не вдалося оновити подію в Google Calendar — локальну подію не змінено")
     
+    pricing_changed = "price" in update_dict or "price_tiers" in update_dict
+    if pricing_changed and (existing.get("price_tiers") or merged.get("price_tiers") or existing.get("altegio_price_sync_pending")):
+        update_dict["altegio_price_sync_pending"] = True
     await db.events.update_one({"id": event_id}, {"$set": update_dict})
+    if pricing_changed:
+        early_bird_schedule_changed.set()
     
     updated = await db.events.find_one({"id": event_id}, {"_id": 0})
     
@@ -3930,6 +3974,8 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
     # Handle restoration
     elif event_data.get("cancelled") == False:
         update_dict["cancelled"] = False
+        if existing.get("price_tiers"):
+            update_dict["altegio_price_sync_pending"] = True
         update_dict["cancellation_pending"] = False
         update_dict["cancellation_manager_confirmed"] = False
         update_dict["cancellation_confirmed_at"] = None
@@ -3984,6 +4030,7 @@ async def patch_event(event_id: str, event_data: dict, request: Request):
     
     if update_dict:
         await db.events.update_one({"id": event_id}, {"$set": update_dict})
+        early_bird_schedule_changed.set()
     
     updated = await db.events.find_one({"id": event_id}, {"_id": 0})
     actor = _actor_from_request(request)
@@ -4084,6 +4131,7 @@ async def cancel_event_series(event_id: str, request: Request):
     # One set of follow-up tasks for the whole series (master event used as
     # the anchor; suffix indicates additional instances).
     if cancelled_ids:
+        early_bird_schedule_changed.set()
         anchor = next((t for t in targets if t["id"] == cancelled_ids[0]), targets[0])
         try:
             await _create_cancellation_tasks(anchor, series_count=len(cancelled_ids))
