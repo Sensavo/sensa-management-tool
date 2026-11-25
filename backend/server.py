@@ -2833,8 +2833,17 @@ async def _sync_altegio_events_to_local(altegio_events: list) -> tuple[int, list
     for activity_id, (seats, paid_seats) in (paid_map or {}).items():
         if activity_id in handled_activity_ids:
             continue
+        # Older rows stored the id as a number, newer ones as a string.
+        id_variants = [activity_id]
+        try:
+            id_variants.append(int(activity_id))
+        except (TypeError, ValueError):
+            pass
         local_event = await db.events.find_one(
-            {"$or": [{"altegio_id": activity_id}, {"altegio_activity_id": activity_id}]},
+            {"$or": [
+                {"altegio_id": {"$in": id_variants}},
+                {"altegio_activity_id": {"$in": id_variants}},
+            ]},
             {"_id": 0, "id": 1, "title": 1, "altegio_booked_count": 1, "altegio_paid_count": 1},
         )
         if not local_event:
