@@ -9061,6 +9061,7 @@ const DesktopDashboard = () => {
                         <span className="font-medium">0/{selectedEvent.spots || 10}</span>
                       )}
                     </div>
+                    <TaskDraftsSection eventId={selectedEvent.id} />
                     {selectedEvent.altegio_paid_count !== null && selectedEvent.altegio_paid_count !== undefined && (
                       <div className="flex justify-between items-center py-2 border-b border-[#E8E5DC]">
                         <span className="text-secondary text-sm">оплачено</span>
@@ -9772,6 +9773,54 @@ const AltegioHealthSection = ({ mobile = false, mui = false }) => {
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+const TaskDraftsSection = ({ eventId }) => {
+  const [runs, setRuns] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const { refreshEvents } = useApp();
+
+  const load = useCallback(async () => {
+    if (!eventId) return;
+    try {
+      const r = await axios.get(`${API}/task-runs`, { params: { event_id: eventId, status: "draft" } });
+      setRuns(r.data.runs || []);
+    } catch { setRuns([]); }
+  }, [eventId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const decide = async (run, decision) => {
+    setBusy(run.id);
+    try {
+      const r = await axios.post(`${API}/task-runs/${run.id}/decide`, { decision });
+      toast.success(r.data.message || "готово");
+      await load();
+      if (decision === "ok") refreshEvents?.();
+    } catch (e) { toast.error(e?.response?.data?.detail || "не вдалося"); }
+    finally { setBusy(null); }
+  };
+
+  if (!runs || runs.length === 0) return null;
+
+  return (
+    <div className="py-2 border-b border-[#E8E5DC]">
+      <span className="text-secondary text-sm block mb-2">чернетки від AI</span>
+      <div className="space-y-2">
+        {runs.map(run => (
+          <div key={run.id} className="rounded-lg border border-[#E8E5DC] p-3">
+            <p className="text-xs text-secondary mb-1">{run.task_name}</p>
+            <p className="text-sm whitespace-pre-line">{run.output}</p>
+            <div className="flex gap-3 mt-2">
+              <button className="text-xs underline" disabled={busy === run.id} onClick={() => decide(run, "ok")}>ок, беру</button>
+              <button className="text-xs underline text-secondary" disabled={busy === run.id} onClick={() => decide(run, "redo")}>переробити</button>
+              <button className="text-xs underline text-secondary" disabled={busy === run.id} onClick={() => decide(run, "mine")}>зроблю сам</button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
@@ -11063,6 +11112,7 @@ const EventsDesktopExpanded = () => {
                         <span className="font-medium">0/{selectedEvent.spots || 10}</span>
                       )}
                     </div>
+                    <TaskDraftsSection eventId={selectedEvent.id} />
                     {selectedEvent.altegio_paid_count !== null && selectedEvent.altegio_paid_count !== undefined && (
                       <div className="flex justify-between items-center py-2 border-b border-[#E8E5DC]">
                         <span className="text-secondary text-sm">оплачено</span>

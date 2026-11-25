@@ -27,13 +27,16 @@ from zoneinfo import ZoneInfo
 import html
 
 try:
-    from telegram import BotCommand, ReplyKeyboardMarkup, Update
-    from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+    from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
+    from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 except Exception:  # pragma: no cover - keeps the API alive when TG deps are absent
     BotCommand = None
+    InlineKeyboardButton = None
+    InlineKeyboardMarkup = None
     ReplyKeyboardMarkup = None
     Update = None
     Application = None
+    CallbackQueryHandler = None
     CommandHandler = None
     ContextTypes = None
     MessageHandler = None
@@ -295,6 +298,8 @@ async def start_telegram_bot():
         telegram_app.add_handler(CommandHandler("mute", telegram_mute_command))
         telegram_app.add_handler(CommandHandler("unmute", telegram_unmute_command))
         telegram_app.add_handler(CommandHandler("unlink", telegram_unlink_command))
+        if CallbackQueryHandler:
+            telegram_app.add_handler(CallbackQueryHandler(telegram_task_run_callback, pattern=r"^run:"))
         telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, telegram_text_command))
 
         await telegram_app.initialize()
@@ -484,6 +489,7 @@ async def lifespan(app: FastAPI):
     telegram_overdue_cleanup_task = asyncio.create_task(telegram_overdue_cleanup_loop())
     asyncio.create_task(early_bird_tier_loop())
     asyncio.create_task(unpaid_bookings_loop())
+    asyncio.create_task(ai_executor_loop())
 
     yield
     
@@ -693,6 +699,9 @@ class Settings(BaseModel):
     # Minutes an unpaid online booking may hold a seat before Poriadok frees it.
     # 0 = only warn. Bookings the admin entered by hand are never touched.
     unpaid_release_minutes: int = 60
+    # AI-виконавець сам генерує чернетки за розкладом і пише в телеграм.
+    # Вмикається свідомо, коли людина подивилась на якість текстів.
+    ai_executor_enabled: bool = False
 
 class TaskCompletionRequest(BaseModel):
     event_id: str
@@ -1019,6 +1028,7 @@ def _effective_task_definitions() -> list:
             if col:
                 eff["column"] = col
             eff.update(t)
+            eff.setdefault("executor", DEFAULT_TASK_EXECUTORS.get(t["id"], EXECUTOR_HUMAN))
             if ov:
                 eff.update(ov.get("patch") or {})
             result.append(eff)
@@ -1027,7 +1037,7 @@ def _effective_task_definitions() -> list:
         if tid in seen_ids or not ov.get("is_new") or ov.get("is_deleted"):
             continue
         full = ov.get("full_definition") or {}
-        result.append({"frequency": "event", **full, "id": tid, "is_custom": True})
+        result.append({"frequency": "event", "executor": EXECUTOR_HUMAN, **full, "id": tid, "is_custom": True})
     return result
 
 def get_tasks_for_column(column: str) -> list:
@@ -3516,6 +3526,349 @@ async def unpaid_bookings_loop():
         except Exception as e:
             logging.error(f"unpaid bookings loop error: {e}")
         await asyncio.sleep(15 * 60)
+
+
+# ==================== AI-ВИКОНАВЕЦЬ ====================
+#
+# Кожне визначення задачі має виконавця:
+#   human        — робить людина, як було завжди
+#   ai_approval  — AI готує чернетку, людина підтверджує кнопкою
+#   ai           — AI робить і закриває задачу сам
+#
+# Порядок генерує текст, а не публікує його: публікація лишається рішенням
+# людини, доки виконавець не переведений у "ai" свідомо.
+
+EXECUTOR_HUMAN = "human"
+EXECUTOR_AI_APPROVAL = "ai_approval"
+EXECUTOR_AI = "ai"
+EXECUTOR_CHOICES = (EXECUTOR_HUMAN, EXECUTOR_AI_APPROVAL, EXECUTOR_AI)
+
+# Задачі, де результат — текст, тож AI має що віддати вже сьогодні.
+DEFAULT_TASK_EXECUTORS = {
+    "smm_text_announce": EXECUTOR_AI_APPROVAL,
+    "smm_post_announce": EXECUTOR_AI_APPROVAL,
+    "smm_storytelling_prep": EXECUTOR_AI_APPROVAL,
+    "smm_storytelling": EXECUTOR_AI_APPROVAL,
+    "smm_storytelling_60": EXECUTOR_AI_APPROVAL,
+    "smm_extra_storytelling": EXECUTOR_AI_APPROVAL,
+    "smm_threads_warmup": EXECUTOR_AI_APPROVAL,
+    "smm_remind_story": EXECUTOR_AI_APPROVAL,
+    "smm_share_tg": EXECUTOR_AI_APPROVAL,
+    "mgmt_remind_participants": EXECUTOR_AI_APPROVAL,
+    "mgmt_lucky_ticket": EXECUTOR_AI_APPROVAL,
+    "mktg_personal_invites": EXECUTOR_AI_APPROVAL,
+}
+
+# Що саме має зʼявитися на виході. Без цього модель пише «пост про подію».
+TASK_BRIEFS = {
+    "smm_text_announce": "текст анонсу події для інстаграму: 120–180 слів, перший рядок чіпляє конкретикою, далі що відбувається і для кого, в кінці дата, час, ціна й заклик забронювати",
+    "smm_post_announce": "фінальний текст поста-анонсу з розбивкою на абзаци і 5–8 доречних хештегів окремим рядком",
+    "smm_storytelling_prep": "три опорні історії для сторітеллінгу навколо події: про що саме розповісти, з яким кадром і якою думкою в кінці. по 2–3 речення на кожну",
+    "smm_storytelling": "серія з 4–5 сторіс: для кожної — що на кадрі і який текст накладаємо. короткі репліки, не абзаци",
+    "smm_storytelling_60": "серія з 3–4 сторіс, які відповідають на вагання «чи мені туди», коли половина місць ще вільна",
+    "smm_extra_storytelling": "дві додаткові сторіс під регулярну подію, які не повторюють попередній анонс",
+    "smm_threads_warmup": "три варіанти допису в threads на тему події: думка або питання, що провокує відповідь, без прямої реклами",
+    "smm_remind_story": "нагадування в сторіс за день до події: два короткі екрани тексту й чіткий заклик",
+    "smm_share_tg": "короткий текст для телеграм-каналу з лінком на бронювання: 40–70 слів",
+    "mgmt_remind_participants": "повідомлення учасникам за день до події: коли, де, що взяти, як дістатися. тепло й по суті, без зайвого",
+    "mgmt_lucky_ticket": "текст «щасливого квиточка» в чат спільноти: одне місце за спеціальною ціною, з дедлайном",
+    "mktg_personal_invites": "шаблон особистого запрошення в дірект: три варіанти під різних людей, кожен до 50 слів, без відчуття розсилки",
+}
+
+SENSA_VOICE = """ти пишеш тексти для sensa — студії подій у львові (вулиця лазнева, 3).
+
+голос: спокійний, прямий, конкретний, живий, з характером. українською, без суржику й російської.
+у брендовій комунікації пишемо малими літерами. акценти — через масштаб думки, не через капс.
+довге тире оточуємо вузькими пробілами: «слово — слово» (U+202F). апостроф — ʼ. лапки — «».
+
+що робимо:
+— говоримо про те, що реально відбувається на події: що люди роблять, з ким, у якому темпі
+— конкретика замість атмосфери: сцена, дія, деталь
+— іронія доречна там, де знімає пафос
+— лишаємо людині простір вирішити самій
+
+чого не робимо ніколи:
+— не пишемо мотиваційний пост і не вдаємо терапевта
+— жодної езотерики: чакри, вібрації, енергії, всесвіт, потік, «душа знає»
+— не робимо емоцію персонажем: тіло не «просить», система не «каже», мозок не «памʼятає»
+— не вживаємо ритми «X — це не Y, а Z», «це не X. це Y», «не для X. для Y»
+— не закінчуємо punchline-ом із 2–5 слів заради ефекту
+— не пишемо речень, які пасують до будь-якої іншої події
+— без кліше: «важливо помітити», «дай собі», «побути з емоцією», «ти не зламаний»
+
+пиши тільки сам текст, без пояснень, без заголовків на кшталт «ось варіант»."""
+
+
+def _task_executor(task_def: dict) -> str:
+    value = (task_def or {}).get("executor")
+    if value in EXECUTOR_CHOICES:
+        return value
+    return DEFAULT_TASK_EXECUTORS.get((task_def or {}).get("id"), EXECUTOR_HUMAN)
+
+
+async def _llm_text(system_prompt: str, user_prompt: str, max_tokens: int = 1200) -> Optional[str]:
+    """One text completion. Claude when a key is configured, otherwise OpenAI."""
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    if anthropic_key:
+        try:
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                response = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": anthropic_key,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5-5"),
+                        "max_tokens": max_tokens,
+                        "system": system_prompt,
+                        "messages": [{"role": "user", "content": user_prompt}],
+                    },
+                )
+            if response.status_code == 200:
+                blocks = response.json().get("content") or []
+                text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+                if text.strip():
+                    return text.strip()
+            logging.error(f"Anthropic error {response.status_code}: {response.text[:300]}")
+        except Exception as e:
+            logging.error(f"Anthropic call failed: {e}")
+
+    openai_key = os.environ.get("EMERGENT_LLM_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not openai_key:
+        return None
+    try:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=openai_key)
+        completion = await client.chat.completions.create(
+            model="gpt-4o",
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        return (completion.choices[0].message.content or "").strip() or None
+    except Exception as e:
+        logging.error(f"OpenAI call failed: {e}")
+        return None
+
+
+def _event_brief(event: dict) -> str:
+    booked = event.get("altegio_booked_count")
+    paid = event.get("altegio_paid_count")
+    spots = event.get("spots") or 10
+    lines = [
+        f"подія: {event.get('title') or ''}",
+        f"дата: {_format_task_date((event.get('date') or '')[:10])}",
+    ]
+    if event.get("start_time"):
+        time_part = event["start_time"]
+        if event.get("end_time"):
+            time_part += f"–{event['end_time']}"
+        lines.append(f"час: {time_part}")
+    if event.get("price"):
+        lines.append(f"ціна: {int(float(event['price']))} ₴")
+    lines.append(f"місць: {spots}")
+    if booked is not None:
+        lines.append(f"вже записалось: {booked}" + (f", оплатило {paid}" if paid is not None else ""))
+    link = _altegio_activity_url(event.get("altegio_id") or event.get("altegio_activity_id"))
+    if link:
+        lines.append(f"лінк на бронювання: {link}")
+    if event.get("description"):
+        lines.append(f"опис від майстра:\n{event['description']}")
+    return "\n".join(lines)
+
+
+async def _generate_task_draft(event: dict, task_def: dict, feedback: str = "") -> Optional[str]:
+    brief = TASK_BRIEFS.get(task_def.get("id")) or task_def.get("ai_prompt") or task_def.get("name") or ""
+    parts = [f"задача: {task_def.get('name') or ''}", f"що потрібно на виході: {brief}", "", _event_brief(event)]
+    if feedback:
+        parts += ["", f"попередній варіант не підійшов. що виправити: {feedback}"]
+    return await _llm_text(SENSA_VOICE, "\n".join(parts))
+
+
+async def _complete_event_task(event_id: str, column: str, task_id: str) -> None:
+    field = COLUMN_TO_COMPLETED_FIELD.get(column)
+    if not field:
+        return
+    await db.events.update_one(
+        {"id": event_id},
+        {"$set": {f"{field}.{task_id}": datetime.now(timezone.utc).isoformat()}},
+    )
+
+
+def _task_run_keyboard(run_id: str):
+    if not InlineKeyboardMarkup or not InlineKeyboardButton:
+        return None
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("ок, беру", callback_data=f"run:ok:{run_id}"),
+        InlineKeyboardButton("переробити", callback_data=f"run:redo:{run_id}"),
+        InlineKeyboardButton("зроблю сам", callback_data=f"run:mine:{run_id}"),
+    ]])
+
+
+async def _notify_task_run(run: dict, event: dict, task_def: dict) -> None:
+    owner = _event_task_owner(run.get("column") or "management", {})
+    text = (
+        f"чернетка готова—{_html_escape(task_def.get('name') or '')}\n"
+        f"{_html_escape(event.get('title') or '')} {_format_task_date((event.get('date') or '')[:10])}\n\n"
+        f"{_html_escape(run.get('output') or '')}"
+    )
+    if telegram_app:
+        asyncio.create_task(send_telegram(owner, text, reply_markup=_task_run_keyboard(run["id"])))
+
+
+async def _create_task_run(event: dict, column: str, task_id: str, task_def: dict, feedback: str = "") -> Optional[dict]:
+    output = await _generate_task_draft(event, task_def, feedback=feedback)
+    if not output:
+        return None
+    run = {
+        "id": str(uuid.uuid4()),
+        "event_id": event.get("id"),
+        "event_title": event.get("title"),
+        "event_date": (event.get("date") or "")[:10],
+        "column": column,
+        "task_id": task_id,
+        "task_name": task_def.get("name"),
+        "executor": _task_executor(task_def),
+        "status": "draft",
+        "output": output,
+        "feedback": feedback or None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "decided_at": None,
+        "decided_by": None,
+    }
+    await db.task_runs.insert_one(dict(run))
+    return run
+
+
+async def _run_due_ai_tasks(limit: int = 12, notify: bool = True) -> dict:
+    """Generate what the AI owes today: due, unfinished, non-human tasks."""
+    today = _today_kyiv()
+    events = await db.events.find(
+        {"cancelled": {"$ne": True}, "archived": {"$ne": True}, "date": {"$gte": today}},
+        {"_id": 0},
+    ).to_list(500)
+
+    created, auto_done = [], []
+    for event in events:
+        for column, field in COLUMN_TO_FIELD.items():
+            tasks = event.get(field) or {}
+            if not isinstance(tasks, dict):
+                continue
+            completed = event.get(COLUMN_TO_COMPLETED_FIELD[column]) or {}
+            for task_id, due_date in tasks.items():
+                if len(created) + len(auto_done) >= limit:
+                    return {"created": created, "auto_done": auto_done, "limit_reached": True}
+                if task_id in completed or (due_date or "") > today:
+                    continue
+                task_def = _task_def_for_event_task(column, task_id)
+                executor = _task_executor(task_def)
+                if executor == EXECUTOR_HUMAN:
+                    continue
+                existing = await db.task_runs.find_one(
+                    {"event_id": event.get("id"), "task_id": task_id, "status": {"$in": ["draft", "approved", "done"]}},
+                    {"_id": 0, "id": 1},
+                )
+                if existing:
+                    continue
+                run = await _create_task_run(event, column, task_id, task_def)
+                if not run:
+                    continue
+                if executor == EXECUTOR_AI:
+                    await db.task_runs.update_one(
+                        {"id": run["id"]},
+                        {"$set": {"status": "done", "decided_at": datetime.now(timezone.utc).isoformat(), "decided_by": "ai"}},
+                    )
+                    await _complete_event_task(event["id"], column, task_id)
+                    auto_done.append(run["id"])
+                else:
+                    if notify:
+                        await _notify_task_run(run, event, task_def)
+                    created.append(run["id"])
+    return {"created": created, "auto_done": auto_done, "limit_reached": False}
+
+
+async def _decide_task_run(run_id: str, decision: str, decided_by: str = "") -> dict:
+    """ok — беремо чернетку і закриваємо задачу; redo — переробити;
+    mine — людина робить сама, задача лишається відкритою."""
+    run = await db.task_runs.find_one({"id": run_id}, {"_id": 0})
+    if not run:
+        return {"ok": False, "message": "чернетку не знайдено"}
+    if run.get("status") not in ("draft", "rejected"):
+        return {"ok": False, "message": "цю чернетку вже закрито"}
+
+    now = datetime.now(timezone.utc).isoformat()
+    if decision == "ok":
+        await db.task_runs.update_one(
+            {"id": run_id},
+            {"$set": {"status": "approved", "decided_at": now, "decided_by": decided_by or "human"}},
+        )
+        await _complete_event_task(run["event_id"], run["column"], run["task_id"])
+        return {"ok": True, "message": f"узяв у роботу—{run.get('task_name') or 'задача'} закрита"}
+
+    if decision == "mine":
+        await db.task_runs.update_one(
+            {"id": run_id},
+            {"$set": {"status": "declined", "decided_at": now, "decided_by": decided_by or "human"}},
+        )
+        return {"ok": True, "message": "добре, задача лишається за тобою"}
+
+    if decision == "redo":
+        await db.task_runs.update_one({"id": run_id}, {"$set": {"status": "rejected", "decided_at": now, "decided_by": decided_by or "human"}})
+        event = await db.events.find_one({"id": run["event_id"]}, {"_id": 0})
+        if not event:
+            return {"ok": False, "message": "подію не знайдено"}
+        task_def = _task_def_for_event_task(run["column"], run["task_id"])
+        fresh = await _create_task_run(event, run["column"], run["task_id"], task_def, feedback="попередній варіант відхилено, зроби інакше")
+        if not fresh:
+            return {"ok": False, "message": "не вдалося згенерувати новий варіант"}
+        await _notify_task_run(fresh, event, task_def)
+        return {"ok": True, "message": "переробляю—новий варіант надіслав", "run_id": fresh["id"]}
+
+    return {"ok": False, "message": "невідома дія"}
+
+
+async def telegram_task_run_callback(update, context):
+    """Кнопки під чернеткою: ок / переробити / зроблю сам."""
+    query = update.callback_query
+    if not query:
+        return
+    parts = (query.data or "").split(":")
+    if len(parts) != 3 or parts[0] != "run":
+        await query.answer()
+        return
+    _, decision, run_id = parts
+    chat_doc = await db.user_settings.find_one({"telegram_chat_id": query.message.chat.id}, {"_id": 0}) if query.message else None
+    result = await _decide_task_run(run_id, decision, decided_by=(chat_doc or {}).get("id") or "telegram")
+    await query.answer(result.get("message") or "")
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+        if result.get("ok"):
+            await query.message.reply_text(result.get("message") or "готово")
+    except Exception as e:
+        logging.error(f"task run callback edit failed: {e}")
+
+
+async def ai_executor_loop():
+    """Every 20 minutes: AI does its share of today's tasks."""
+    await asyncio.sleep(90)
+    while True:
+        try:
+            settings = await get_settings()
+            if not getattr(settings, "ai_executor_enabled", False):
+                await asyncio.sleep(20 * 60)
+                continue
+            result = await _run_due_ai_tasks()
+            if result.get("created") or result.get("auto_done"):
+                logging.info(f"AI executor: {len(result['created'])} чернеток, {len(result['auto_done'])} закрито")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logging.error(f"AI executor loop error: {e}")
+        await asyncio.sleep(20 * 60)
 
 
 async def early_bird_tier_loop():
@@ -7065,6 +7418,55 @@ async def get_altegio_records(date_from: str = None, date_to: str = None):
     except Exception as e:
         logging.error(f"Failed to fetch Altegio records: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+class TaskRunDecision(BaseModel):
+    decision: str  # ok | redo | mine
+
+
+@api_router.get("/task-runs")
+async def list_task_runs(event_id: Optional[str] = None, status: Optional[str] = None, limit: int = 100):
+    """Чернетки, які згенерував AI-виконавець."""
+    query: dict = {}
+    if event_id:
+        query["event_id"] = event_id
+    if status:
+        query["status"] = {"$in": [s.strip() for s in status.split(",") if s.strip()]}
+    runs = await db.task_runs.find(query, {"_id": 0}).sort("created_at", -1).to_list(min(limit, 500))
+    return {"count": len(runs), "runs": runs}
+
+
+@api_router.post("/task-runs/{run_id}/decide")
+async def decide_task_run(run_id: str, payload: TaskRunDecision, request: Request):
+    result = await _decide_task_run(run_id, payload.decision, decided_by=_actor_from_request(request) or "app")
+    if not result.get("ok"):
+        raise HTTPException(status_code=409, detail=result.get("message") or "не вдалося")
+    return result
+
+
+@api_router.post("/events/{event_id}/tasks/{column}/{task_id}/draft")
+async def draft_task_now(event_id: str, column: str, task_id: str, notify: bool = True):
+    """Згенерувати чернетку просто зараз, не чекаючи на фонову перевірку."""
+    if column not in COLUMN_TO_FIELD:
+        raise HTTPException(status_code=400, detail="невідома колонка")
+    event = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="подію не знайдено")
+    task_def = _task_def_for_event_task(column, task_id)
+    if not task_def:
+        raise HTTPException(status_code=404, detail="задачу не знайдено")
+    run = await _create_task_run(event, column, task_id, task_def)
+    if not run:
+        raise HTTPException(status_code=502, detail="модель не відповіла—перевір ключ")
+    if notify:
+        await _notify_task_run(run, event, task_def)
+    return run
+
+
+@api_router.post("/task-runs/run-due")
+async def run_due_tasks_now(notify: bool = True):
+    """Прогнати чергу AI-виконавця вручну."""
+    return await _run_due_ai_tasks(notify=notify)
+
 
 @api_router.get("/altegio/unpaid")
 async def list_unpaid_bookings():
