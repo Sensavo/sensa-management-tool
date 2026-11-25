@@ -576,7 +576,8 @@ DEFAULT_ALTEGIO_SERVICE_MAPPINGS = {
     "kadl": 13170797,
     "kadli_medium": 13170797,  # legacy alias; KADL is now a single active service
     "acro_yoga": 13294345,
-    "body_art": 12743239,
+    "body_art": 12743239,          # Body Art Light
+    "body_art_premium": 13146078,  # Body Art Premium
 }
 
 class ReminderType(BaseModel):
@@ -3059,15 +3060,33 @@ async def _altegio_match_service_by_title(title: str) -> Optional[int]:
 
 
 
+# Words that split one event family into differently priced products. Binding
+# «Боді-Арт PREMIUM» to the Light service silently rewrote Light's price to the
+# Premium one, so a variant has to be part of the identity, not a detail.
+_SERVICE_VARIANTS = {
+    "premium": ("premium", "преміум", "премиум", "преміальн"),
+    "light": ("light", "лайт", "лайт"),
+}
+
+
+def _title_variant(title: str) -> Optional[str]:
+    title_norm = _normalize_for_match(title)
+    for variant, markers in _SERVICE_VARIANTS.items():
+        if any(marker in title_norm for marker in markers):
+            return variant
+    return None
+
+
 def _altegio_event_type_key(title: str, spots: Optional[int] = None) -> Optional[str]:
     title_norm = _normalize_for_match(title)
+    variant = _title_variant(title)
 
     if "кадл" in title_norm or "kadl" in title_norm:
         return "kadl"
     if "акро" in title_norm or "acro" in title_norm:
         return "acro_yoga"
     if "бодіарт" in title_norm or "bodyart" in title_norm:
-        return "body_art"
+        return "body_art_premium" if variant == "premium" else "body_art"
     return None
 
 
@@ -3077,7 +3096,10 @@ async def _mapped_altegio_service_id(title: str, spots: Optional[int] = None) ->
         return None
 
     settings = await get_settings()
-    service_id = (settings.altegio_service_mappings or {}).get(event_type_key)
+    # A settings document saved before a new family key existed would hide that
+    # key forever, so the code defaults fill the gaps.
+    mappings = {**DEFAULT_ALTEGIO_SERVICE_MAPPINGS, **(settings.altegio_service_mappings or {})}
+    service_id = mappings.get(event_type_key)
     return int(service_id) if service_id else None
 
 
@@ -3168,15 +3190,39 @@ async def _resolve_altegio_service_id(title: str, explicit_service_id: Optional[
     if explicit_service_id:
         return int(explicit_service_id)
 
-    mapped = await _mapped_altegio_service_id(title, spots)
+    async def accept(candidate: Optional[int], source: str) -> Optional[int]:
+        """Refuse a service whose product variant contradicts the event's.
+
+        Poriadok writes the event price onto the service it binds, so binding
+        «… PREMIUM» to the Light service does not just mislabel the event — it
+        overwrites the other product's price. Better no service (the caller
+        creates one) than the wrong one.
+        """
+        if not candidate:
+            return None
+        event_variant = _title_variant(title)
+        if not event_variant:
+            return int(candidate)
+        services = await _get_altegio_services_cached()
+        service = next((item for item in services if str(item.get("id")) == str(int(candidate))), None)
+        service_variant = _title_variant(service.get("title") or "") if service else None
+        if service_variant and service_variant != event_variant:
+            logging.warning(
+                f"Altegio service {candidate} ('{service.get('title')}') is the "
+                f"{service_variant} product, event '{title}' is {event_variant} — refusing the {source} binding"
+            )
+            return None
+        return int(candidate)
+
+    mapped = await accept(await _mapped_altegio_service_id(title, spots), "mapping")
     if mapped:
         return mapped
 
-    matched = await _altegio_match_service_by_title(title)
+    matched = await accept(await _altegio_match_service_by_title(title), "title")
     if matched:
         return matched
 
-    return await _altegio_service_id_from_history(title)
+    return await accept(await _altegio_service_id_from_history(title), "history")
 
 
 async def _altegio_service_id_from_history(title: str) -> Optional[int]:
