@@ -3596,6 +3596,16 @@ SENSA_VOICE = """ти пишеш тексти для sensa — студії по
 — не пишемо речень, які пасують до будь-якої іншої події
 — без кліше: «важливо помітити», «дай собі», «побути з емоцією», «ти не зламаний»
 
+критично: не вигадуй фактів. пиши тільки те, що є в брифі. якщо не знаєш, хто веде подію,
+що саме буде відбуватися або що брати з собою—не згадуй цього взагалі. вигадана деталь
+в анонсі обертається скаргою на події.
+
+перед тим як віддати текст, перечитай його і прибери:
+— речення, які підійшли б до будь-якої іншої події
+— трійки на кшталт «тільки те. тільки це. тільки ще щось»
+— фрази-наповнювачі: «зірковий фініш», «ключ до унікальності», «нові враження», «занурення»
+— будь-який заклик, що звучить як банерна реклама
+
 пиши тільки сам текст, без пояснень, без заголовків на кшталт «ось варіант»."""
 
 
@@ -3655,7 +3665,7 @@ async def _llm_text(system_prompt: str, user_prompt: str, max_tokens: int = 1200
         return None
 
 
-def _event_brief(event: dict) -> str:
+async def _event_brief(event: dict) -> str:
     booked = event.get("altegio_booked_count")
     paid = event.get("altegio_paid_count")
     spots = event.get("spots") or 10
@@ -3676,14 +3686,33 @@ def _event_brief(event: dict) -> str:
     link = _altegio_activity_url(event.get("altegio_id") or event.get("altegio_activity_id"))
     if link:
         lines.append(f"лінк на бронювання: {link}")
-    if event.get("description"):
-        lines.append(f"опис від майстра:\n{event['description']}")
+    description = (event.get("description") or "").strip()
+    if not description:
+        description = await _altegio_event_description(event)
+    if description:
+        lines.append(f"опис події:\n{description}")
+    else:
+        lines.append("опису події немає—не вигадуй, що саме відбувається, пиши тільки про те, що відомо")
     return "\n".join(lines)
+
+
+async def _altegio_event_description(event: dict) -> str:
+    """The real event text lives in Altegio (service comment); without it the
+    model invents a programme that does not exist."""
+    service_id = event.get("altegio_service_id")
+    if not service_id:
+        return ""
+    try:
+        services = await _get_altegio_services_cached()
+    except Exception:
+        return ""
+    service = next((item for item in services if str(item.get("id")) == str(int(service_id))), None)
+    return ((service or {}).get("comment") or "").strip()
 
 
 async def _generate_task_draft(event: dict, task_def: dict, feedback: str = "") -> Optional[str]:
     brief = TASK_BRIEFS.get(task_def.get("id")) or task_def.get("ai_prompt") or task_def.get("name") or ""
-    parts = [f"задача: {task_def.get('name') or ''}", f"що потрібно на виході: {brief}", "", _event_brief(event)]
+    parts = [f"задача: {task_def.get('name') or ''}", f"що потрібно на виході: {brief}", "", await _event_brief(event)]
     if feedback:
         parts += ["", f"попередній варіант не підійшов. що виправити: {feedback}"]
     return await _llm_text(SENSA_VOICE, "\n".join(parts))
