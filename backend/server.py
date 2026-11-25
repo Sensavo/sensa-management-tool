@@ -3630,7 +3630,7 @@ async def _llm_text(system_prompt: str, user_prompt: str, max_tokens: int = 1200
                         "content-type": "application/json",
                     },
                     json={
-                        "model": os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5-5"),
+                        "model": os.environ.get("ANTHROPIC_MODEL", "claude-opus-5-5"),
                         "max_tokens": max_tokens,
                         "system": system_prompt,
                         "messages": [{"role": "user", "content": user_prompt}],
