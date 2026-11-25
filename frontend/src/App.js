@@ -9059,6 +9059,14 @@ const DesktopDashboard = () => {
                         <span className="font-medium">0/{selectedEvent.spots || 10}</span>
                       )}
                     </div>
+                    {selectedEvent.altegio_paid_count !== null && selectedEvent.altegio_paid_count !== undefined && (
+                      <div className="flex justify-between items-center py-2 border-b border-[#E8E5DC]">
+                        <span className="text-secondary text-sm">оплачено</span>
+                        <span className={`font-medium ${selectedEvent.altegio_paid_count < (Number(selectedEvent.altegio_booked_count) || 0) ? 'text-orange-600' : ''}`}>
+                          {selectedEvent.altegio_paid_count} з {Number(selectedEvent.altegio_booked_count) || 0}
+                        </span>
+                      </div>
+                    )}
                     {selectedEvent.description && (
                       <div className="py-2">
                         <span className="text-secondary text-sm block mb-1">опис</span>
@@ -10960,6 +10968,14 @@ const EventsDesktopExpanded = () => {
                         <span className="font-medium">0/{selectedEvent.spots || 10}</span>
                       )}
                     </div>
+                    {selectedEvent.altegio_paid_count !== null && selectedEvent.altegio_paid_count !== undefined && (
+                      <div className="flex justify-between items-center py-2 border-b border-[#E8E5DC]">
+                        <span className="text-secondary text-sm">оплачено</span>
+                        <span className={`font-medium ${selectedEvent.altegio_paid_count < (Number(selectedEvent.altegio_booked_count) || 0) ? 'text-orange-600' : ''}`}>
+                          {selectedEvent.altegio_paid_count} з {Number(selectedEvent.altegio_booked_count) || 0}
+                        </span>
+                      </div>
+                    )}
                     {selectedEvent.description && (
                       <div className="py-2">
                         <span className="text-secondary text-sm block mb-1">опис</span>

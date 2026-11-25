@@ -650,6 +650,7 @@ class Event(BaseModel):
     altegio_id: Optional[str] = None
     altegio_service_id: Optional[int] = None  # per-event Altegio service (overrides default)
     altegio_booked_count: Optional[int] = None
+    altegio_paid_count: Optional[int] = None
     altegio_last_sync: Optional[str] = None
     altegio_last_error: Optional[str] = None
     altegio_last_status_code: Optional[int] = None
@@ -1465,14 +1466,17 @@ def _event_line(event: dict) -> str:
 def _event_paid_count(event: Optional[dict]) -> int:
     if not event:
         return 0
+    # The guard must fail CLOSED: take the largest known headcount, so an event
+    # with bookings but no payments is still protected.
+    best = 0
     for key in ("paid_count", "payments_count", "altegio_paid_count", "altegio_booked_count"):
         try:
             value = event.get(key)
             if value is not None:
-                return max(0, int(value))
+                best = max(best, int(value))
         except Exception:
             continue
-    return 0
+    return max(0, best)
 
 
 async def _refresh_event_payment_snapshot(event: dict) -> dict:
@@ -1537,10 +1541,11 @@ async def _refresh_event_payment_snapshot(event: dict) -> dict:
         return event
 
     booked_count = None
+    paid_count = None
     try:
-        bookings = await altegio_client.get_activity_bookings(str(altegio_id))
+        bookings = await altegio_client.get_activity_bookings(str(altegio_id), event_date=event_date)
         if bookings is not None:
-            booked_count = len(bookings)
+            booked_count, paid_count = _records_seat_totals(bookings)
         else:
             result = await altegio_client.get_group_events_result(date_from=event_date, date_to=event_date)
             if not result.get("ok"):
@@ -1560,13 +1565,14 @@ async def _refresh_event_payment_snapshot(event: dict) -> dict:
         return event
 
     event = {**event, "altegio_booked_count": max(0, int(booked_count))}
-    await db.events.update_one(
-        {"id": event.get("id")},
-        {"$set": {
-            "altegio_booked_count": event["altegio_booked_count"],
-            "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
-        }},
-    )
+    updates = {
+        "altegio_booked_count": event["altegio_booked_count"],
+        "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+    }
+    if paid_count is not None:
+        event["altegio_paid_count"] = max(0, int(paid_count))
+        updates["altegio_paid_count"] = event["altegio_paid_count"]
+    await db.events.update_one({"id": event.get("id")}, {"$set": updates})
     return event
 
 
@@ -2421,6 +2427,66 @@ def _altegio_booked_count(altegio_event: dict) -> int:
     return 0
 
 
+def _record_seats(record: dict) -> int:
+    """Tickets inside ONE Altegio record.
+
+    A record is a booking, not a ticket: `services[].amount` is how many seats
+    that one client took (a couple booking together is one record, two tickets).
+    Counting records instead of seats under-reports every group purchase.
+    """
+    services = record.get("services")
+    if isinstance(services, list) and services:
+        total = 0
+        for svc in services:
+            try:
+                total += max(1, int(svc.get("amount") or 1))
+            except (TypeError, ValueError):
+                total += 1
+        return max(1, total)
+    for key in ("clients_count", "capacity", "seats"):
+        value = record.get(key)
+        if value is not None:
+            try:
+                return max(1, int(value))
+            except (TypeError, ValueError):
+                pass
+    return 1
+
+
+def _records_seat_totals(records: list) -> tuple[int, int]:
+    """(tickets booked, tickets actually paid) for a list of Altegio records.
+
+    `paid_full` is the only honest «куплено» signal: with online prepayment off
+    on the service, people book without paying, so booked and paid differ.
+    """
+    booked = paid = 0
+    for record in records or []:
+        if record.get("deleted"):
+            continue
+        seats = _record_seats(record)
+        booked += seats
+        try:
+            if int(record.get("paid_full") or 0) == 1:
+                paid += seats
+        except (TypeError, ValueError):
+            pass
+    return booked, paid
+
+
+async def _altegio_paid_map(date_from: str, date_to: str) -> Optional[dict]:
+    """{activity_id: (booked_seats, paid_seats)} for a date range, or None when
+    Altegio could not be asked."""
+    result = await altegio_client.get_records_result(date_from=date_from, date_to=date_to)
+    if not result.get("ok"):
+        return None
+    grouped: dict[str, list] = {}
+    for record in result.get("data", []):
+        activity_id = str(record.get("activity_id") or "")
+        if activity_id and activity_id != "0":
+            grouped.setdefault(activity_id, []).append(record)
+    return {aid: _records_seat_totals(rows) for aid, rows in grouped.items()}
+
+
 def _altegio_activity_url(activity_id: Optional[str] = None, event_date: Optional[str] = None) -> Optional[str]:
     """Public online-booking deep link for a group event — the page an
     unregistered client lands on to buy a ticket for THIS event.
@@ -2714,6 +2780,15 @@ async def _sync_altegio_events_to_local(altegio_events: list) -> tuple[int, list
     synced_count = 0
     synced_events = []
 
+    # One records call per sync gives us, per activity, how many tickets were
+    # booked and how many were actually PAID. The window reaches 30 days back
+    # because Altegio's activity search returns future activities only — a
+    # finished event would otherwise keep the last count seen before its date.
+    window_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    window_till = (datetime.now() + timedelta(days=120)).strftime("%Y-%m-%d")
+    paid_map = await _altegio_paid_map(window_from, window_till)
+    handled_activity_ids = set()
+
     for altegio_event in altegio_events:
         altegio_id = str(altegio_event.get("id") or "")
         if not altegio_id:
@@ -2724,22 +2799,63 @@ async def _sync_altegio_events_to_local(altegio_events: list) -> tuple[int, list
             continue
 
         booked_count = _altegio_booked_count(altegio_event)
+        updates = {
+            "altegio_id": altegio_id,
+            "altegio_activity_id": altegio_id,
+            "altegio_booked_count": booked_count,
+            "spots": int(altegio_event.get("capacity") or local_event.get("spots") or 10),
+            "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+        }
+        paid_count = None
+        if paid_map is not None:
+            seats, paid_seats = paid_map.get(altegio_id, (0, 0))
+            paid_count = paid_seats
+            # Records are the detailed truth; the aggregate counter can lag.
+            updates["altegio_booked_count"] = max(booked_count, seats)
+            updates["altegio_paid_count"] = paid_seats
+            booked_count = updates["altegio_booked_count"]
+
         title = _altegio_event_title(altegio_event)
-        await db.events.update_one(
-            {"id": local_event["id"]},
-            {"$set": {
-                "altegio_id": altegio_id,
-                "altegio_activity_id": altegio_id,
-                "altegio_booked_count": booked_count,
-                "spots": int(altegio_event.get("capacity") or local_event.get("spots") or 10),
-                "altegio_last_sync": datetime.now(timezone.utc).isoformat()
-            }}
-        )
+        handled_activity_ids.add(altegio_id)
+        await db.events.update_one({"id": local_event["id"]}, {"$set": updates})
         synced_events.append({
             "local_id": local_event["id"],
             "altegio_id": altegio_id,
             "title": title,
-            "booked_count": booked_count
+            "booked_count": booked_count,
+            "paid_count": paid_count,
+        })
+        synced_count += 1
+
+    # Second pass: events whose activity is already in the past. They are gone
+    # from the activity search, but their records are still readable, so their
+    # final numbers keep updating instead of freezing on the event day.
+    for activity_id, (seats, paid_seats) in (paid_map or {}).items():
+        if activity_id in handled_activity_ids:
+            continue
+        local_event = await db.events.find_one(
+            {"$or": [{"altegio_id": activity_id}, {"altegio_activity_id": activity_id}]},
+            {"_id": 0, "id": 1, "title": 1, "altegio_booked_count": 1, "altegio_paid_count": 1},
+        )
+        if not local_event:
+            continue
+        if (local_event.get("altegio_booked_count") == seats
+                and local_event.get("altegio_paid_count") == paid_seats):
+            continue
+        await db.events.update_one(
+            {"id": local_event["id"]},
+            {"$set": {
+                "altegio_booked_count": seats,
+                "altegio_paid_count": paid_seats,
+                "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+        synced_events.append({
+            "local_id": local_event["id"],
+            "altegio_id": activity_id,
+            "title": local_event.get("title"),
+            "booked_count": seats,
+            "paid_count": paid_seats,
         })
         synced_count += 1
 
@@ -6196,26 +6312,34 @@ class AltegioClient:
             "Content-Type": "application/json"
         }
     
-    async def get_records(self, date_from: str = None, date_to: str = None):
+    async def get_records(self, date_from: str = None, date_to: str = None, count: int = 500):
+        """Fetch records (individual bookings) from Altegio.
+
+        Auth: the PARTNER header (Bearer Partner, User UserToken). Plain
+        `Bearer UserToken` is answered with 401 «Partner ID not specified»,
+        which this method used to swallow into an empty list — so every
+        per-person booking lookup silently returned "nobody booked".
         """
-        Fetch all records (bookings) from Altegio
-        Returns list of appointments/records
-        """
+        result = await self.get_records_result(date_from=date_from, date_to=date_to, count=count)
+        return result.get("data", [])
+
+    async def get_records_result(self, date_from: str = None, date_to: str = None, count: int = 500):
+        """Same as get_records, but preserves the error for callers that must
+        distinguish «no bookings» from «we could not ask»."""
         url = f"{self.base_url}/records/{self.company_id}"
-        params = {}
+        params = {"count": count}
         if date_from:
             params["start_date"] = date_from
         if date_to:
             params["end_date"] = date_to
-        
+
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(url, headers=self.get_headers(), params=params)
+            response = await client.get(url, headers=self.get_v2_headers(), params=params)
             if response.status_code == 200:
                 data = response.json()
-                return data.get("data", [])
-            else:
-                logging.error(f"Altegio API error: {response.status_code} - {response.text}")
-                return []
+                return {"ok": True, "status_code": 200, "data": data.get("data") or []}
+            logging.error(f"Altegio records error: {response.status_code} - {response.text[:300]}")
+            return {"ok": False, "status_code": response.status_code, "data": [], "body": response.text[:1000]}
     
     async def get_group_events(self):
         """
@@ -6242,21 +6366,22 @@ class AltegioClient:
                 logging.error(f"Altegio activities error: {response.status_code} - {response.text}")
                 return {"ok": False, "status_code": response.status_code, "data": [], "body": response.text[:1000]}
     
-    async def get_activity_bookings(self, activity_id: str):
+    async def get_activity_bookings(self, activity_id: str, event_date: Optional[str] = None):
+        """Individual bookings for one group activity.
+
+        Altegio has no `/activity/{cid}/{id}/records` endpoint — it answers 404,
+        so this used to return None on every call and the caller fell back to
+        the aggregate counter, never seeing a single name or payment.
+        We read `/records/{cid}` for the activity's day and keep the rows whose
+        `activity_id` matches. Returns None when the request itself failed.
         """
-        Get bookings for a specific activity/event
-        Returns booking count and details
-        """
-        url = f"{self.base_url}/activity/{self.company_id}/{activity_id}/records"
-        
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(url, headers=self.get_v2_headers())
-            if response.status_code == 200:
-                data = response.json()
-                return data.get("data", [])
-            else:
-                logging.error(f"Altegio activity bookings error: {response.status_code} - {response.text[:200]}")
-                return None
+        result = await self.get_records_result(date_from=event_date, date_to=event_date)
+        if not result.get("ok"):
+            return None
+        return [
+            r for r in result.get("data", [])
+            if str(r.get("activity_id") or "") == str(activity_id) and not r.get("deleted")
+        ]
     
     async def get_services(self):
         """Get all services from Altegio.
@@ -6834,8 +6959,11 @@ async def get_event_bookings_from_altegio(event_id: str):
         altegio_id = event.get("altegio_id") or event.get("altegio_activity_id")
         
         if altegio_id:
-            bookings = await altegio_client.get_activity_bookings(altegio_id)
-            booked_count = len(bookings) if bookings is not None else None
+            event_date = (event.get("date") or "")[:10] or None
+            bookings = await altegio_client.get_activity_bookings(altegio_id, event_date=event_date)
+            booked_count = paid_count = None
+            if bookings is not None:
+                booked_count, paid_count = _records_seat_totals(bookings)
 
             if booked_count is None:
                 altegio_events = await altegio_client.get_group_events()
@@ -6848,25 +6976,36 @@ async def get_event_bookings_from_altegio(event_id: str):
                 booked_count = event.get("altegio_booked_count", 0) or 0
             if bookings is None:
                 bookings = []
-            
-            # Update local event
-            await db.events.update_one(
-                {"id": event_id},
-                {"$set": {
-                    "altegio_id": str(altegio_id),
-                    "altegio_activity_id": str(altegio_id),
-                    "altegio_booked_count": booked_count,
-                    "altegio_last_sync": datetime.now(timezone.utc).isoformat()
-                }}
-            )
-            
+
+            updates = {
+                "altegio_id": str(altegio_id),
+                "altegio_activity_id": str(altegio_id),
+                "altegio_booked_count": booked_count,
+                "altegio_last_sync": datetime.now(timezone.utc).isoformat(),
+            }
+            if paid_count is not None:
+                updates["altegio_paid_count"] = paid_count
+            await db.events.update_one({"id": event_id}, {"$set": updates})
+
             return {
                 "event_id": event_id,
                 "altegio_id": altegio_id,
                 "booked_count": booked_count,
+                "paid_count": paid_count,
                 "capacity": event.get("spots", 0),
                 "available": event.get("spots", 0) - booked_count,
-                "bookings": bookings
+                "bookings": [
+                    {
+                        "id": b.get("id"),
+                        "client": (b.get("client") or {}).get("name"),
+                        "phone": (b.get("client") or {}).get("phone"),
+                        "seats": _record_seats(b),
+                        "paid": int(b.get("paid_full") or 0) == 1,
+                        "attendance": b.get("attendance"),
+                        "created": b.get("create_date"),
+                    }
+                    for b in bookings
+                ],
             }
         else:
             return {
@@ -6926,12 +7065,19 @@ async def sync_single_event_from_altegio(event_id: str):
             for altegio_event in altegio_events:
                 if str(altegio_event.get("id")) == str(altegio_id):
                     records_count = _altegio_booked_count(altegio_event)
+                    paid_count = None
+                    paid_map = await _altegio_paid_map(event_date, event_date) if event_date else None
+                    if paid_map is not None:
+                        seats, paid_seats = paid_map.get(str(altegio_id), (0, 0))
+                        records_count = max(records_count, seats)
+                        paid_count = paid_seats
                     await db.events.update_one(
                         {"id": event_id},
                         {"$set": {
                             "altegio_id": str(altegio_id),
                             "altegio_activity_id": str(altegio_id),
                             "altegio_booked_count": records_count,
+                            **({"altegio_paid_count": paid_count} if paid_count is not None else {}),
                             "spots": int(altegio_event.get("capacity") or event.get("spots") or 10),
                             "altegio_last_error": None,
                             "altegio_last_status_code": activities_result.get("status_code"),
@@ -6943,6 +7089,7 @@ async def sync_single_event_from_altegio(event_id: str):
                         "event_id": event_id,
                         "altegio_id": altegio_id,
                         "booked_count": records_count,
+                        "paid_count": paid_count,
                         "message": "Синхронізовано"
                     }
             
@@ -6987,12 +7134,19 @@ async def sync_single_event_from_altegio(event_id: str):
                         )
 
                     records_count = _altegio_booked_count(altegio_event)
+                    paid_count = None
+                    paid_map = await _altegio_paid_map(event_date, event_date) if event_date else None
+                    if paid_map is not None:
+                        seats, paid_seats = paid_map.get(str(altegio_id), (0, 0))
+                        records_count = max(records_count, seats)
+                        paid_count = paid_seats
                     await db.events.update_one(
                         {"id": event_id},
                         {"$set": {
                             "altegio_id": altegio_id,
                             "altegio_activity_id": altegio_id,
                             "altegio_booked_count": records_count,
+                            **({"altegio_paid_count": paid_count} if paid_count is not None else {}),
                             "spots": int(altegio_event.get("capacity") or event.get("spots") or 10),
                             "altegio_last_error": None,
                             "altegio_last_status_code": activities_result.get("status_code"),
