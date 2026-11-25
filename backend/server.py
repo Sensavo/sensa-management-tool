@@ -353,6 +353,16 @@ async def lifespan(app: FastAPI):
         logging.info(f"Loaded {len(_task_overrides)} task definition overrides")
     except Exception as e:
         logging.error(f"Failed to load task overrides on startup: {e}")
+    # Retire the prepaid_off warning left on events by earlier versions.
+    try:
+        cleared = await db.events.update_many(
+            {"altegio_warning.type": "prepaid_off"},
+            {"$set": {"altegio_warning": None}},
+        )
+        if cleared.modified_count:
+            logging.info(f"Cleared {cleared.modified_count} stale prepaid_off warnings")
+    except Exception as e:
+        logging.error(f"Failed to clear prepaid_off warnings: {e}")
     # Startup: Start background sync task
     altegio_sync_task = asyncio.create_task(altegio_auto_sync())
     logging.info("Altegio auto-sync started (every 60 minutes)")
@@ -473,6 +483,7 @@ async def lifespan(app: FastAPI):
     telegram_summary_task = asyncio.create_task(telegram_summary_loop())
     telegram_overdue_cleanup_task = asyncio.create_task(telegram_overdue_cleanup_loop())
     asyncio.create_task(early_bird_tier_loop())
+    asyncio.create_task(unpaid_bookings_loop())
 
     yield
     
@@ -678,6 +689,9 @@ class Settings(BaseModel):
     id: str = "global_settings"
     reminder_types: List[ReminderType] = []
     altegio_service_mappings: Dict[str, int] = Field(default_factory=lambda: dict(DEFAULT_ALTEGIO_SERVICE_MAPPINGS))
+    # Minutes an unpaid online booking may hold a seat before Poriadok frees it.
+    # 0 = only warn. Bookings the admin entered by hand are never touched.
+    unpaid_release_minutes: int = 60
 
 class TaskCompletionRequest(BaseModel):
     event_id: str
@@ -2487,6 +2501,119 @@ async def _altegio_paid_map(date_from: str, date_to: str) -> Optional[dict]:
     return {aid: _records_seat_totals(rows) for aid, rows in grouped.items()}
 
 
+def _record_amount_due(record: dict) -> float:
+    """Price of one booking, in ₴. Zero means a free event."""
+    total = 0.0
+    for svc in record.get("services") or []:
+        for key in ("cost_to_pay", "cost", "first_cost", "cost_per_unit"):
+            try:
+                value = float(svc.get(key) or 0)
+            except (TypeError, ValueError):
+                value = 0.0
+            if value > 0:
+                total += value
+                break
+    return total
+
+
+def _record_is_manual(record: dict) -> bool:
+    """A booking the admin entered by hand in Altegio.
+
+    These are the agreed exception to «тільки по передоплаті»: cash at the
+    door, a transfer, a comp — the studio decides, the robot keeps its hands off.
+    """
+    if not record.get("online"):
+        return True
+    try:
+        if int(record.get("created_user_id") or 0) > 0:
+            return True
+    except (TypeError, ValueError):
+        pass
+    try:
+        return int(record.get("bookform_id") or 0) <= 0
+    except (TypeError, ValueError):
+        return True
+
+
+def _record_is_paid(record: dict) -> bool:
+    for key in ("paid_full", "payment_status"):
+        try:
+            if int(record.get(key) or 0) == 1:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def _record_age_minutes(record: dict) -> Optional[int]:
+    raw = str(record.get("create_date") or record.get("created_at") or "")
+    if not raw:
+        return None
+    # Altegio writes the offset as «+0200»; fromisoformat wants «+02:00»
+    # (and only learned the compact form in Python 3.11).
+    normalized = re.sub(r"([+-]\d{2})(\d{2})$", r"\1:\2", raw.strip())
+    try:
+        created = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return max(0, int((datetime.now(timezone.utc) - created).total_seconds() // 60))
+
+
+async def _unpaid_online_records(days_forward: int = 120) -> Optional[list]:
+    """Online bookings on upcoming paid events that were never paid for.
+
+    Returns None when Altegio could not be asked — callers must not treat that
+    as «everything is paid».
+    """
+    today = datetime.now(timezone.utc).date()
+    result = await altegio_client.get_records_result(
+        date_from=today.isoformat(),
+        date_to=(today + timedelta(days=days_forward)).isoformat(),
+    )
+    if not result.get("ok"):
+        return None
+
+    unpaid = []
+    for record in result.get("data", []):
+        if record.get("deleted") or _record_is_paid(record) or _record_is_manual(record):
+            continue
+        due = _record_amount_due(record)
+        if due <= 0:
+            continue
+        activity_id = str(record.get("activity_id") or "")
+        unpaid.append({
+            "record_id": record.get("id"),
+            "activity_id": activity_id,
+            "date": record.get("date"),
+            "created": record.get("create_date"),
+            "age_minutes": _record_age_minutes(record),
+            "seats": _record_seats(record),
+            "amount": due,
+            "client": (record.get("client") or {}).get("name") or "",
+            "phone": (record.get("client") or {}).get("phone") or "",
+            "title": next((svc.get("title") for svc in record.get("services") or []), ""),
+        })
+    return unpaid
+
+
+async def _release_unpaid_record(entry: dict) -> bool:
+    """Free the seat an unpaid booking is holding and write it into history."""
+    result = await altegio_client.delete_record_result(str(entry.get("record_id")))
+    await db.altegio_unpaid_log.update_one(
+        {"record_id": entry.get("record_id")},
+        {"$set": {
+            **entry,
+            "released": bool(result.get("ok")),
+            "released_at": datetime.now(timezone.utc).isoformat(),
+            "release_error": None if result.get("ok") else str(result.get("body"))[:500],
+        }},
+        upsert=True,
+    )
+    return bool(result.get("ok"))
+
+
 def _altegio_activity_url(activity_id: Optional[str] = None, event_date: Optional[str] = None) -> Optional[str]:
     """Public online-booking deep link for a group event — the page an
     unregistered client lands on to buy a ticket for THIS event.
@@ -2981,8 +3108,8 @@ def _build_altegio_warning(state: Optional[dict], service_id: Optional[int], tit
         with «Учасник команди не надає обрану послугу».
       • service_disabled — service exists but active=0 and/or offline; the
         activity is created but hidden until the manager flips the toggles.
-      • prepaid_off — priced event on a service without required prepayment;
-        people book without paying (prepaid is UI-only, API cannot set it).
+      (prepaid_off was removed: the service flag does not drive checkout and
+       fired on every event — unpaid bookings are swept separately.)
     """
     if not service_id or state is None:
         return {
@@ -3013,18 +3140,12 @@ def _build_altegio_warning(state: Optional[dict], service_id: Optional[int], tit
             "company_id": ALTEGIO_COMPANY_ID,
             "altegio_url": f"https://app.alteg.io/company/{ALTEGIO_COMPANY_ID}/services",
         }
-    try:
-        priced = float(price or 0) > 0
-    except (TypeError, ValueError):
-        priced = False
-    if priced and state.get("prepaid") != "required":
-        return {
-            "type": "prepaid_off",
-            "service_id": state.get("id"),
-            "service_title": state.get("title") or title,
-            "company_id": ALTEGIO_COMPANY_ID,
-            "altegio_url": f"https://app.alteg.io/company/{ALTEGIO_COMPANY_ID}/services",
-        }
+    # The service-level `prepaid` flag is NOT what decides whether a client
+    # pays: every service in the company reads "forbidden", yet 44 of 45 online
+    # bookings over the last six months arrived paid — the company payment
+    # policy is what governs checkout. Warning on that flag cried wolf on every
+    # single event. What actually leaks money is a booking that was started and
+    # never paid for; that is handled by the unpaid-booking sweep.
     return None
 
 
@@ -3265,6 +3386,90 @@ async def _next_early_bird_run_delay() -> Optional[float]:
             if seconds > 0:
                 delays.append(seconds)
     return min(delays) if delays else None
+
+
+async def _check_unpaid_bookings() -> dict:
+    """Keep «квитки тільки по передоплаті» true in practice.
+
+    Altegio creates the record the moment a client starts checkout, and keeps
+    it even when the payment never lands — the seat stays blocked and the event
+    looks sold while the money is not there. Here we find those bookings,
+    tell the manager once, and (when a hold limit is set) free the seat.
+    Bookings entered by the admin by hand are the agreed exception.
+    """
+    settings = await get_settings()
+    try:
+        hold_minutes = int(getattr(settings, "unpaid_release_minutes", 0) or 0)
+    except (TypeError, ValueError):
+        hold_minutes = 0
+
+    entries = await _unpaid_online_records()
+    if entries is None:
+        return {"ok": False, "reason": "altegio_unreachable"}
+
+    # Bookings that predate this sweep are only reported, never released:
+    # they were made under the old rules and may have been settled off-platform.
+    state = await db.app_state.find_one({"id": "unpaid_sweep"}, {"_id": 0})
+    if not state:
+        state = {"id": "unpaid_sweep", "started_at": datetime.now(timezone.utc).isoformat()}
+        await db.app_state.update_one({"id": "unpaid_sweep"}, {"$set": state}, upsert=True)
+    try:
+        sweep_start = datetime.fromisoformat(state["started_at"])
+    except (KeyError, ValueError):
+        sweep_start = datetime.now(timezone.utc)
+
+    released, notified = [], []
+    for entry in entries:
+        age = entry.get("age_minutes")
+        known = await db.altegio_unpaid_log.find_one({"record_id": entry.get("record_id")}, {"_id": 0})
+        created_after_start = False
+        if age is not None:
+            created_after_start = (datetime.now(timezone.utc) - timedelta(minutes=age)) >= sweep_start
+        if hold_minutes > 0 and created_after_start and age >= hold_minutes:
+            if await _release_unpaid_record(entry):
+                released.append(entry)
+                text = (
+                    f"бронь знято—оплата не надійшла\n"
+                    f"{_html_escape(entry.get('title'))} {_format_task_date((entry.get('date') or '')[:10])}\n"
+                    f"{_html_escape(entry.get('client'))} · {int(entry.get('amount') or 0)} ₴ · "
+                    f"{entry.get('seats')} місць · висіла {age} хв"
+                )
+                for user_id in TEAM_USERS:
+                    enqueue_telegram(user_id, text)
+            continue
+        if known and known.get("notified"):
+            continue
+        await db.altegio_unpaid_log.update_one(
+            {"record_id": entry.get("record_id")},
+            {"$set": {**entry, "notified": True, "notified_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True,
+        )
+        notified.append(entry)
+        text = (
+            f"запис без оплати\n"
+            f"{_html_escape(entry.get('title'))} {_format_task_date((entry.get('date') or '')[:10])}\n"
+            f"{_html_escape(entry.get('client'))} · {int(entry.get('amount') or 0)} ₴ · "
+            f"{entry.get('seats')} місць · місце тримається вже {age} хв"
+        )
+        for user_id in TEAM_USERS:
+            enqueue_telegram(user_id, text)
+
+    return {"ok": True, "unpaid": len(entries), "released": len(released), "notified": len(notified)}
+
+
+async def unpaid_bookings_loop():
+    """Every 15 minutes: nobody holds a seat for an event they did not pay for."""
+    await asyncio.sleep(45)
+    while True:
+        try:
+            result = await _check_unpaid_bookings()
+            if result.get("released") or result.get("notified"):
+                logging.info(f"unpaid bookings check: {result}")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logging.error(f"unpaid bookings loop error: {e}")
+        await asyncio.sleep(15 * 60)
 
 
 async def early_bird_tier_loop():
@@ -6231,7 +6436,6 @@ async def altegio_services_health():
         has_staff = bool(s.get("staff"))
         is_online = bool(s.get("is_online"))
         is_multi = bool(s.get("is_multi"))
-        prepaid_ok = (s.get("prepaid") == "required") or not priced
 
         issues = []
         if not is_online:
@@ -6240,8 +6444,7 @@ async def altegio_services_health():
             issues.append("no_staff")
         if not is_multi or int(capacity) < 1:
             issues.append("not_group")
-        if not prepaid_ok:
-            issues.append("prepaid_off")
+        # prepaid is reported, not judged: see _build_altegio_warning.
 
         rows.append({
             "id": s.get("id"),
@@ -6723,6 +6926,21 @@ class AltegioClient:
             logging.error(f"Altegio delete activity error: {response.status_code} - {response.text}")
             return {"ok": False, "status_code": response.status_code, "body": response.text}
 
+    async def delete_record_result(self, record_id: str):
+        """Release one booking (Altegio record), freeing its seat."""
+        if not ALTEGIO_PARTNER_TOKEN or not self.push_user_token or not record_id:
+            message = "Altegio record delete skipped: tokens or record_id missing"
+            logging.warning(message)
+            return {"ok": False, "status_code": None, "body": message}
+        url = f"{self.base_url}/record/{self.company_id}/{record_id}"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.delete(url, headers=self.get_v2_push_headers())
+            if response.status_code in (200, 201, 204, 404):
+                logging.info(f"Altegio record released: {record_id}")
+                return {"ok": True, "status_code": response.status_code, "body": response.text or None}
+            logging.error(f"Altegio record delete error: {response.status_code} - {response.text[:300]}")
+            return {"ok": False, "status_code": response.status_code, "body": response.text[:1000]}
+
     async def ensure_service_staff_result(self, service_id: int, staff_id: int, length_seconds: int = 3600):
         """Guarantee the service is assigned to the given team member.
 
@@ -6801,6 +7019,44 @@ async def get_altegio_records(date_from: str = None, date_to: str = None):
     except Exception as e:
         logging.error(f"Failed to fetch Altegio records: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/altegio/unpaid")
+async def list_unpaid_bookings():
+    """Online bookings on upcoming paid events with no payment behind them."""
+    entries = await _unpaid_online_records()
+    if entries is None:
+        raise HTTPException(status_code=502, detail="не вдалося отримати записи з Altegio")
+    settings = await get_settings()
+    return {
+        "count": len(entries),
+        "hold_minutes": int(getattr(settings, "unpaid_release_minutes", 0) or 0),
+        "records": sorted(entries, key=lambda e: e.get("date") or ""),
+    }
+
+
+@api_router.post("/altegio/unpaid/check")
+async def run_unpaid_bookings_check():
+    """Run the unpaid-booking sweep now instead of waiting for the loop."""
+    result = await _check_unpaid_bookings()
+    if not result.get("ok"):
+        raise HTTPException(status_code=502, detail="не вдалося отримати записи з Altegio")
+    return result
+
+
+@api_router.post("/altegio/records/{record_id}/release")
+async def release_booking(record_id: str):
+    """Free the seat an unpaid booking holds. Manual admin bookings are refused:
+    those are the studio's own call, not the robot's."""
+    entries = await _unpaid_online_records()
+    if entries is None:
+        raise HTTPException(status_code=502, detail="не вдалося отримати записи з Altegio")
+    entry = next((e for e in entries if str(e.get("record_id")) == str(record_id)), None)
+    if not entry:
+        raise HTTPException(status_code=404, detail="цей запис або оплачений, або внесений вручну—знімати його автоматично не можна")
+    if not await _release_unpaid_record(entry):
+        raise HTTPException(status_code=502, detail="Altegio не дав зняти бронь")
+    return {"released": True, "record_id": record_id, "client": entry.get("client")}
+
 
 @api_router.get("/altegio/services")
 async def get_altegio_services():

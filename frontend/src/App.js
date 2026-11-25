@@ -6371,6 +6371,7 @@ const SettingsPage = () => {
 
               <AltegioSyncSection mui>
                 <AltegioHealthSection mui />
+                <UnpaidBookingsSection mui />
               </AltegioSyncSection>
 
               <TelegramSettingsSection mui />
@@ -6444,6 +6445,7 @@ const SettingsPage = () => {
         {activeTab === "sync" && (
           <div className="section-card">
             <AltegioHealthSection mobile />
+            <UnpaidBookingsSection mobile />
           </div>
         )}
 
@@ -9774,6 +9776,98 @@ const AltegioHealthSection = ({ mobile = false, mui = false }) => {
   );
 };
 
+const UnpaidBookingsSection = ({ mobile = false, mui = false }) => {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await axios.get(`${API}/altegio/unpaid`);
+      setData(r.data);
+    } catch { toast.error("не вдалося отримати записи з Altegio"); }
+    finally { setLoading(false); }
+  };
+
+  const release = async (rec) => {
+    setBusy(rec.record_id);
+    try {
+      await axios.post(`${API}/altegio/records/${rec.record_id}/release`);
+      toast.success(`бронь знято: ${rec.client || "без імені"}`);
+      await load();
+    } catch { toast.error("Altegio не дав зняти бронь"); }
+    finally { setBusy(null); }
+  };
+
+  const label = (rec) => {
+    const hours = Math.floor((rec.age_minutes || 0) / 60);
+    const held = hours >= 1 ? `${hours} год` : `${rec.age_minutes || 0} хв`;
+    return `${rec.seats} місць · ${Math.round(rec.amount)} ₴ · тримає ${held}`;
+  };
+
+  const rows = data?.records || [];
+  const title = loading ? "перевіряю…" : rows.length ? `${rows.length} без оплати` : data ? "усі оплачені" : "";
+
+  if (mui) {
+    const toggle = () => { const next = !open; setOpen(next); if (next && !data) load(); };
+    return (
+      <>
+        <button type="button" className="m-row m-task-row" aria-expanded={open} onClick={toggle} disabled={loading}>
+          <span className="m-b m-task-row-label">записи без оплати</span>
+          <span className="m-c m-task-row-value">{title}</span>
+          <ChevronDown className="m-task-chev" strokeWidth={1.6} style={{ transform: open ? "rotate(180deg)" : "none" }} />
+        </button>
+        {open && data && (
+          <>
+            {rows.map(rec => (
+              <div key={rec.record_id} className="m-row">
+                <span className="m-dot m-dot--warn" aria-label="без оплати" />
+                <span className="m-set-main">
+                  <span className="m-b m-ellipsis">{rec.client || "без імені"} · {rec.title}</span>
+                  <span className="m-c m-red">{label(rec)}</span>
+                </span>
+                <button type="button" className="m-txt" disabled={busy === rec.record_id} onClick={() => release(rec)}>зняти</button>
+              </div>
+            ))}
+            <div className="m-set-actions m-set-actions--row">
+              <button type="button" className="m-txt m-set-flush" onClick={load} disabled={loading}>оновити</button>
+              <span className="m-c">автозняття через {data.hold_minutes || 0} хв</span>
+            </div>
+          </>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <div className={mobile ? "" : "pt-2 border-t border-[#E8E5DC]"}>
+      <button className={mobile ? "btn-subtle w-full !h-11" : "btn-subtle w-full text-xs !h-7"} onClick={() => { const next = !open; setOpen(next); if (next && !data) load(); }} disabled={loading}>
+        <AlertTriangle className={mobile ? "w-4 h-4" : "w-3.5 h-3.5"} /><span>{loading ? "перевіряю..." : open ? "сховати записи без оплати" : "записи без оплати"}</span>
+      </button>
+      {open && data && (
+        <div className="mt-2 space-y-0.5">
+          {rows.length === 0 && <p className={mobile ? "text-sm text-secondary" : "text-xs text-secondary"}>усі записи оплачені</p>}
+          {rows.map(rec => (
+            <div key={rec.record_id} className={mobile ? "reminder-item !py-2.5" : "reminder-item !py-1.5"}>
+              <div className="min-w-0">
+                <p className={`font-medium ${mobile ? "text-sm" : "text-xs truncate"}`}>{rec.client || "без імені"} · {rec.title}</p>
+                <p className={mobile ? "text-xs text-amber-700" : "text-[10px] text-amber-700"}>{label(rec)}</p>
+              </div>
+              <button className={`${mobile ? "text-sm min-h-[44px]" : "text-[10px]"} text-secondary underline whitespace-nowrap`} disabled={busy === rec.record_id} onClick={() => release(rec)}>зняти бронь</button>
+            </div>
+          ))}
+          <div className="flex items-center justify-between pt-1">
+            <button className={mobile ? "text-sm text-secondary underline min-h-[44px]" : "text-[10px] text-secondary underline"} onClick={load}>оновити</button>
+            <span className={`${mobile ? "text-sm" : "text-[10px]"} text-secondary`}>автозняття через {data.hold_minutes || 0} хв</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const SettingsContent = () => {
   const { settings, refreshSettings, refreshSMMTasksDefinition, refreshEvents, allTaskDefs, googleCalendarStatus, refreshGoogleStatus } = useApp();
   const [exportingAll, setExportingAll] = useState(false);
@@ -9933,6 +10027,7 @@ const SettingsContent = () => {
                 <span className={`text-xs ${altegioConnected ? 'text-green-600' : 'text-secondary'}`}>{altegioConnected ? "активний" : "—"}</span>
               </div>
               <AltegioHealthSection />
+              <UnpaidBookingsSection />
               <div className="pt-2 border-t border-[#E8E5DC]">
                 <TelegramSettingsSection compact />
               </div>
