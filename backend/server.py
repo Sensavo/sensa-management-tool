@@ -301,6 +301,8 @@ async def start_telegram_bot():
         telegram_app.add_handler(CommandHandler("unlink", telegram_unlink_command))
         if CallbackQueryHandler:
             telegram_app.add_handler(CallbackQueryHandler(telegram_task_run_callback, pattern=r"^run:"))
+            telegram_app.add_handler(CallbackQueryHandler(telegram_finance_callback, pattern=r"^fin:"))
+        telegram_app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, telegram_voice_entry))
         telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, telegram_text_command))
 
         await telegram_app.initialize()
@@ -1031,6 +1033,8 @@ DAILY_TASKS = [
     {"id": "daily_direct", "name": "дірект", "column": "management"},
     {"id": "daily_threads", "name": "двіж в threads", "column": "smm"},
 ]
+
+UK_WEEKDAYS_PARSER = ("понеділок", "вівторок", "середа", "четвер", "пʼятниця", "субота", "неділя")
 
 UK_MONTHS_NOMINATIVE_PY = {
     1: "січень", 2: "лютий", 3: "березень", 4: "квітень",
@@ -2216,7 +2220,10 @@ async def telegram_text_command(update, context):
     elif action == "help":
         await telegram_help_command(update, context)
     else:
-        await telegram_help_command(update, context)
+        # Той самий парсер, що й для голосу: довідку показуємо, тільки якщо
+        # повідомлення точно не про гроші.
+        if not await _telegram_finance_text(update, text):
+            await telegram_help_command(update, context)
 
 
 async def telegram_morning_action(update, context, action: str):
@@ -8758,6 +8765,431 @@ async def delete_cash_entry(entry_id: str):
         raise HTTPException(status_code=400, detail="імпортовані транзакції не видаляються")
     await db.cash_entries.delete_one({"id": entry_id})
     return {"deleted": entry_id}
+
+
+# ==================== ГРОШІ ГОЛОСОМ ====================
+#
+# Основний канал внесення витрат: Во тисне мікрофон у телеграмі й каже одне
+# речення. Далі — транскрипція, парсер, картка з кнопками. У базу запис лягає
+# зі `status: "pending"` і в суми місяця не входить, доки не натиснуто «так».
+
+FINANCE_ENTRY_SCHEMA = """{
+  "direction": "out | in — витрата чи надходження",
+  "amount": число у гривнях або null, якщо суми в репліці немає,
+  "date": "YYYY-MM-DD",
+  "category": "рівно одна з дозволених категорій",
+  "counterparty": "кому заплатили або від кого прийшло, або null",
+  "event_id": "id події зі списку нижче або null",
+  "comment": "за що саме, кількома словами, або порожній рядок",
+  "confidence": число від 0 до 1 — наскільки впевнений у розборі
+}"""
+
+FINANCE_PARSER_SYSTEM = """ти розбираєш репліки власника студії подій про гроші й повертаєш рівно один JSON-обʼєкт.
+
+правила:
+- не вигадуй суму. якщо числа в репліці немає—amount: null
+- не вигадуй контрагента, подію чи коментар: чого не сказано, те null або порожнє
+- direction з дієслова: «заплатив / витратив / віддав / купив / перерахував» → out;
+  «отримав / прийшло / внесли / повернули» → in
+- дату рахуй відносно сьогодні. «вчора», «позавчора», «у суботу», «минулого
+  тижня», «на тому тижні» розкривай у конкретний день. без згадки дати—сьогодні
+- категорію бери рівно зі списку. якщо жодна не підходить—«інше» і confidence не вище 0.5
+- подію привʼязуй, тільки якщо в репліці справді названо подію зі списку
+  (за назвою або за днем). сумнів—event_id: null
+- гонорар майстра—це категорія «майстер», контрагент—імʼя майстра
+- зарплата своїй команді—категорія «зарплата»
+
+відповідай самим JSON, без пояснень і без ```."""
+
+
+async def _transcribe_audio(audio: bytes, filename: str = "voice.ogg") -> Optional[str]:
+    """Голосова нотатка → текст. Українську вказуємо явно.
+
+    Без language модель регулярно чує українську як російську й повертає
+    переклад, а не те, що сказали.
+    """
+    key = os.environ.get("EMERGENT_LLM_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not key:
+        logging.error("finance voice: немає ключа OpenAI для транскрипції")
+        return None
+    try:
+        from openai import AsyncOpenAI
+    except Exception as e:
+        logging.error(f"finance voice: openai sdk недоступний: {e}")
+        return None
+    client = AsyncOpenAI(api_key=key)
+    for model in ("gpt-4o-transcribe", "whisper-1"):
+        try:
+            result = await client.audio.transcriptions.create(
+                model=model,
+                file=(filename, audio),
+                language="uk",
+            )
+            text = (getattr(result, "text", "") or "").strip()
+            if text:
+                return text
+            logging.error(f"finance voice: {model} повернув порожній текст")
+        except Exception as e:
+            logging.error(f"finance voice: {model} не впорався: {e}")
+    return None
+
+
+async def _finance_parser_context() -> dict:
+    """Події ±14 днів і люди команди — щоб «за кадл у суботу» звʼязалося з подією."""
+    today = _today_kyiv()
+    try:
+        start = (date.fromisoformat(today) - timedelta(days=14)).isoformat()
+        end = (date.fromisoformat(today) + timedelta(days=14)).isoformat()
+    except ValueError:
+        start, end = today, today
+    events = await db.events.find(
+        {"date": {"$gte": start, "$lte": end}, "cancelled": {"$ne": True}},
+        {"_id": 0, "id": 1, "title": 1, "date": 1},
+    ).sort("date", 1).to_list(100)
+    return {"today": today, "events": events}
+
+
+def _finance_parse_json(raw: str) -> Optional[dict]:
+    text = (raw or "").strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        text = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end <= start:
+            return None
+        try:
+            return json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            return None
+
+
+async def _parse_finance_text(text: str) -> Optional[dict]:
+    """Репліка → чернетка запису. None, якщо модель не відповіла.
+
+    Повертає ті самі поля, що й `cash_entries`, плюс `missing`—чого бракує,
+    щоб запис можна було підтверджувати.
+    """
+    text = (text or "").strip()
+    if not text:
+        return None
+    context = await _finance_parser_context()
+    today = context["today"]
+    weekday = UK_WEEKDAYS_PARSER[date.fromisoformat(today).weekday()]
+    event_lines = [
+        f"- {e['id']} · {e.get('date', '')} · {e.get('title', '')}"
+        for e in context["events"]
+    ] or ["- подій у цьому вікні немає"]
+
+    user_prompt = "\n".join([
+        f"сьогодні {today}, {weekday}",
+        "",
+        "категорії витрат: " + ", ".join(FINANCE_CATEGORIES_OUT),
+        "категорії надходжень: " + ", ".join(FINANCE_CATEGORIES_IN),
+        "команда на зарплаті: " + ", ".join(TEAM_PERSON_LABELS.values()),
+        "",
+        "події найближчих двох тижнів (id · дата · назва):",
+        *event_lines,
+        "",
+        "схема відповіді:",
+        FINANCE_ENTRY_SCHEMA,
+        "",
+        "репліка:",
+        text,
+    ])
+    # Opus витрачає бюджет токенів ще й на thinking: при тісному ліміті
+    # повертається порожній текст.
+    raw = await _llm_text(FINANCE_PARSER_SYSTEM, user_prompt, max_tokens=4000)
+    if not raw:
+        return None
+    parsed = _finance_parse_json(raw)
+    if not isinstance(parsed, dict):
+        logging.error(f"finance parse: не JSON — {raw[:200]}")
+        return None
+
+    direction = str(parsed.get("direction") or "out").lower()
+    if direction not in FINANCE_DIRECTIONS:
+        direction = "out"
+
+    allowed = FINANCE_CATEGORIES_IN if direction == "in" else FINANCE_CATEGORIES_OUT
+    category = str(parsed.get("category") or "").strip().lower()
+    try:
+        confidence = float(parsed.get("confidence"))
+    except (TypeError, ValueError):
+        confidence = 0.5
+    if category not in allowed:
+        category = "інше"
+        confidence = min(confidence, 0.5)
+
+    amount = parsed.get("amount")
+    try:
+        amount = float(amount)
+    except (TypeError, ValueError):
+        amount = 0.0
+    if amount < 0:
+        amount = abs(amount)
+
+    entry_date = str(parsed.get("date") or "")[:10]
+    try:
+        date.fromisoformat(entry_date)
+    except ValueError:
+        entry_date = today
+
+    event_id = parsed.get("event_id") or None
+    known_events = {e["id"] for e in context["events"]}
+    if event_id not in known_events:
+        event_id = None
+
+    return {
+        "direction": direction,
+        "amount": amount,
+        "date": entry_date,
+        "category": category,
+        "counterparty": (str(parsed.get("counterparty")).strip() or None) if parsed.get("counterparty") else None,
+        "event_id": event_id,
+        "comment": str(parsed.get("comment") or "").strip(),
+        "confidence": max(0.0, min(1.0, confidence)),
+        "raw_text": text,
+        "missing": [] if amount > 0 else ["amount"],
+    }
+
+
+@api_router.post("/finance/parse")
+async def parse_finance_entry(payload: ParseEventRequest):
+    """Текст → розібрана чернетка запису. Нічого не зберігає."""
+    parsed = await _parse_finance_text(payload.text)
+    if not parsed:
+        raise HTTPException(status_code=502, detail=_LAST_LLM_PROVIDER.get("error") or "не вдалося розібрати")
+    return parsed
+
+
+def _finance_entry_keyboard(entry_id: str):
+    if not InlineKeyboardMarkup or not InlineKeyboardButton:
+        return None
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("так", callback_data=f"fin:yes:{entry_id}"),
+        InlineKeyboardButton("виправити", callback_data=f"fin:fix:{entry_id}"),
+        InlineKeyboardButton("скасувати", callback_data=f"fin:no:{entry_id}"),
+    ]])
+
+
+async def _finance_entry_card(entry: dict) -> str:
+    """Картка запису в телеграмі: один рядок суті, далі деталі й сказане."""
+    direction = "витрата" if entry.get("direction") == "out" else "надходження"
+    amount = entry.get("amount") or 0
+    amount_part = f"{amount:g} ₴" if amount else "скільки?"
+    head = [direction, entry.get("category") or "інше", amount_part]
+
+    event_title = ""
+    if entry.get("event_id"):
+        event = await db.events.find_one({"id": entry["event_id"]}, {"_id": 0, "title": 1, "date": 1})
+        if event:
+            event_title = f"{event.get('title') or ''} {_format_task_date(event.get('date') or '')}".strip()
+    if event_title:
+        head.append(event_title)
+
+    lines = [("❓ " if (entry.get("confidence") or 1) < 0.5 else "") + " · ".join(_html_escape(p) for p in head)]
+    details = [p for p in (entry.get("counterparty"), entry.get("comment")) if p]
+    if entry.get("date") and entry["date"] != _today_kyiv():
+        details.append(_format_task_date(entry["date"]))
+    if details:
+        lines.append(_html_escape(" · ".join(details)))
+    if entry.get("raw_text"):
+        lines.append(f"<i>«{_html_escape(entry['raw_text'])}»</i>")
+    if not amount:
+        lines.append("суми в репліці не було—напиши її числом")
+    return "\n".join(lines)
+
+
+async def _finance_draft_from_text(text: str, created_by: str, source: str, replace_id: Optional[str] = None) -> Optional[dict]:
+    """Розбирає репліку і кладе чернетку в базу зі `status: pending`."""
+    parsed = await _parse_finance_text(text)
+    if not parsed:
+        return None
+    fields = {
+        "date": parsed["date"],
+        "direction": parsed["direction"],
+        "amount": parsed["amount"],
+        "category": parsed["category"],
+        "counterparty": parsed["counterparty"],
+        "event_id": parsed["event_id"],
+        "comment": parsed["comment"],
+        "confidence": parsed["confidence"],
+        "raw_text": parsed["raw_text"],
+        "source": source,
+        "status": "pending",
+    }
+    if replace_id:
+        await db.cash_entries.update_one({"id": replace_id}, {"$set": fields})
+        return await db.cash_entries.find_one({"id": replace_id}, {"_id": 0})
+    entry = CashEntry(**fields, created_by=created_by)
+    await db.cash_entries.insert_one(entry.model_dump())
+    return entry.model_dump()
+
+
+def _entry_age_minutes(entry: dict) -> int:
+    try:
+        created = datetime.fromisoformat(str(entry.get("created_at") or ""))
+    except ValueError:
+        return 0
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return max(0, int((datetime.now(timezone.utc) - created).total_seconds() // 60))
+
+
+async def _finance_await_entry(user_id: str, entry_id: Optional[str]) -> None:
+    """Памʼятаємо, який запис чекає уточнення: суми або переказування."""
+    await db.user_settings.update_one(
+        {"user_id": user_id},
+        {"$set": {"finance_pending_entry_id": entry_id}},
+        upsert=True,
+    )
+
+
+async def _finance_reply_with_card(update, entry: dict, user_id: str) -> None:
+    await update.message.reply_html(
+        await _finance_entry_card(entry),
+        reply_markup=_finance_entry_keyboard(entry["id"]),
+    )
+    await _finance_await_entry(user_id, entry["id"] if not entry.get("amount") else None)
+
+
+async def telegram_voice_entry(update, context):
+    """Голосова нотатка про гроші—головний канал внесення витрат."""
+    user = await _find_user_by_chat(update.effective_chat.id)
+    if not user:
+        await update.message.reply_text("спершу привʼяжи акаунт: надішли 6-значний код з poriadok")
+        return
+    voice = update.message.voice or update.message.audio
+    if not voice:
+        return
+    try:
+        tg_file = await voice.get_file()
+        audio = bytes(await tg_file.download_as_bytearray())
+    except Exception as e:
+        logging.error(f"finance voice: не вдалося забрати файл: {e}")
+        await update.message.reply_text("не зміг завантажити голосову, спробуй ще раз")
+        return
+
+    text = await _transcribe_audio(audio, getattr(voice, "file_name", None) or "voice.ogg")
+    if not text:
+        await update.message.reply_text("не розчув. скажи ще раз або напиши текстом")
+        return
+
+    doc = await db.user_settings.find_one({"user_id": user["user_id"]}, {"_id": 0, "finance_pending_entry_id": 1})
+    replace_id = (doc or {}).get("finance_pending_entry_id")
+    entry = await _finance_draft_from_text(text, user["user_id"], "voice", replace_id=replace_id)
+    if not entry:
+        await update.message.reply_html(f"почув: <i>«{_html_escape(text)}»</i>\nале не зміг розібрати на запис. спробуй простіше: «заплатив олі 1200 за кадл»")
+        return
+    await _finance_reply_with_card(update, entry, user["user_id"])
+
+
+# Не кожна фраза—про гроші. Без числа й без дієслова витрати бот не чіпає
+# повідомлення, інакше карткою відповідатиме й на «привіт».
+FINANCE_TEXT_VERBS = re.compile(
+    r"заплат|витрат|віддав|купив|перерах|оплат|отрим|прийшл|внесл|поверн|коштув",
+    re.IGNORECASE,
+)
+
+
+# «оренда 18000» теж запис, хоч дієслова там немає.
+FINANCE_TEXT_NOUNS = re.compile(
+    r"майстр|зарплат|оренд|реклам|матеріал|підписк|локаці|квитк|гонорар",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_money_text(text: str) -> bool:
+    if not re.search(r"\d", text):
+        return False
+    return bool(FINANCE_TEXT_VERBS.search(text) or FINANCE_TEXT_NOUNS.search(text))
+
+
+async def _telegram_finance_text(update, text: str) -> bool:
+    """Текст як витрата. True, якщо повідомлення вже оброблено.
+
+    Спершу пробуємо дорозібрати те, що бот щойно перепитав, і лише тоді—
+    чи це взагалі репліка про гроші.
+    """
+    user = await _find_user_by_chat(update.effective_chat.id)
+    if not user:
+        return False
+    user_id = user["user_id"]
+    doc = await db.user_settings.find_one({"user_id": user_id}, {"_id": 0, "finance_pending_entry_id": 1})
+    pending_id = (doc or {}).get("finance_pending_entry_id")
+
+    if pending_id:
+        pending = await db.cash_entries.find_one({"id": pending_id, "status": "pending"}, {"_id": 0})
+        # Перепитування не висить вічно: за дві години воно вже не про цей запис.
+        if pending and _entry_age_minutes(pending) > 120:
+            pending = None
+        if not pending:
+            await _finance_await_entry(user_id, None)
+        else:
+            number = re.fullmatch(r"\s*(\d+(?:[.,]\d{1,2})?)\s*(?:грн|₴)?\s*", text)
+            if number:
+                amount = float(number.group(1).replace(",", "."))
+                await db.cash_entries.update_one({"id": pending_id}, {"$set": {"amount": amount}})
+                pending["amount"] = amount
+                await _finance_reply_with_card(update, pending, user_id)
+                return True
+            if _looks_like_money_text(text):
+                entry = await _finance_draft_from_text(text, user_id, pending.get("source") or "manual", replace_id=pending_id)
+                if entry:
+                    await _finance_reply_with_card(update, entry, user_id)
+                    return True
+
+    if not _looks_like_money_text(text):
+        return False
+
+    entry = await _finance_draft_from_text(text, user_id, "manual", replace_id=None)
+    if not entry:
+        return False
+    await _finance_reply_with_card(update, entry, user_id)
+    return True
+
+
+async def telegram_finance_callback(update, context):
+    """Кнопки під карткою запису: так / виправити / скасувати."""
+    query = update.callback_query
+    if not query:
+        return
+    parts = (query.data or "").split(":")
+    if len(parts) != 3 or parts[0] != "fin":
+        await query.answer()
+        return
+    _, decision, entry_id = parts
+    entry = await db.cash_entries.find_one({"id": entry_id}, {"_id": 0})
+    chat_doc = await db.user_settings.find_one({"telegram_chat_id": query.message.chat.id}, {"_id": 0}) if query.message else None
+    user_id = (chat_doc or {}).get("user_id") or ""
+
+    if not entry:
+        await query.answer("запису вже немає")
+        return
+
+    if decision == "yes":
+        if not entry.get("amount"):
+            await query.answer("спершу скажи суму")
+            return
+        await db.cash_entries.update_one({"id": entry_id}, {"$set": {"status": "confirmed"}})
+        message = "записав"
+    elif decision == "fix":
+        message = "кажи ще раз або напиши текстом"
+    else:
+        await db.cash_entries.delete_one({"id": entry_id})
+        message = "скасовано"
+
+    if user_id:
+        await _finance_await_entry(user_id, entry_id if decision == "fix" else None)
+    await query.answer(message)
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text(message)
+    except Exception as e:
+        logging.error(f"finance callback edit failed: {e}")
 
 
 async def finance_sync_loop():
