@@ -7,6 +7,7 @@ from pymongo import ReturnDocument, UpdateOne
 from pymongo.errors import DuplicateKeyError
 import os
 import re
+import json
 import logging
 import asyncio
 import base64
@@ -702,6 +703,9 @@ class Settings(BaseModel):
     # AI-виконавець сам генерує чернетки за розкладом і пише в телеграм.
     # Вмикається свідомо, коли людина подивилась на якість текстів.
     ai_executor_enabled: bool = False
+    targeting_city: str = "Львів"
+    targeting_daily_budget_min: int = 150
+    targeting_daily_budget_max: int = 600
 
 class TaskCompletionRequest(BaseModel):
     event_id: str
@@ -3557,6 +3561,11 @@ DEFAULT_TASK_EXECUTORS = {
     "mgmt_remind_participants": EXECUTOR_AI_APPROVAL,
     "mgmt_lucky_ticket": EXECUTOR_AI_APPROVAL,
     "mktg_personal_invites": EXECUTOR_AI_APPROVAL,
+    "mktg_start_targeting": EXECUTOR_AI_APPROVAL,
+    "mktg_update_target_50": EXECUTOR_AI_APPROVAL,
+    "mktg_update_target_60": EXECUTOR_AI_APPROVAL,
+    "mktg_update_target_80": EXECUTOR_AI_APPROVAL,
+    "mktg_stop_targeting": EXECUTOR_AI_APPROVAL,
 }
 
 # Що саме має зʼявитися на виході. Без цього модель пише «пост про подію».
@@ -3766,7 +3775,13 @@ async def _notify_task_run(run: dict, event: dict, task_def: dict) -> None:
 
 
 async def _create_task_run(event: dict, column: str, task_id: str, task_def: dict, feedback: str = "") -> Optional[dict]:
-    output = await _generate_task_draft(event, task_def, feedback=feedback)
+    plan = None
+    targeting_kind = TARGETING_TASK_KINDS.get(task_id)
+    if targeting_kind:
+        plan = await _generate_campaign_plan(event, targeting_kind, feedback=feedback)
+        output = _render_campaign_plan(plan) if plan else None
+    else:
+        output = await _generate_task_draft(event, task_def, feedback=feedback)
     if not output:
         return None
     provider = dict(_LAST_LLM_PROVIDER)
@@ -3781,6 +3796,7 @@ async def _create_task_run(event: dict, column: str, task_id: str, task_def: dic
         "executor": _task_executor(task_def),
         "status": "draft",
         "output": output,
+        "plan": plan,
         "provider": provider.get("name") or "",
         "model": provider.get("model") or "",
         "provider_error": provider.get("error") or None,
@@ -3838,6 +3854,193 @@ async def _run_due_ai_tasks(limit: int = 12, notify: bool = True) -> dict:
                         await _notify_task_run(run, event, task_def)
                     created.append(run["id"])
     return {"created": created, "auto_done": auto_done, "limit_reached": False}
+
+
+# ==================== ТАРГЕТИНГ ====================
+#
+# AI складає план кампанії з економіки події, людина підтверджує, запуск у
+# Meta — окремою дією. План живе в тій самій чернетці задачі (task_runs.plan),
+# щоб підтвердження було одне на всі типи роботи.
+
+TARGETING_TASK_KINDS = {
+    "mktg_start_targeting": "start",
+    "mktg_update_target_50": "update",
+    "mktg_update_target_60": "update",
+    "mktg_update_target_80": "update",
+    "mktg_stop_targeting": "stop",
+}
+
+CAMPAIGN_PLAN_SCHEMA = """{
+  "objective": "traffic | conversions | engagement — ціль кампанії",
+  "daily_budget": число у гривнях на день,
+  "days": скільки днів крутити,
+  "audiences": [
+    {"name": "коротка назва", "geo": "місто + радіус", "age_min": 18, "age_max": 45,
+     "genders": "all | women | men", "interests": ["інтерес", "інтерес"],
+     "why": "чому саме ця аудиторія для цієї події"}
+  ],
+  "placements": ["instagram_stories", "instagram_feed", "facebook_feed", "reels"],
+  "creatives": [
+    {"format": "сторіс | пост | рілс", "hook": "перший рядок, що зупиняє",
+     "primary_text": "основний текст оголошення", "headline": "заголовок до 40 символів",
+     "cta": "забронювати | дізнатися більше"}
+  ],
+  "kpi": {"target_bookings": число місць, які треба добрати, "max_cpa": гранична ціна за бронь у гривнях},
+  "rationale": "два-три речення: чому такий бюджет і така структура"
+}"""
+
+
+def _event_fill_state(event: dict) -> dict:
+    spots = int(event.get("spots") or 10)
+    booked = int(event.get("altegio_booked_count") or 0)
+    paid = event.get("altegio_paid_count")
+    left = max(0, spots - booked)
+    try:
+        price = float(event.get("price") or 0)
+    except (TypeError, ValueError):
+        price = 0.0
+    days_left = None
+    try:
+        event_date = datetime.strptime((event.get("date") or "")[:10], "%Y-%m-%d").date()
+        days_left = (event_date - datetime.strptime(_today_kyiv(), "%Y-%m-%d").date()).days
+    except ValueError:
+        pass
+    return {
+        "spots": spots,
+        "booked": booked,
+        "paid": paid,
+        "left": left,
+        "price": price,
+        "revenue_left": left * price,
+        "fill_percent": round(booked / spots * 100) if spots else 0,
+        "days_left": days_left,
+    }
+
+
+async def _generate_campaign_plan(event: dict, kind: str, feedback: str = "") -> Optional[dict]:
+    state = _event_fill_state(event)
+    settings = await get_settings()
+    city = getattr(settings, "targeting_city", None) or "Львів"
+    budget_min = int(getattr(settings, "targeting_daily_budget_min", 0) or 150)
+    budget_max = int(getattr(settings, "targeting_daily_budget_max", 0) or 600)
+
+    kind_task = {
+        "start": "склади план запуску таргетингу з нуля",
+        "update": "подій лишилось мало часу, а місця ще є—склади план ПЕРЕРОЗПОДІЛУ: що зупинити, що підсилити, які нові аудиторії спробувати",
+        "stop": "події вистачає бронювань—склади план згортання: що зупинити зараз, що лишити до кінця",
+    }.get(kind, "склади план таргетингу")
+
+    guardrails = f"""жорсткі межі:
+— місто: {city}
+— денний бюджет від {budget_min} до {budget_max} ₴, не виходь за ці межі
+— реклама не має крутитися довше, ніж лишилось днів до події
+— сукупні витрати не мають перевищувати 20% від виручки, яку ще можна добрати
+— аудиторії лише ті, які справді можна зібрати в Meta: гео, вік, стать, інтереси
+— тексти оголошень—за голосом sensa, у тих самих правилах, що й решта текстів
+
+{kind_task}
+
+поверни ТІЛЬКИ валідний JSON за цією схемою, без коментарів і без markdown:
+{CAMPAIGN_PLAN_SCHEMA}"""
+
+    economics = (
+        f"стан події: заповнено {state['fill_percent']}% ({state['booked']} з {state['spots']}), "
+        f"вільних місць {state['left']}, ціна {int(state['price'])} ₴, "
+        f"недобрана виручка {int(state['revenue_left'])} ₴"
+    )
+    if state["days_left"] is not None:
+        economics += f", днів до події {state['days_left']}"
+
+    parts = [await _event_brief(event), "", economics, "", guardrails]
+    if feedback:
+        parts += ["", f"попередній план відхилено: {feedback}"]
+
+    raw = await _llm_text(SENSA_VOICE, "\n".join(parts), max_tokens=2000)
+    if not raw:
+        return None
+
+    text = raw.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        text = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
+    try:
+        plan = json.loads(text)
+    except json.JSONDecodeError:
+        start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end <= start:
+            logging.error(f"Campaign plan is not JSON: {text[:200]}")
+            return None
+        try:
+            plan = json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            logging.error(f"Campaign plan is not JSON: {text[:200]}")
+            return None
+
+    plan["kind"] = kind
+    plan["state"] = state
+    # Межі перевіряє код, а не довіра до моделі.
+    try:
+        plan["daily_budget"] = max(budget_min, min(budget_max, int(float(plan.get("daily_budget") or budget_min))))
+    except (TypeError, ValueError):
+        plan["daily_budget"] = budget_min
+    try:
+        days = int(float(plan.get("days") or 1))
+    except (TypeError, ValueError):
+        days = 1
+    if state["days_left"] is not None:
+        days = max(1, min(days, max(1, state["days_left"])))
+    plan["days"] = days
+    plan["total_budget"] = plan["daily_budget"] * days
+    return plan
+
+
+def _render_campaign_plan(plan: dict) -> str:
+    state = plan.get("state") or {}
+    head = {
+        "start": "план запуску таргетингу",
+        "update": "план перерозподілу таргетингу",
+        "stop": "план згортання таргетингу",
+    }.get(plan.get("kind"), "план таргетингу")
+
+    lines = [
+        head,
+        f"заповнено {state.get('fill_percent', 0)}%, вільних місць {state.get('left', 0)}, "
+        f"недобрано {int(state.get('revenue_left') or 0)} ₴",
+        "",
+        f"бюджет: {plan.get('daily_budget')} ₴ на день × {plan.get('days')} дн = {plan.get('total_budget')} ₴",
+        f"ціль: {plan.get('objective') or '—'}",
+    ]
+    kpi = plan.get("kpi") or {}
+    if kpi:
+        lines.append(f"мета: добрати {kpi.get('target_bookings', '—')} броней, не дорожче {kpi.get('max_cpa', '—')} ₴ за бронь")
+
+    for audience in (plan.get("audiences") or []):
+        interests = ", ".join(audience.get("interests") or [])
+        lines += [
+            "",
+            f"аудиторія «{audience.get('name') or '—'}»: {audience.get('geo') or ''}, "
+            f"{audience.get('age_min')}–{audience.get('age_max')}, {audience.get('genders') or 'all'}",
+        ]
+        if interests:
+            lines.append(f"  інтереси: {interests}")
+        if audience.get("why"):
+            lines.append(f"  навіщо: {audience['why']}")
+
+    placements = plan.get("placements") or []
+    if placements:
+        lines += ["", f"плейсменти: {', '.join(placements)}"]
+
+    for creative in (plan.get("creatives") or []):
+        lines += [
+            "",
+            f"креатив ({creative.get('format') or '—'}): {creative.get('hook') or ''}",
+            f"  {creative.get('primary_text') or ''}",
+            f"  заголовок: {creative.get('headline') or ''} · кнопка: {creative.get('cta') or ''}",
+        ]
+
+    if plan.get("rationale"):
+        lines += ["", plan["rationale"]]
+    return "\n".join(lines)
 
 
 async def _decide_task_run(run_id: str, decision: str, decided_by: str = "") -> dict:
