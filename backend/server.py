@@ -2576,6 +2576,40 @@ def _record_age_minutes(record: dict) -> Optional[int]:
     return max(0, int((datetime.now(timezone.utc) - created).total_seconds() // 60))
 
 
+async def _altegio_client_credit(date_from: str, date_to: str) -> dict:
+    """{client_id: сума, яку клієнт вніс} за період.
+
+    Онлайн-передоплата в Altegio часто падає не у візит, а на депозит
+    клієнта (sold_item_type=deposit_topup). Запис при цьому лишається
+    «неоплаченим», хоча гроші надійшли тієї ж хвилини.
+    """
+    url = f"{altegio_client.base_url}/transactions/{altegio_client.company_id}"
+    params = {"start_date": date_from, "end_date": date_to, "count": 500}
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url, headers=altegio_client.get_v2_headers(), params=params)
+        if response.status_code != 200:
+            logging.error(f"Altegio transactions error: {response.status_code} - {response.text[:200]}")
+            return {}
+        rows = response.json().get("data") or []
+    except Exception as e:
+        logging.error(f"Altegio transactions failed: {e}")
+        return {}
+
+    credit: dict = {}
+    for row in rows:
+        client_id = (row.get("client") or {}).get("id")
+        if not client_id:
+            continue
+        try:
+            amount = float(row.get("amount") or 0)
+        except (TypeError, ValueError):
+            continue
+        if amount > 0:
+            credit[str(client_id)] = credit.get(str(client_id), 0.0) + amount
+    return credit
+
+
 async def _unpaid_online_records(days_forward: int = 120) -> Optional[list]:
     """Online bookings on upcoming paid events that were never paid for.
 
@@ -2590,6 +2624,13 @@ async def _unpaid_online_records(days_forward: int = 120) -> Optional[list]:
     if not result.get("ok"):
         return None
 
+    # Гроші могли впасти на депозит клієнта, а не у візит: такий запис
+    # виглядає неоплаченим, хоча оплата є. Знімати його не можна.
+    credit = await _altegio_client_credit(
+        (today - timedelta(days=days_forward)).isoformat(),
+        (today + timedelta(days=days_forward)).isoformat(),
+    )
+
     unpaid = []
     for record in result.get("data", []):
         if record.get("deleted") or _record_is_paid(record) or _record_is_manual(record):
@@ -2597,8 +2638,12 @@ async def _unpaid_online_records(days_forward: int = 120) -> Optional[list]:
         due = _record_amount_due(record)
         if due <= 0:
             continue
+        client_id = str((record.get("client") or {}).get("id") or "")
+        client_credit = credit.get(client_id, 0.0)
         activity_id = str(record.get("activity_id") or "")
         unpaid.append({
+            "deposit_credit": client_credit,
+            "covered_by_deposit": client_credit >= due,
             "record_id": record.get("id"),
             "activity_id": activity_id,
             "date": record.get("date"),
@@ -3485,7 +3530,9 @@ async def _check_unpaid_bookings() -> dict:
         created_after_start = False
         if age is not None:
             created_after_start = (datetime.now(timezone.utc) - timedelta(minutes=age)) >= sweep_start
-        if hold_minutes > 0 and created_after_start and age >= hold_minutes:
+        # Оплата на депозиті — це оплата. Такий запис тільки показуємо.
+        releasable = not entry.get("covered_by_deposit")
+        if hold_minutes > 0 and releasable and created_after_start and age >= hold_minutes:
             if await _release_unpaid_record(entry):
                 released.append(entry)
                 text = (
@@ -3505,6 +3552,16 @@ async def _check_unpaid_bookings() -> dict:
             upsert=True,
         )
         notified.append(entry)
+        if entry.get("covered_by_deposit"):
+            text = (
+                f"оплата є, але не проведена у візиті\n"
+                f"{_html_escape(entry.get('title'))} {_format_task_date((entry.get('date') or '')[:10])}\n"
+                f"{_html_escape(entry.get('client'))} вніс {int(entry.get('deposit_credit') or 0)} ₴ на депозит—"
+                f"провести оплату у записі, інакше подія виглядає непроданою"
+            )
+            for user_id in TEAM_USERS:
+                enqueue_telegram(user_id, text)
+            continue
         text = (
             f"запис без оплати\n"
             f"{_html_escape(entry.get('title'))} {_format_task_date((entry.get('date') or '')[:10])}\n"
