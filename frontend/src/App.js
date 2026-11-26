@@ -67,7 +67,8 @@ import {
   Paintbrush,
   Film,
   CircleCheck,
-  Ellipsis
+  Ellipsis,
+  Wallet
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -397,6 +398,13 @@ const api = {
   muteTelegram: (userId) => axios.post(`${API}/users/${userId}/telegram/mute`),
   unmuteTelegram: (userId) => axios.post(`${API}/users/${userId}/telegram/unmute`),
   unlinkTelegram: (userId) => axios.post(`${API}/users/${userId}/telegram/unlink`),
+  // Фінанси
+  getFinanceSummary: (month) => axios.get(`${API}/finance/summary`, { params: { month } }),
+  getFinanceEntries: (params) => axios.get(`${API}/finance/entries`, { params }),
+  createFinanceEntry: (data) => axios.post(`${API}/finance/entries`, data),
+  updateFinanceEntry: (id, data) => axios.patch(`${API}/finance/entries/${id}`, data),
+  deleteFinanceEntry: (id) => axios.delete(`${API}/finance/entries/${id}`),
+  syncFinance: () => axios.post(`${API}/finance/sync`),
 };
 
 const getCancellationGuardDetail = (error) => {
@@ -1126,6 +1134,7 @@ const MorePage = () => {
   const items = [
     { path: "/smm", icon: Megaphone, label: "smm", hint: "задачі smm і архів" },
     { path: "/cal", icon: CalendarIcon, label: "календар" },
+    { path: "/money", icon: Wallet, label: "гроші", hint: "надходження й витрати" },
     { path: "/stats", icon: BarChart3, label: "аналітика" },
     { path: "/settings", icon: Settings, label: "налаштування" },
     { path: "/?dayoff=1", icon: Coffee, label: "вихідний день" },
@@ -7809,6 +7818,7 @@ const DesktopDashboard = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [showSettings, setShowSettings] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [showMoney, setShowMoney] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
   const [archive, setArchive] = useState([]);
   const [overdueExpanded, setOverdueExpanded] = useState(false);
@@ -8180,6 +8190,7 @@ const DesktopDashboard = () => {
     }
     setShowSettings(view === "settings");
     setShowStats(view === "stats");
+    setShowMoney(view === "money");
     setShowArchive(view === "archive");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
@@ -8608,6 +8619,7 @@ const DesktopDashboard = () => {
           <h1 className="dsk-h1">сьогодні</h1>
         </div>
         <div className="desktop-header-right">
+          <button className="desktop-header-btn" onClick={() => openView("money")} title="гроші" aria-label="гроші" data-testid="money-btn"><Wallet className="w-5 h-5" /></button>
           <button className="desktop-header-btn" onClick={() => openView("stats")} title="аналітика" aria-label="аналітика" data-testid="analytics-btn"><BarChart3 className="w-5 h-5" /></button>
           <button className="desktop-header-btn" onClick={() => navigate("/content")} title="контент" aria-label="контент" data-testid="content-btn"><FileText className="w-5 h-5" /></button>
           <button className="desktop-header-btn" onClick={() => setShowDayOffDialog(true)} title="вихідний" aria-label="вихідний" data-testid="dayoff-btn"><Coffee className="w-5 h-5" /></button>
@@ -9391,6 +9403,12 @@ const DesktopDashboard = () => {
       {showStats && (
         <div className="fixed inset-0 z-50 bg-[#F6F5F1]">
           <StatsContent onClose={() => closeView()} settings={settings} />
+        </div>
+      )}
+
+      {showMoney && (
+        <div className="fixed inset-0 z-50 bg-[#F6F5F1]">
+          <MoneyContent onClose={() => closeView()} />
         </div>
       )}
 
@@ -10210,6 +10228,692 @@ const SettingsContent = () => {
     </>
   );
 };
+// ==================== ГРОШІ ====================
+//
+// Журнал кешфлоу: надходження з каси Altegio тягне бекенд, витрати
+// вносяться тут руками (а згодом — голосом у боті). Записи з Altegio
+// лишаються лише для читання, це правило бекенду, не косметика.
+
+const FINANCE_CATEGORIES = {
+  in: ["квитки", "інше"],
+  out: ["майстер", "зарплата", "оренда", "реклама", "матеріали", "підписки", "локація", "інше"],
+};
+
+// Єдині кольори категорій. Тони середні навмисно: екран живе і на піщаному
+// десктопі, і на вугільному garden-скіні, тож ні темні, ні бліді не годяться.
+const FINANCE_CATEGORY_COLORS = {
+  "квитки": "#4FA87E",
+  "майстер": "#D9925C",
+  "зарплата": "#6B93CF",
+  "оренда": "#A98BD8",
+  "реклама": "#DB6F86",
+  "матеріали": "#9BAA63",
+  "підписки": "#5FA6BE",
+  "локація": "#CFA04A",
+  "інше": "#9C927F",
+};
+
+const FINANCE_SOURCE_LABELS = { altegio: "altegio", voice: "голос", manual: "руками", recurring: "постійна" };
+
+const formatMoney = (value) => {
+  const n = Number(value || 0);
+  const whole = Math.round(n * 100) % 100 === 0;
+  return n.toLocaleString("uk-UA", {
+    minimumFractionDigits: whole ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+};
+
+const monthKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+const emptyEntryDraft = (date) => ({
+  direction: "out",
+  amount: "",
+  date,
+  category: "майстер",
+  counterparty: "",
+  event_id: "",
+  comment: "",
+});
+
+const MoneyContent = ({ onClose }) => {
+  const { events } = useApp();
+  const isMobile = useIsMobileLayout();
+  const dialogClass = isMobile ? "m-sheet" : "dialog-content sm:max-w-[420px]";
+  const [month, setMonth] = useState(() => new Date());
+  const [summary, setSummary] = useState(null);
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [directionFilter, setDirectionFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [draft, setDraft] = useState(null);          // новий запис
+  const [editing, setEditing] = useState(null);      // правка наявного
+  const [saving, setSaving] = useState(false);
+
+  const monthStr = monthKey(month);
+  const monthLabel = `${UK_MONTHS_NOMINATIVE[month.getMonth()]} ${month.getFullYear()}`;
+  const eventTitles = useMemo(
+    () => Object.fromEntries((events || []).map(e => [e.id, e.title])),
+    [events]
+  );
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [s, e] = await Promise.all([
+        api.getFinanceSummary(monthStr),
+        api.getFinanceEntries({ month: monthStr }),
+      ]);
+      setSummary(s.data);
+      setEntries(e.data?.entries || []);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "не вдалося завантажити гроші"));
+    } finally {
+      setLoading(false);
+    }
+  }, [monthStr]);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && onClose && !draft && !editing) onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, draft, editing]);
+
+  const shiftMonth = (delta) => {
+    setMonth(prev => {
+      const next = new Date(prev);
+      next.setDate(1);
+      next.setMonth(next.getMonth() + delta);
+      return next;
+    });
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const r = await api.syncFinance();
+      const created = r.data?.created || 0;
+      toast.success(created ? `нових надходжень: ${created}` : "нових транзакцій немає");
+      await load();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "синк Altegio не вдався"));
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const visibleEntries = useMemo(() => entries.filter(entry => {
+    if (directionFilter !== "all" && entry.direction !== directionFilter) return false;
+    if (categoryFilter !== "all" && entry.category !== categoryFilter) return false;
+    return true;
+  }), [entries, directionFilter, categoryFilter]);
+
+  const grouped = useMemo(() => {
+    const byDate = new Map();
+    visibleEntries.forEach(entry => {
+      if (!byDate.has(entry.date)) byDate.set(entry.date, []);
+      byDate.get(entry.date).push(entry);
+    });
+    return [...byDate.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  }, [visibleEntries]);
+
+  const saveDraft = async () => {
+    const amount = parseFloat(String(draft.amount).replace(",", "."));
+    if (!amount || amount <= 0) { toast.error("вкажи суму"); return; }
+    setSaving(true);
+    try {
+      await api.createFinanceEntry({
+        direction: draft.direction,
+        amount,
+        date: draft.date,
+        category: draft.category,
+        counterparty: draft.counterparty?.trim() || null,
+        event_id: draft.event_id || null,
+        comment: draft.comment?.trim() || "",
+        source: "manual",
+        status: "confirmed",
+      });
+      setDraft(null);
+      toast.success("записано");
+      await load();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "не вдалося записати"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveEditing = async () => {
+    const amount = parseFloat(String(editing.amount).replace(",", "."));
+    if (!amount || amount <= 0) { toast.error("вкажи суму"); return; }
+    setSaving(true);
+    try {
+      await api.updateFinanceEntry(editing.id, {
+        direction: editing.direction,
+        amount,
+        date: editing.date,
+        category: editing.category,
+        counterparty: editing.counterparty?.trim() || null,
+        event_id: editing.event_id || null,
+        comment: editing.comment?.trim() || "",
+        status: "confirmed",
+      });
+      setEditing(null);
+      toast.success("збережено");
+      await load();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "не вдалося зберегти"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeEntry = async (entry) => {
+    try {
+      await api.deleteFinanceEntry(entry.id);
+      setEditing(null);
+      toast.success("видалено");
+      await load();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "не вдалося видалити"));
+    }
+  };
+
+  const openEntry = (entry) => {
+    if (entry.source === "altegio") {
+      toast.error("запис із каси Altegio — тільки для читання");
+      return;
+    }
+    setEditing({
+      ...entry,
+      amount: String(entry.amount ?? ""),
+      counterparty: entry.counterparty || "",
+      event_id: entry.event_id || "",
+      comment: entry.comment || "",
+    });
+  };
+
+  const sortedEvents = useMemo(
+    () => [...(events || [])].filter(e => !e.cancelled).sort((a, b) => (a.date < b.date ? 1 : -1)),
+    [events]
+  );
+
+  const chipClass = (active) => isMobile
+    ? "px-3 h-8 rounded-full text-xs font-medium"
+    : `px-3 h-7 rounded-full text-xs font-medium transition-colors ${active ? "bg-[#1A1717] text-[#F6F5F1]" : "bg-black/5 text-[#1A1717] hover:bg-black/10"}`;
+  const chipStyle = (active) => isMobile
+    ? { background: active ? "var(--m-ink)" : "var(--m-soft)", color: active ? "var(--m-on-ink)" : "var(--m-ink)" }
+    : undefined;
+
+  const entryForm = (value, setValue) => {
+    const categories = FINANCE_CATEGORIES[value.direction] || FINANCE_CATEGORIES.out;
+    const patch = (fields) => setValue({ ...value, ...fields });
+    return (
+      <div className="space-y-4">
+        <div className="flex gap-2">
+          {[["out", "витрата"], ["in", "надходження"]].map(([dir, label]) => (
+            <button
+              key={dir}
+              type="button"
+              className={`flex-1 h-9 rounded-full text-sm font-medium transition-colors ${isMobile ? "" : value.direction === dir ? "bg-[#1A1717] text-[#F6F5F1]" : "bg-black/5 text-[#1A1717] hover:bg-black/10"}`}
+              style={chipStyle(value.direction === dir)}
+              onClick={() => patch({
+                direction: dir,
+                category: (FINANCE_CATEGORIES[dir] || []).includes(value.category) ? value.category : FINANCE_CATEGORIES[dir][0],
+              })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[11px] uppercase tracking-wider text-secondary">сума, ₴</label>
+            <Input
+              autoFocus
+              inputMode="decimal"
+              value={value.amount}
+              onChange={(e) => patch({ amount: e.target.value })}
+              placeholder="1200"
+              data-testid="money-amount-input"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] uppercase tracking-wider text-secondary">дата</label>
+            <Input type="date" value={value.date} onChange={(e) => patch({ date: e.target.value })} />
+          </div>
+        </div>
+        <div>
+          <label className="text-[11px] uppercase tracking-wider text-secondary">категорія</label>
+          <div className="flex flex-wrap gap-1.5 mt-1.5">
+            {categories.map(category => (
+              <button
+                key={category}
+                type="button"
+                className={chipClass(value.category === category)}
+                style={chipStyle(value.category === category)}
+                onClick={() => patch({ category })}
+              >
+                {category}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="text-[11px] uppercase tracking-wider text-secondary">кому / від кого</label>
+          <Input
+            value={value.counterparty}
+            onChange={(e) => patch({ counterparty: e.target.value })}
+            placeholder={value.direction === "out" ? "майстер, орендодавець" : "клієнт"}
+          />
+        </div>
+        <div>
+          <label className="text-[11px] uppercase tracking-wider text-secondary">подія</label>
+          <select
+            value={value.event_id}
+            onChange={(e) => patch({ event_id: e.target.value })}
+            className={`w-full h-9 mt-1 px-3 rounded-md text-sm outline-none ${isMobile ? "" : "bg-[#F1EEE7] border border-[#E8E5DC]"}`}
+            style={isMobile ? { background: "var(--m-soft)", color: "var(--m-ink)", border: 0 } : undefined}
+          >
+            <option value="">— без події</option>
+            {sortedEvents.map(ev => (
+              <option key={ev.id} value={ev.id}>{`${formatDateUkrainian(ev.date)} — ${ev.title}`}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-[11px] uppercase tracking-wider text-secondary">коментар</label>
+          <Input value={value.comment} onChange={(e) => patch({ comment: e.target.value })} placeholder="за що саме" />
+        </div>
+      </div>
+    );
+  };
+
+  // Кольори беремо класами, а не хексами: desktop.css перекладає їх у змінні
+  // теми, тож екран лишається читабельним і на світлому, і на garden-скіні.
+  const entryDialogs = (
+    <>
+      <Dialog open={!!draft} onOpenChange={(open) => !open && setDraft(null)}>
+        <DialogContent className={dialogClass}>
+          <DialogHeader>
+            <DialogTitle>новий запис</DialogTitle>
+            <DialogDescription className="text-xs text-secondary">надходження клієнтів приходять з Altegio самі — тут передусім витрати</DialogDescription>
+          </DialogHeader>
+          {draft && entryForm(draft, setDraft)}
+          <DialogFooter className="mt-4">
+            <button className="btn-dark w-full h-9" onClick={saveDraft} disabled={saving} data-testid="money-save-btn">
+              {saving ? "записую…" : "ЗАПИСАТИ"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
+        <DialogContent className={dialogClass}>
+          <DialogHeader>
+            <DialogTitle>запис</DialogTitle>
+            <DialogDescription className="text-xs text-secondary">
+              {editing?.status === "pending" ? "збереження підтверджує запис і додає його в суми місяця" : "правка руками, без Altegio"}
+            </DialogDescription>
+          </DialogHeader>
+          {editing && entryForm(editing, setEditing)}
+          <DialogFooter className="mt-4 flex gap-2">
+            <Button variant="destructive" onClick={() => removeEntry(editing)}>
+              <Trash2 className="w-4 h-4 mr-1" />ВИДАЛИТИ
+            </Button>
+            <button className="btn-dark flex-1 h-9" onClick={saveEditing} disabled={saving}>
+              {saving ? "зберігаю…" : "ЗБЕРЕГТИ"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+
+  // Мобільний інтерфейс Порядку має власну мову (m-ui), тож екран грошей
+  // не масштабується з десктопного, а складається з тих самих деталей.
+  if (isMobile) {
+    return (
+      <div className="m-ui" data-testid="money-screen-mobile">
+        <div className="m-page">
+          <header className="m-dash-head">
+            <h1 className="m-d">гроші</h1>
+            <button type="button" className="m-ico" onClick={handleSync} disabled={syncing} aria-label="підтягнути касу Altegio" data-testid="money-sync-btn-mobile">
+              <RefreshCw strokeWidth={1.5} className={syncing ? "animate-spin" : ""} />
+            </button>
+          </header>
+
+          <div className="m-sec-head" style={{ marginTop: 12 }}>
+            <button type="button" className="m-ico" onClick={() => shiftMonth(-1)} aria-label="попередній місяць" style={{ marginLeft: -12 }}>
+              <ChevronLeft strokeWidth={1.5} />
+            </button>
+            <span className="m-b" data-testid="money-month-mobile">{monthLabel}</span>
+            <button type="button" className="m-ico" onClick={() => shiftMonth(1)} aria-label="наступний місяць" style={{ marginRight: -12 }}>
+              <ChevronRight strokeWidth={1.5} />
+            </button>
+          </div>
+
+          <div className="m-tiles">
+            <div className="m-tile">
+              <span className="m-tile-num">{summary ? formatMoney(summary.income) : "—"}</span>
+              <span className="m-tile-label">надійшло, ₴</span>
+            </div>
+            <div className="m-tile">
+              <span className="m-tile-num">{summary ? formatMoney(summary.expense) : "—"}</span>
+              <span className="m-tile-label">витрачено, ₴</span>
+            </div>
+          </div>
+          <div className="m-tiles" style={{ gridTemplateColumns: "1fr", marginTop: 8 }}>
+            <div className="m-tile">
+              <span className={`m-tile-num${(summary?.balance || 0) < 0 ? " m-red" : ""}`}>{summary ? formatMoney(summary.balance) : "—"}</span>
+              <span className="m-tile-label">залишок, ₴</span>
+            </div>
+          </div>
+
+          {(summary?.pending_count || 0) > 0 && (
+            <p className="m-c" style={{ marginTop: 12 }}>чекають підтвердження: {summary.pending_count} — у суми місяця не входять</p>
+          )}
+
+          {!!(summary?.expense_by_category || []).length && (
+            <>
+              <div className="m-sec-head"><h2 className="m-sec">витрати за категоріями</h2></div>
+              <div className="m-list">
+                {summary.expense_by_category.map(row => (
+                  <button
+                    key={row.category}
+                    type="button"
+                    className="m-row"
+                    onClick={() => { setDirectionFilter("out"); setCategoryFilter(row.category); }}
+                  >
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: FINANCE_CATEGORY_COLORS[row.category] || "#9C927F" }} />
+                    <span className="m-b" style={{ flex: 1 }}>{row.category}</span>
+                    <span className="m-c">{Math.round((row.share || 0) * 100)}%</span>
+                    <span className="m-b">{formatMoney(row.amount)} ₴</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div className="m-sec-head">
+            <h2 className="m-sec">операції</h2>
+            <span className="m-c">{visibleEntries.length}</span>
+          </div>
+          <div className="m-chips" style={{ marginBottom: 8 }}>
+            {[["all", "усі"], ["in", "надходження"], ["out", "витрати"]].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={`m-tab${directionFilter === value ? " is-active" : ""}`}
+                onClick={() => { setDirectionFilter(value); setCategoryFilter("all"); }}
+              >
+                {label}
+              </button>
+            ))}
+            {categoryFilter !== "all" && (
+              <button type="button" className="m-tab is-active" onClick={() => setCategoryFilter("all")}>
+                {categoryFilter} ×
+              </button>
+            )}
+          </div>
+
+          {loading && !entries.length ? (
+            <p className="m-c">вантажу…</p>
+          ) : !grouped.length ? (
+            <p className="m-c">за цей місяць операцій немає. надходження підтягуються з каси Altegio, витрати додаєш плюсом</p>
+          ) : (
+            grouped.map(([day, dayEntries]) => (
+              <div key={day}>
+                <div className="m-sec-head"><span className="m-c">{formatDateUkrainian(day)}</span></div>
+                <div className="m-list">
+                  {dayEntries.map(entry => (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      className="m-row m-row--tall"
+                      onClick={() => openEntry(entry)}
+                      style={entry.status === "pending" ? { opacity: 0.6 } : undefined}
+                      data-testid={`money-entry-${entry.id}`}
+                    >
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: FINANCE_CATEGORY_COLORS[entry.category] || "#9C927F" }} />
+                      <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+                        <span className="m-b" style={{ display: "block" }}>{entry.counterparty || entry.category}</span>
+                        <span className="m-c" style={{ display: "block" }}>
+                          {[
+                            entry.counterparty ? entry.category : null,
+                            entry.event_id ? eventTitles[entry.event_id] : null,
+                            entry.comment || null,
+                            entry.source !== "manual" ? (FINANCE_SOURCE_LABELS[entry.source] || entry.source) : null,
+                            entry.status === "pending" ? "чекає підтвердження" : null,
+                          ].filter(Boolean).join(" • ")}
+                        </span>
+                      </span>
+                      <span className="m-b" style={entry.direction === "in" ? { color: "var(--m-green)" } : undefined}>
+                        {entry.direction === "in" ? "+" : "−"}{formatMoney(entry.amount)} ₴
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <button type="button" className="m-fab" onClick={() => setDraft(emptyEntryDraft(formatDateLocal(new Date())))} aria-label="новий запис" data-testid="money-add-btn-mobile">
+          <Plus strokeWidth={1.5} />
+        </button>
+
+        {entryDialogs}
+        <BottomNav />
+      </div>
+    );
+  }
+
+  const cards = [
+    { label: "надійшло", value: summary?.income, tone: "text-emerald-600", testid: "money-income" },
+    { label: "витрачено", value: summary?.expense, tone: "", testid: "money-expense" },
+    { label: "залишок", value: summary?.balance, tone: (summary?.balance || 0) < 0 ? "text-red-500" : "text-emerald-600", testid: "money-balance" },
+  ];
+
+  return (
+    <div className="desktop-dashboard flex flex-col" data-testid="money-screen">
+      <header className="desktop-header" style={{ position: "relative" }}>
+        <div className="desktop-header-left">
+          <span className="text-xl font-semibold">гроші</span>
+        </div>
+        <div
+          style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)" }}
+          className="hidden md:flex items-center gap-1"
+        >
+          <button onClick={() => shiftMonth(-1)} className="p-1.5 hover:bg-black/5 rounded-full transition-colors" aria-label="попередній місяць">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className="text-sm font-medium min-w-[150px] text-center" data-testid="money-month">{monthLabel}</span>
+          <button onClick={() => shiftMonth(1)} className="p-1.5 hover:bg-black/5 rounded-full transition-colors" aria-label="наступний місяць">
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="desktop-header-right">
+          <button
+            className="desktop-header-btn"
+            onClick={handleSync}
+            disabled={syncing}
+            title="підтягнути касу Altegio"
+            aria-label="підтягнути касу Altegio"
+            data-testid="money-sync-btn"
+          >
+            <RefreshCw className={`w-5 h-5 ${syncing ? "animate-spin" : ""}`} />
+          </button>
+          <button className="btn-dark" onClick={() => setDraft(emptyEntryDraft(formatDateLocal(new Date())))} data-testid="money-add-btn">
+            <Plus className="w-4 h-4" /><span>запис</span>
+          </button>
+          <button className="desktop-header-btn" onClick={onClose} title="закрити" aria-label="закрити" data-testid="money-close-btn">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      </header>
+
+      <div className="flex md:hidden items-center justify-center gap-1 pb-2">
+        <button onClick={() => shiftMonth(-1)} className="p-1.5 hover:bg-black/5 rounded-full" aria-label="попередній місяць"><ChevronLeft className="w-4 h-4" /></button>
+        <span className="text-sm font-medium min-w-[150px] text-center">{monthLabel}</span>
+        <button onClick={() => shiftMonth(1)} className="p-1.5 hover:bg-black/5 rounded-full" aria-label="наступний місяць"><ChevronRight className="w-4 h-4" /></button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 pb-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[340px_minmax(0,1fr)] gap-3">
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 lg:grid-cols-1 gap-3">
+              {cards.map(card => (
+                <div key={card.label} className="rounded-xl bg-[#F5F5F0] p-4" data-testid={card.testid}>
+                  <p className="text-xs text-secondary">{card.label}</p>
+                  <p className={`text-2xl font-semibold tracking-tight ${card.tone}`}>
+                    {loading && !summary ? "—" : `${formatMoney(card.value)} ₴`}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {(summary?.pending_count || 0) > 0 && (
+              <div className="rounded-xl bg-[#F5F5F0] p-3 text-xs text-secondary">
+                чекають підтвердження: {summary.pending_count} — у суми місяця не входять
+              </div>
+            )}
+
+            {["out", "in"].map(direction => {
+              const rows = (direction === "out" ? summary?.expense_by_category : summary?.income_by_category) || [];
+              if (!rows.length) return null;
+              return (
+                <div key={direction} className="rounded-xl bg-[#F5F5F0] p-4">
+                  <p className="text-sm font-semibold mb-3">{direction === "out" ? "витрати за категоріями" : "надходження за категоріями"}</p>
+                  <div className="space-y-2.5">
+                    {rows.map(row => (
+                      <button
+                        key={row.category}
+                        type="button"
+                        className="w-full text-left"
+                        onClick={() => { setDirectionFilter(direction); setCategoryFilter(row.category); }}
+                        title="показати ці операції"
+                      >
+                        <div className="flex items-baseline justify-between gap-2 text-xs">
+                          <span className="font-medium">{row.category}</span>
+                          <span className="text-secondary">{Math.round((row.share || 0) * 100)}%</span>
+                          <span className="font-semibold tabular-nums">{formatMoney(row.amount)} ₴</span>
+                        </div>
+                        <div className="h-1.5 mt-1 rounded-full bg-[#F1EEE7] overflow-hidden">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${Math.max(2, Math.round((row.share || 0) * 100))}%`,
+                              background: FINANCE_CATEGORY_COLORS[row.category] || "#8E8980",
+                            }}
+                          />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="rounded-xl bg-[#F5F5F0] p-4">
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <p className="text-sm font-semibold mr-auto">операції</p>
+              {[["all", "усі"], ["in", "надходження"], ["out", "витрати"]].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`px-3 h-7 rounded-full text-xs font-medium transition-colors ${directionFilter === value ? "bg-[#1A1717] text-[#F6F5F1]" : "bg-black/5 text-[#1A1717] hover:bg-black/10"}`}
+                  onClick={() => { setDirectionFilter(value); setCategoryFilter("all"); }}
+                >
+                  {label}
+                </button>
+              ))}
+              {categoryFilter !== "all" && (
+                <button
+                  type="button"
+                  className="px-3 h-7 rounded-full text-xs font-medium bg-[#1A1717] text-[#F6F5F1] inline-flex items-center gap-1"
+                  onClick={() => setCategoryFilter("all")}
+                >
+                  {categoryFilter}<X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {loading && !entries.length ? (
+              <p className="text-xs text-secondary py-6 text-center">вантажу…</p>
+            ) : !grouped.length ? (
+              <div className="py-10 text-center">
+                <p className="text-sm font-medium">за цей місяць операцій немає</p>
+                <p className="text-xs text-secondary mt-1">надходження підтягуються з каси Altegio, витрати додаєш кнопкою «запис»</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {grouped.map(([day, dayEntries]) => (
+                  <div key={day}>
+                    <p className="text-[11px] uppercase tracking-wider text-secondary mb-1.5">{formatDateUkrainian(day)}</p>
+                    <div className="space-y-1.5">
+                      {dayEntries.map(entry => {
+                        const isIncome = entry.direction === "in";
+                        const readOnly = entry.source === "altegio";
+                        return (
+                          <div
+                            key={entry.id}
+                            role={readOnly ? undefined : "button"}
+                            tabIndex={readOnly ? undefined : 0}
+                            onClick={() => openEntry(entry)}
+                            onKeyDown={(e) => { if (!readOnly && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openEntry(entry); } }}
+                            className={`flex items-start gap-3 p-2.5 rounded-lg bg-[#F1EEE7] ${readOnly ? "" : "cursor-pointer hover:opacity-80"} ${entry.status === "pending" ? "opacity-60" : ""}`}
+                            data-testid={`money-entry-${entry.id}`}
+                          >
+                            <span
+                              className="w-2 h-2 rounded-full mt-1.5 shrink-0"
+                              style={{ background: FINANCE_CATEGORY_COLORS[entry.category] || "#8E8980" }}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium truncate">{entry.counterparty || entry.category}</p>
+                              <p className="text-xs text-secondary truncate">
+                                {[
+                                  entry.counterparty ? entry.category : null,
+                                  entry.event_id ? eventTitles[entry.event_id] : null,
+                                  entry.comment || null,
+                                  entry.account || null,
+                                  entry.source !== "manual" ? (FINANCE_SOURCE_LABELS[entry.source] || entry.source) : null,
+                                  entry.status === "pending" ? "чекає підтвердження" : null,
+                                ].filter(Boolean).join(" • ")}
+                              </p>
+                              {entry.raw_text && (
+                                <p className="text-xs text-secondary mt-0.5 italic truncate">«{entry.raw_text}»</p>
+                              )}
+                            </div>
+                            <span className={`text-sm font-semibold tabular-nums shrink-0 ${isIncome ? "text-emerald-600" : ""}`}>
+                              {isIncome ? "+" : "−"}{formatMoney(entry.amount)} ₴
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {entryDialogs}
+    </div>
+  );
+};
+
+const MoneyPage = () => {
+  const navigate = useNavigate();
+  return <MoneyContent onClose={() => navigate("/")} />;
+};
+
 const StatsContent = ({ onClose, settings }) => {
   const { events, standaloneTasks, smmTasksDefinition, refreshEvents, allTaskDefs } = useApp();
   // Назва автозадачі менеджера: спершу з налаштувань, далі з дефолтних визначень, і лише тоді id.
@@ -11641,6 +12345,7 @@ function App() {
               <Route path="/event/new" element={<EventForm />} />
               <Route path="/event/:id" element={<EventForm />} />
               <Route path="/event/:id/view" element={<EventDetailPage />} />
+              <Route path="/money" element={<MoneyPage />} />
               <Route path="/stats" element={<StatsPage />} />
               <Route path="/analytics" element={<StatsPage />} />
               <Route path="/settings" element={<SettingsPage />} />

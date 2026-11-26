@@ -15,8 +15,8 @@
     },
     {
       "name": "Frontend (React)",
-      "runtimeExecutable": "yarn",
-      "runtimeArgs": ["start"],
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd frontend && exec npm start"],
       "port": 3000
     }
   ]

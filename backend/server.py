@@ -8406,6 +8406,26 @@ def _finance_tx_category(row: dict, direction: str) -> str:
     return "інше"
 
 
+# Назви статей Altegio англійські, а до коментаря «Acquiring fee» додається
+# ще й довгий автотекст. Для журналу лишаємо коротку людську назву.
+ALTEGIO_EXPENSE_TITLES = {
+    "acquiring fee": "комісія еквайрингу",
+    "client account top-up": "поповнення депозиту",
+    "services rendered": "",
+}
+ALTEGIO_TX_COMMENTS = {"online payment": "онлайн-оплата"}
+
+
+def _finance_tx_comment(row: dict) -> str:
+    title = ((row.get("expense") or {}).get("title") or "").strip()
+    known = ALTEGIO_EXPENSE_TITLES.get(title.lower())
+    if known is not None:
+        return known
+    comment = (row.get("comment") or "").strip()
+    comment = ALTEGIO_TX_COMMENTS.get(comment.lower(), comment)
+    return " · ".join(part for part in (title, comment) if part)
+
+
 def _finance_tx_counterparty(row: dict) -> Optional[str]:
     client_row = row.get("client") or {}
     name = " ".join(
@@ -8520,10 +8540,6 @@ async def _finance_sync_altegio(date_from: str, date_to: str) -> dict:
 
         direction = "in" if amount > 0 else "out"
         record_id = row.get("record_id") or 0
-        comment_parts = [
-            ((row.get("expense") or {}).get("title") or "").strip(),
-            (row.get("comment") or "").strip(),
-        ]
         fields = {
             "date": _finance_tx_date(row.get("date")),
             "direction": direction,
@@ -8534,7 +8550,7 @@ async def _finance_sync_altegio(date_from: str, date_to: str) -> dict:
             "account": (row.get("account") or {}).get("title"),
             "source": "altegio",
             "status": "confirmed",
-            "comment": " · ".join(part for part in comment_parts if part),
+            "comment": _finance_tx_comment(row),
             "altegio_raw_type": row.get("sold_item_type"),
             "altegio_record_id": record_id or None,
             "altegio_document_id": row.get("document_id"),
