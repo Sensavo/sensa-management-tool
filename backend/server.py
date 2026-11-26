@@ -490,6 +490,7 @@ async def lifespan(app: FastAPI):
     telegram_overdue_cleanup_task = asyncio.create_task(telegram_overdue_cleanup_loop())
     asyncio.create_task(early_bird_tier_loop())
     asyncio.create_task(unpaid_bookings_loop())
+    asyncio.create_task(finance_sync_loop())
     asyncio.create_task(ai_executor_loop())
 
     yield
@@ -808,6 +809,74 @@ class ParseEventResponse(BaseModel):
     events: List[ParsedEvent]
     clarification_needed: bool = False
     clarification_message: str = ""
+
+# ==================== ФІНАНСИ: МОДЕЛІ ====================
+#
+# Одна колекція на всі рухи грошей (`cash_entries`). Гроші від клієнтів
+# приходять з Altegio (source="altegio") і в Порядку не редагуються;
+# витрати вносяться тут (source="manual" | "voice" | "recurring").
+# Докладно — docs/FINANCE-SPEC.md.
+
+FINANCE_DIRECTIONS = ("in", "out")
+FINANCE_STATUSES = ("confirmed", "pending")
+FINANCE_SOURCES = ("altegio", "voice", "manual", "recurring")
+
+# Фіксований список, щоб парсер голосу не вигадував нових категорій.
+FINANCE_CATEGORIES_IN = ("квитки", "інше")
+FINANCE_CATEGORIES_OUT = (
+    "майстер", "зарплата", "оренда", "реклама",
+    "матеріали", "підписки", "локація", "інше",
+)
+
+
+class CashEntry(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    date: str                                    # YYYY-MM-DD, київський день
+    direction: str                               # "in" | "out"
+    amount: float = 0.0                          # ₴, завжди додатна
+    category: str = "інше"
+    counterparty: Optional[str] = None           # майстер, орендодавець, клієнт
+    event_id: Optional[str] = None
+    account: Optional[str] = None                # каса/рахунок, як в Altegio
+    source: str = "manual"
+    altegio_transaction_id: Optional[int] = None
+    raw_text: Optional[str] = None               # що саме сказав Во
+    confidence: Optional[float] = None           # наскільки впевнений парсер
+    status: str = "confirmed"                    # pending = чекає «так» у боті
+    comment: str = ""
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_by: Optional[str] = None
+
+
+class CashEntryCreate(BaseModel):
+    date: Optional[str] = None                   # за замовчуванням — сьогодні в Києві
+    direction: str = "out"
+    amount: float = 0.0
+    category: str = "інше"
+    counterparty: Optional[str] = None
+    event_id: Optional[str] = None
+    account: Optional[str] = None
+    source: str = "manual"
+    raw_text: Optional[str] = None
+    confidence: Optional[float] = None
+    status: str = "confirmed"
+    comment: str = ""
+    created_by: Optional[str] = None
+
+
+class CashEntryUpdate(BaseModel):
+    date: Optional[str] = None
+    direction: Optional[str] = None
+    amount: Optional[float] = None
+    category: Optional[str] = None
+    counterparty: Optional[str] = None
+    event_id: Optional[str] = None
+    account: Optional[str] = None
+    status: Optional[str] = None
+    comment: Optional[str] = None
+
 
 # ==================== SMM TASKS DEFINITION ====================
 
@@ -8251,6 +8320,458 @@ async def link_event_to_altegio(event_id: str, altegio_id: str):
     except Exception as e:
         logging.error(f"Failed to link event: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== ФІНАНСИ: КЕШФЛОУ ====================
+#
+# Журнал надходжень і витрат. Надходження від клієнтів — з каси Altegio,
+# витрати — з Порядку. Другої бухгалтерії не будуємо: правило з ТЗ —
+# «гроші від клієнтів завжди з Altegio, витрати з Порядку».
+
+_finance_indexes_ready = False
+
+
+async def _finance_ensure_indexes():
+    """Унікальний індекс на altegio_transaction_id — страховка від дублів,
+    якщо два інстанси синкнуть той самий період одночасно."""
+    global _finance_indexes_ready
+    if _finance_indexes_ready:
+        return
+    try:
+        await db.cash_entries.create_index(
+            "altegio_transaction_id",
+            unique=True,
+            partialFilterExpression={"altegio_transaction_id": {"$type": "number"}},
+            name="altegio_transaction_id_unique",
+        )
+        await db.cash_entries.create_index([("date", -1)], name="cash_entries_date")
+        _finance_indexes_ready = True
+    except Exception as e:
+        logging.error(f"finance: не вдалося створити індекси: {e}")
+
+
+def _finance_month_bounds(month: str) -> tuple:
+    """'2026-11' → ('2026-11-01', '2026-11-30')."""
+    try:
+        year, mon = (int(part) for part in month.split("-")[:2])
+        start = date(year, mon, 1)
+    except Exception:
+        raise HTTPException(status_code=400, detail="month має бути у форматі YYYY-MM")
+    end = date(year + (mon == 12), 1 if mon == 12 else mon + 1, 1) - timedelta(days=1)
+    return start.isoformat(), end.isoformat()
+
+
+def _finance_tx_date(raw: str) -> str:
+    """Дата транзакції київським днем.
+
+    Altegio віддає час із власним зсувом (+0400), тож просто відрізати перші
+    десять символів не можна: оплата о 00:30 за Altegio — це ще попередній
+    київський день.
+    """
+    if not raw:
+        return _today_kyiv()
+    text = str(raw).replace("Z", "+00:00")
+    # Altegio пише зсув без двокрапки («+0400»), а fromisoformat до Python 3.11
+    # такий формат не читає — на старішому рантаймі дата просто зʼїжджала.
+    text = re.sub(r"([+-]\d{2})(\d{2})$", r"\1:\2", text)
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return str(raw)[:10]
+    if parsed.tzinfo is None:
+        return parsed.date().isoformat()
+    return parsed.astimezone(_telegram_tz()).date().isoformat()
+
+
+def _finance_tx_category(row: dict, direction: str) -> str:
+    """Категорія для імпортованої транзакції.
+
+    Список категорій фіксований, тож назви статей Altegio зводимо до нього,
+    а повний текст статті лишаємо в комментарі запису.
+    """
+    title = ((row.get("expense") or {}).get("title") or "").strip().lower()
+    if direction == "in":
+        if row.get("sold_item_type") in ("service", "deposit_topup") or "top-up" in title:
+            return "квитки"
+        return "інше"
+    for needle, category in (
+        ("salary", "зарплата"),
+        ("зарплат", "зарплата"),
+        ("rent", "оренда"),
+        ("оренд", "оренда"),
+        ("adverti", "реклама"),
+        ("реклам", "реклама"),
+    ):
+        if needle in title:
+            return category
+    return "інше"
+
+
+def _finance_tx_counterparty(row: dict) -> Optional[str]:
+    client_row = row.get("client") or {}
+    name = " ".join(
+        part for part in (client_row.get("name"), client_row.get("surname")) if part
+    ).strip()
+    if name:
+        return name
+    for key in ("master", "supplier"):
+        value = row.get(key)
+        if isinstance(value, dict):
+            title = (value.get("name") or value.get("title") or "").strip()
+            if title:
+                return title
+    return None
+
+
+async def _altegio_transactions(date_from: str, date_to: str, count: int = 1000) -> Optional[list]:
+    """Транзакції каси Altegio за період. None — «не змогли запитати»."""
+    url = f"{altegio_client.base_url}/transactions/{altegio_client.company_id}"
+    params = {"start_date": date_from, "end_date": date_to, "count": count}
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as http_client:
+            response = await http_client.get(
+                url, headers=altegio_client.get_v2_headers(), params=params
+            )
+    except Exception as e:
+        logging.error(f"finance: запит транзакцій Altegio впав: {e}")
+        return None
+    if response.status_code != 200:
+        logging.error(
+            f"finance: Altegio transactions {response.status_code} — {response.text[:200]}"
+        )
+        return None
+    try:
+        return response.json().get("data") or []
+    except Exception as e:
+        logging.error(f"finance: нечитабельна відповідь Altegio: {e}")
+        return None
+
+
+async def _finance_event_by_record(date_from: str, date_to: str) -> dict:
+    """{record_id: event_id} для подій Порядку.
+
+    Передоплату вносять за тижні до події, тож вікно записів беремо ширше
+    за вікно транзакцій. Best-effort: якщо Altegio не відповів, транзакції
+    все одно підуть у журнал, просто без привʼязки до події.
+    """
+    try:
+        start = (date.fromisoformat(date_from) - timedelta(days=60)).isoformat()
+        end = (date.fromisoformat(date_to) + timedelta(days=120)).isoformat()
+    except ValueError:
+        return {}
+    result = await altegio_client.get_records_result(date_from=start, date_to=end)
+    if not result.get("ok"):
+        return {}
+    records = result.get("data") or []
+    activity_ids = {
+        str(record.get("activity_id"))
+        for record in records
+        if record.get("activity_id")
+    }
+    if not activity_ids:
+        return {}
+    events = await db.events.find(
+        {"altegio_activity_id": {"$in": list(activity_ids)}},
+        {"_id": 0, "id": 1, "altegio_activity_id": 1},
+    ).to_list(2000)
+    by_activity = {str(e["altegio_activity_id"]): e["id"] for e in events}
+    mapping = {}
+    for record in records:
+        event_id = by_activity.get(str(record.get("activity_id")))
+        if event_id and record.get("id"):
+            mapping[int(record["id"])] = event_id
+    return mapping
+
+
+async def _finance_sync_altegio(date_from: str, date_to: str) -> dict:
+    """Кладе транзакції Altegio у `cash_entries`.
+
+    Ідемпотентно за `altegio_transaction_id`: повторний синк того самого
+    періоду оновлює наявні записи, а не додає нові.
+
+    Депозити (`sold_item_type: "deposit_topup"`, `record_id: 0`) ідуть у
+    журнал за датою транзакції — гроші фізично надійшли, навіть якщо запис
+    у Altegio лишився «неоплаченим». Якщо Altegio колись почне проводити
+    витрачений депозит ще й окремою транзакцією «Services rendered»,
+    надходження задвоїться — на живих даних серпня–листопада такого не було.
+    """
+    await _finance_ensure_indexes()
+    rows = await _altegio_transactions(date_from, date_to)
+    if rows is None:
+        return {"ok": False, "error": "Altegio не відповів", "created": 0, "updated": 0, "skipped": 0}
+
+    event_by_record = await _finance_event_by_record(date_from, date_to)
+    created = updated = skipped = linked = 0
+    now = datetime.now(timezone.utc).isoformat()
+
+    for row in rows:
+        try:
+            transaction_id = int(row.get("id"))
+        except (TypeError, ValueError):
+            skipped += 1
+            continue
+        try:
+            amount = float(row.get("amount") or 0)
+        except (TypeError, ValueError):
+            skipped += 1
+            continue
+        if amount == 0:
+            skipped += 1
+            continue
+
+        direction = "in" if amount > 0 else "out"
+        record_id = row.get("record_id") or 0
+        comment_parts = [
+            ((row.get("expense") or {}).get("title") or "").strip(),
+            (row.get("comment") or "").strip(),
+        ]
+        fields = {
+            "date": _finance_tx_date(row.get("date")),
+            "direction": direction,
+            "amount": abs(amount),
+            "category": _finance_tx_category(row, direction),
+            "counterparty": _finance_tx_counterparty(row),
+            "event_id": event_by_record.get(int(record_id)) if record_id else None,
+            "account": (row.get("account") or {}).get("title"),
+            "source": "altegio",
+            "status": "confirmed",
+            "comment": " · ".join(part for part in comment_parts if part),
+            "altegio_raw_type": row.get("sold_item_type"),
+            "altegio_record_id": record_id or None,
+            "altegio_document_id": row.get("document_id"),
+        }
+        if fields["event_id"]:
+            linked += 1
+        try:
+            result = await db.cash_entries.update_one(
+                {"altegio_transaction_id": transaction_id},
+                {
+                    "$set": fields,
+                    "$setOnInsert": {
+                        "id": str(uuid.uuid4()),
+                        "altegio_transaction_id": transaction_id,
+                        "created_at": now,
+                        "created_by": "altegio",
+                        "synced_at": now,
+                        "raw_text": None,
+                        "confidence": None,
+                    },
+                },
+                upsert=True,
+            )
+        except DuplicateKeyError:
+            skipped += 1
+            continue
+        if result.upserted_id is not None:
+            created += 1
+        elif result.modified_count:
+            updated += 1
+        else:
+            skipped += 1
+
+    return {
+        "ok": True,
+        "date_from": date_from,
+        "date_to": date_to,
+        "fetched": len(rows),
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "linked_to_events": linked,
+    }
+
+
+@api_router.post("/finance/sync")
+async def sync_finance_from_altegio(date_from: Optional[str] = None, date_to: Optional[str] = None, days: int = 30):
+    """Тягне транзакції Altegio за період (за замовчуванням — 30 днів назад)."""
+    if not date_to:
+        date_to = _today_kyiv()
+    if not date_from:
+        try:
+            date_from = (date.fromisoformat(date_to) - timedelta(days=max(1, days))).isoformat()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="date_to має бути у форматі YYYY-MM-DD")
+    result = await _finance_sync_altegio(date_from, date_to)
+    if not result.get("ok"):
+        raise HTTPException(status_code=502, detail=result.get("error") or "синк не вдався")
+    return result
+
+
+@api_router.get("/finance/entries")
+async def list_cash_entries(
+    month: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    direction: Optional[str] = None,
+    category: Optional[str] = None,
+    event_id: Optional[str] = None,
+    source: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 1000,
+):
+    query: dict = {}
+    if month:
+        start, end = _finance_month_bounds(month)
+        query["date"] = {"$gte": start, "$lte": end}
+    elif date_from or date_to:
+        bounds = {}
+        if date_from:
+            bounds["$gte"] = date_from
+        if date_to:
+            bounds["$lte"] = date_to
+        query["date"] = bounds
+    for field, value in (
+        ("direction", direction),
+        ("category", category),
+        ("event_id", event_id),
+        ("source", source),
+        ("status", status),
+    ):
+        if value:
+            query[field] = value
+    entries = await db.cash_entries.find(query, {"_id": 0}).sort("date", -1).to_list(max(1, min(limit, 5000)))
+    return {"entries": entries, "count": len(entries)}
+
+
+@api_router.get("/finance/summary")
+async def get_finance_summary(month: Optional[str] = None):
+    """Надійшло / витрачено / залишок за місяць плюс розбивка за категоріями.
+
+    У суми йдуть тільки `confirmed`: `pending` живе між розпізнаванням
+    голосу й натисканням «так» у боті.
+    """
+    month = month or _today_kyiv()[:7]
+    start, end = _finance_month_bounds(month)
+    entries = await db.cash_entries.find(
+        {"date": {"$gte": start, "$lte": end}, "status": "confirmed"},
+        {"_id": 0, "direction": 1, "amount": 1, "category": 1, "source": 1},
+    ).to_list(5000)
+
+    income = sum(float(e.get("amount") or 0) for e in entries if e.get("direction") == "in")
+    expense = sum(float(e.get("amount") or 0) for e in entries if e.get("direction") == "out")
+
+    def breakdown(direction: str, total: float) -> list:
+        sums: dict = {}
+        for entry in entries:
+            if entry.get("direction") != direction:
+                continue
+            key = entry.get("category") or "інше"
+            sums[key] = sums.get(key, 0.0) + float(entry.get("amount") or 0)
+        return [
+            {
+                "category": key,
+                "amount": round(value, 2),
+                "share": round(value / total, 4) if total else 0,
+            }
+            for key, value in sorted(sums.items(), key=lambda pair: -pair[1])
+        ]
+
+    pending = await db.cash_entries.count_documents(
+        {"date": {"$gte": start, "$lte": end}, "status": "pending"}
+    )
+    return {
+        "month": month,
+        "date_from": start,
+        "date_to": end,
+        "income": round(income, 2),
+        "expense": round(expense, 2),
+        "balance": round(income - expense, 2),
+        "entries_count": len(entries),
+        "pending_count": pending,
+        "income_by_category": breakdown("in", income),
+        "expense_by_category": breakdown("out", expense),
+    }
+
+
+def _finance_validate(direction: str, category: str, status: str, source: str):
+    if direction not in FINANCE_DIRECTIONS:
+        raise HTTPException(status_code=400, detail="direction має бути \"in\" або \"out\"")
+    allowed = FINANCE_CATEGORIES_IN if direction == "in" else FINANCE_CATEGORIES_OUT
+    if category not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"категорія «{category}» не зі списку: {', '.join(allowed)}",
+        )
+    if status not in FINANCE_STATUSES:
+        raise HTTPException(status_code=400, detail="status має бути \"confirmed\" або \"pending\"")
+    if source not in FINANCE_SOURCES:
+        raise HTTPException(status_code=400, detail=f"source має бути одним з: {', '.join(FINANCE_SOURCES)}")
+
+
+@api_router.post("/finance/entries", response_model=CashEntry)
+async def create_cash_entry(payload: CashEntryCreate):
+    if payload.source == "altegio":
+        raise HTTPException(status_code=400, detail="записи Altegio створює тільки синк")
+    _finance_validate(payload.direction, payload.category, payload.status, payload.source)
+    if payload.amount < 0:
+        raise HTTPException(status_code=400, detail="сума не може бути відʼємною")
+    data = payload.model_dump()
+    data["date"] = payload.date or _today_kyiv()
+    entry = CashEntry(**data)
+    await db.cash_entries.insert_one(entry.model_dump())
+    return entry
+
+
+@api_router.patch("/finance/entries/{entry_id}")
+async def update_cash_entry(entry_id: str, payload: CashEntryUpdate):
+    existing = await db.cash_entries.find_one({"id": entry_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="запис не знайдено")
+    if existing.get("source") == "altegio":
+        raise HTTPException(status_code=400, detail="імпортовані транзакції не редагуються")
+
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not updates:
+        return existing
+    direction = updates.get("direction", existing.get("direction"))
+    category = updates.get("category", existing.get("category"))
+    status = updates.get("status", existing.get("status"))
+    _finance_validate(direction, category, status, existing.get("source") or "manual")
+    if "amount" in updates and updates["amount"] < 0:
+        raise HTTPException(status_code=400, detail="сума не може бути відʼємною")
+
+    await db.cash_entries.update_one({"id": entry_id}, {"$set": updates})
+    return await db.cash_entries.find_one({"id": entry_id}, {"_id": 0})
+
+
+@api_router.delete("/finance/entries/{entry_id}")
+async def delete_cash_entry(entry_id: str):
+    existing = await db.cash_entries.find_one({"id": entry_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="запис не знайдено")
+    if existing.get("source") == "altegio":
+        raise HTTPException(status_code=400, detail="імпортовані транзакції не видаляються")
+    await db.cash_entries.delete_one({"id": entry_id})
+    return {"deleted": entry_id}
+
+
+async def finance_sync_loop():
+    """Раз на годину тягне транзакції Altegio за останні 30 днів.
+
+    Вікно навмисно ширше за годину: Altegio дозволяє правити транзакції
+    заднім числом, а синк ідемпотентний, тож повторний прохід лише оновлює
+    вже наявні записи.
+    """
+    await asyncio.sleep(90)
+    while True:
+        try:
+            if not ALTEGIO_USER_TOKEN:
+                logging.info("finance: синк пропущено — немає токена Altegio")
+            else:
+                today = _today_kyiv()
+                date_from = (date.fromisoformat(today) - timedelta(days=30)).isoformat()
+
+                async def run_sync():
+                    result = await _finance_sync_altegio(date_from, today)
+                    if result.get("created") or result.get("updated"):
+                        logging.info(f"finance sync: {result}")
+
+                await _run_with_job_lock("finance_altegio_sync", 30 * 60, run_sync)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logging.error(f"finance sync loop error: {e}")
+        await asyncio.sleep(60 * 60)
+
 
 # Include router
 app.include_router(api_router)
