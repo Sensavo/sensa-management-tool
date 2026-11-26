@@ -127,3 +127,38 @@ def test_parser_prompt_carries_today_and_categories(monkeypatch):
     _, fake = _parse(monkeypatch, reply)
     assert "сьогодні 2026-11-26" in fake.prompt
     assert "майстер" in fake.prompt and "зарплата" in fake.prompt
+
+
+def test_weekday_with_known_event_takes_the_event_date(monkeypatch):
+    """«за кадл у суботу»—дата тієї події, а не найближчої суботи."""
+    import asyncio
+
+    reply = '{"direction":"out","amount":1200,"date":"2026-11-21","category":"майстер","counterparty":"оля","event_id":"ev-kadl","comment":"кадл","confidence":0.8}'
+    monkeypatch.setattr(server, "_llm_text", _FakeLLM(reply))
+
+    async def context():
+        return {"today": "2026-11-26", "events": [{"id": "ev-kadl", "title": "КАДЛ", "date": "2026-11-14"}]}
+
+    monkeypatch.setattr(server, "_finance_parser_context", context)
+    parsed = asyncio.get_event_loop().run_until_complete(
+        server._parse_finance_text("заплатив олі тисячу двісті за кадл у суботу")
+    )
+    assert parsed["event_id"] == "ev-kadl"
+    assert parsed["date"] == "2026-11-14"
+
+
+def test_explicit_date_wins_over_event_date(monkeypatch):
+    """Якщо дату названо явно, подія її не перебиває."""
+    import asyncio
+
+    reply = '{"direction":"out","amount":1200,"date":"2026-11-25","category":"майстер","counterparty":"оля","event_id":"ev-kadl","comment":"кадл","confidence":0.8}'
+    monkeypatch.setattr(server, "_llm_text", _FakeLLM(reply))
+
+    async def context():
+        return {"today": "2026-11-26", "events": [{"id": "ev-kadl", "title": "КАДЛ", "date": "2026-11-14"}]}
+
+    monkeypatch.setattr(server, "_finance_parser_context", context)
+    parsed = asyncio.get_event_loop().run_until_complete(
+        server._parse_finance_text("вчора заплатив олі за кадл")
+    )
+    assert parsed["date"] == "2026-11-25"

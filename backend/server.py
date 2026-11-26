@@ -8773,6 +8773,16 @@ async def delete_cash_entry(entry_id: str):
 # речення. Далі — транскрипція, парсер, картка з кнопками. У базу запис лягає
 # зі `status: "pending"` і в суми місяця не входить, доки не натиснуто «так».
 
+# Слова, за якими видно, що дату названо явно, а не через день тижня.
+WEEKDAY_WORDS = re.compile(
+    r"понеділ|вівтор|серед|четвер|пʼятниц|п'ятниц|пятниц|субот|неділ|вихідн",
+    re.IGNORECASE,
+)
+EXPLICIT_DATE_WORDS = re.compile(
+    r"\d{1,2}[./]\d{1,2}|сьогодн|вчора|позавчора|числа|сiчня|січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|жовтня|листопада|грудня",
+    re.IGNORECASE,
+)
+
 FINANCE_ENTRY_SCHEMA = """{
   "direction": "out | in — витрата чи надходження",
   "amount": число у гривнях або null, якщо суми в репліці немає,
@@ -8940,9 +8950,17 @@ async def _parse_finance_text(text: str) -> Optional[dict]:
         entry_date = today
 
     event_id = parsed.get("event_id") or None
-    known_events = {e["id"] for e in context["events"]}
-    if event_id not in known_events:
+    events_by_id = {e["id"]: e for e in context["events"]}
+    if event_id not in events_by_id:
         event_id = None
+
+    # «за кадл у суботу»: день тижня тут про подію, а не про найближчу таку
+    # суботу. Коли подію впізнано, а точної дати в репліці немає, беремо дату
+    # події—інакше витрата лягає в інший тиждень, ніж те, за що заплачено.
+    if event_id and WEEKDAY_WORDS.search(text) and not EXPLICIT_DATE_WORDS.search(text):
+        event_date = (events_by_id[event_id].get("date") or "")[:10]
+        if event_date:
+            entry_date = event_date
 
     return {
         "direction": direction,
