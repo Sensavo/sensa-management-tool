@@ -3955,7 +3955,13 @@ async def _generate_campaign_plan(event: dict, kind: str, feedback: str = "") ->
     if feedback:
         parts += ["", f"попередній план відхилено: {feedback}"]
 
-    raw = await _llm_text(SENSA_VOICE, "\n".join(parts), max_tokens=2000)
+    plan_system = (
+        SENSA_VOICE
+        + "\n\nУ ЦІЙ ЗАДАЧІ відповідь має бути валідним JSON і нічим іншим: "
+          "без markdown, без пояснень до або після. Голос sensa стосується "
+          "лише текстів усередині полів hook, primary_text і headline."
+    )
+    raw = await _llm_text(plan_system, "\n".join(parts), max_tokens=2000)
     if not raw:
         return None
 
@@ -3968,11 +3974,13 @@ async def _generate_campaign_plan(event: dict, kind: str, feedback: str = "") ->
     except json.JSONDecodeError:
         start, end = text.find("{"), text.rfind("}")
         if start < 0 or end <= start:
+            _LAST_LLM_PROVIDER["error"] = f"у відповіді немає JSON: {text[:300]}"
             logging.error(f"Campaign plan is not JSON: {text[:200]}")
             return None
         try:
             plan = json.loads(text[start:end + 1])
         except json.JSONDecodeError:
+            _LAST_LLM_PROVIDER["error"] = f"план не JSON: {text[:300]}"
             logging.error(f"Campaign plan is not JSON: {text[:200]}")
             return None
 
@@ -7708,7 +7716,11 @@ async def draft_task_now(event_id: str, column: str, task_id: str, notify: bool 
         raise HTTPException(status_code=404, detail="задачу не знайдено")
     run = await _create_task_run(event, column, task_id, task_def)
     if not run:
-        raise HTTPException(status_code=502, detail="модель не відповіла—перевір ключ")
+        raise HTTPException(status_code=502, detail={
+            "message": "модель не віддала результат",
+            "provider": _LAST_LLM_PROVIDER.get("name") or None,
+            "error": _LAST_LLM_PROVIDER.get("error") or None,
+        })
     if notify:
         await _notify_task_run(run, event, task_def)
     return run
