@@ -9061,10 +9061,13 @@ def _entry_age_minutes(entry: dict) -> int:
 
 async def _finance_await_entry(user_id: str, entry_id: Optional[str]) -> None:
     """Памʼятаємо, який запис чекає уточнення: суми або переказування."""
+    if not user_id:
+        return
+    # Без upsert: документ користувача вже є, а новий тут створив би запис
+    # без решти дефолтів.
     await db.user_settings.update_one(
         {"user_id": user_id},
         {"$set": {"finance_pending_entry_id": entry_id}},
-        upsert=True,
     )
 
 
@@ -9079,7 +9082,7 @@ async def _finance_reply_with_card(update, entry: dict, user_id: str) -> None:
 async def telegram_voice_entry(update, context):
     """Голосова нотатка про гроші—головний канал внесення витрат."""
     user = await _find_user_by_chat(update.effective_chat.id)
-    if not user:
+    if not user or not user.get("user_id"):
         await update.message.reply_text("спершу привʼяжи акаунт: надішли 6-значний код з poriadok")
         return
     voice = update.message.voice or update.message.audio
@@ -9135,7 +9138,7 @@ async def _telegram_finance_text(update, text: str) -> bool:
     чи це взагалі репліка про гроші.
     """
     user = await _find_user_by_chat(update.effective_chat.id)
-    if not user:
+    if not user or not user.get("user_id"):
         return False
     user_id = user["user_id"]
     doc = await db.user_settings.find_one({"user_id": user_id}, {"_id": 0, "finance_pending_entry_id": 1})
