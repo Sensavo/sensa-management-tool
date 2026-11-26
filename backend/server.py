@@ -3649,7 +3649,10 @@ async def _llm_text(system_prompt: str, user_prompt: str, max_tokens: int = 1200
                     },
                     json={
                         "model": model,
-                        "max_tokens": max_tokens,
+                        # Opus спершу думає, і думання йде з того самого
+                        # бюджету: при тісному max_tokens відповідь приходить
+                        # із самим лише thinking-блоком і порожнім текстом.
+                        "max_tokens": max(max_tokens, 4000),
                         "system": system_prompt,
                         "messages": [{"role": "user", "content": user_prompt}],
                     },
@@ -3660,6 +3663,9 @@ async def _llm_text(system_prompt: str, user_prompt: str, max_tokens: int = 1200
                 if text.strip():
                     _LAST_LLM_PROVIDER.update({"name": "anthropic", "model": model, "error": ""})
                     return text.strip()
+                stop = response.json().get("stop_reason")
+                _LAST_LLM_PROVIDER["error"] = f"anthropic повернув порожній текст (stop_reason={stop})"
+                logging.error(f"Anthropic returned no text, stop_reason={stop}")
             _LAST_LLM_PROVIDER["error"] = f"anthropic {response.status_code}: {response.text[:200]}"
             logging.error(f"Anthropic error {response.status_code}: {response.text[:300]}")
         except Exception as e:
@@ -3961,7 +3967,7 @@ async def _generate_campaign_plan(event: dict, kind: str, feedback: str = "") ->
           "без markdown, без пояснень до або після. Голос sensa стосується "
           "лише текстів усередині полів hook, primary_text і headline."
     )
-    raw = await _llm_text(plan_system, "\n".join(parts), max_tokens=2000)
+    raw = await _llm_text(plan_system, "\n".join(parts), max_tokens=6000)
     if not raw:
         return None
 
@@ -3999,6 +4005,23 @@ async def _generate_campaign_plan(event: dict, kind: str, feedback: str = "") ->
         days = max(1, min(days, max(1, state["days_left"])))
     plan["days"] = days
     plan["total_budget"] = plan["daily_budget"] * days
+    # Ціна броні не може наближатися до ціни квитка: модель охоче ставить
+    # max_cpa вище за виручку з місця.
+    kpi = plan.get("kpi") if isinstance(plan.get("kpi"), dict) else {}
+    if state["price"] > 0:
+        ceiling = int(state["price"] * 0.3)
+        try:
+            current = int(float(kpi.get("max_cpa") or 0))
+        except (TypeError, ValueError):
+            current = 0
+        kpi["max_cpa"] = min(current, ceiling) if current > 0 else ceiling
+    if state["left"]:
+        try:
+            target = int(float(kpi.get("target_bookings") or 0))
+        except (TypeError, ValueError):
+            target = 0
+        kpi["target_bookings"] = min(target, state["left"]) if target > 0 else state["left"]
+    plan["kpi"] = kpi
     return plan
 
 
