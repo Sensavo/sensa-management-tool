@@ -3616,10 +3616,19 @@ def _task_executor(task_def: dict) -> str:
     return DEFAULT_TASK_EXECUTORS.get((task_def or {}).get("id"), EXECUTOR_HUMAN)
 
 
+_LAST_LLM_PROVIDER = {"name": "", "model": "", "error": ""}
+
+
 async def _llm_text(system_prompt: str, user_prompt: str, max_tokens: int = 1200) -> Optional[str]:
-    """One text completion. Claude when a key is configured, otherwise OpenAI."""
+    """One text completion. Claude when a key is configured, otherwise OpenAI.
+
+    A silent fallback to the weaker model is indistinguishable from outside, so
+    every call records which provider actually answered.
+    """
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    _LAST_LLM_PROVIDER.update({"name": "", "model": "", "error": "" if anthropic_key else "ANTHROPIC_API_KEY не заданий"})
     if anthropic_key:
+        model = os.environ.get("ANTHROPIC_MODEL", "claude-opus-5-5")
         try:
             async with httpx.AsyncClient(timeout=90.0) as client:
                 response = await client.post(
@@ -3630,7 +3639,7 @@ async def _llm_text(system_prompt: str, user_prompt: str, max_tokens: int = 1200
                         "content-type": "application/json",
                     },
                     json={
-                        "model": os.environ.get("ANTHROPIC_MODEL", "claude-opus-5-5"),
+                        "model": model,
                         "max_tokens": max_tokens,
                         "system": system_prompt,
                         "messages": [{"role": "user", "content": user_prompt}],
@@ -3640,9 +3649,12 @@ async def _llm_text(system_prompt: str, user_prompt: str, max_tokens: int = 1200
                 blocks = response.json().get("content") or []
                 text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
                 if text.strip():
+                    _LAST_LLM_PROVIDER.update({"name": "anthropic", "model": model, "error": ""})
                     return text.strip()
+            _LAST_LLM_PROVIDER["error"] = f"anthropic {response.status_code}: {response.text[:200]}"
             logging.error(f"Anthropic error {response.status_code}: {response.text[:300]}")
         except Exception as e:
+            _LAST_LLM_PROVIDER["error"] = f"anthropic call failed: {e}"
             logging.error(f"Anthropic call failed: {e}")
 
     openai_key = os.environ.get("EMERGENT_LLM_KEY") or os.environ.get("OPENAI_API_KEY")
@@ -3659,8 +3671,12 @@ async def _llm_text(system_prompt: str, user_prompt: str, max_tokens: int = 1200
                 {"role": "user", "content": user_prompt},
             ],
         )
-        return (completion.choices[0].message.content or "").strip() or None
+        text = (completion.choices[0].message.content or "").strip()
+        if text:
+            _LAST_LLM_PROVIDER.update({"name": "openai", "model": "gpt-4o"})
+        return text or None
     except Exception as e:
+        _LAST_LLM_PROVIDER["error"] = f"{_LAST_LLM_PROVIDER.get('error') or ''} | openai: {e}".strip(" |")
         logging.error(f"OpenAI call failed: {e}")
         return None
 
@@ -3753,6 +3769,7 @@ async def _create_task_run(event: dict, column: str, task_id: str, task_def: dic
     output = await _generate_task_draft(event, task_def, feedback=feedback)
     if not output:
         return None
+    provider = dict(_LAST_LLM_PROVIDER)
     run = {
         "id": str(uuid.uuid4()),
         "event_id": event.get("id"),
@@ -3764,6 +3781,9 @@ async def _create_task_run(event: dict, column: str, task_id: str, task_def: dic
         "executor": _task_executor(task_def),
         "status": "draft",
         "output": output,
+        "provider": provider.get("name") or "",
+        "model": provider.get("model") or "",
+        "provider_error": provider.get("error") or None,
         "feedback": feedback or None,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "decided_at": None,
